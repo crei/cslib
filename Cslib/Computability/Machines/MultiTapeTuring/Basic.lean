@@ -157,6 +157,11 @@ def haltCfg (s : List α) : tm.Cfg :=
 def haltCfgTapes (tapes : Fin k → BiTape α) : tm.Cfg :=
   ⟨none, tapes⟩
 
+/-- The configuration of the Turing machine starting with initial state and given tapes
+at step `t`. -/
+def configurations (tapes : Fin k → BiTape α) (t : ℕ) : Option tm.Cfg :=
+  (Option.bind · tm.step)^[t] (tm.initCfgTapes tapes)
+
 /--
 The space used by a configuration is the space used by its tape.
 -/
@@ -195,6 +200,24 @@ def TransformsTapesInTime
     (tapes tapes' : Fin k → BiTape α)
     (t : ℕ) : Prop :=
   RelatesInSteps tm.TransitionRelation ⟨some tm.q₀, tapes⟩ ⟨none, tapes'⟩ t
+
+/-- A proof that the Turing machine `tm` uses at most space `s` when run for up to `t` steps
+on initial tapes `tapes`. -/
+def UsesSpaceUpToStep
+    (tm : MultiTapeTM k α)
+    (tapes : Fin k → BiTape α)
+    (s : ℕ)
+    (t : ℕ) : Prop :=
+  ∀ t' ≤ t, match tm.configurations tapes t' with
+      | none => true
+      | some cfg => cfg.space_used ≤ s
+
+def TransformsTapesInTimeAndSpace
+    (tm : MultiTapeTM k α)
+    (tapes tapes' : Fin k → BiTape α)
+    (t : ℕ) (s : ℕ) : Prop :=
+  tm.TransformsTapesInTime tapes tapes' t ∧
+    tm.UsesSpaceUpToStep tapes s t
 
 def TransformsTapesWithinTime
     (tm : MultiTapeTM k α)
@@ -261,6 +284,7 @@ public noncomputable def eval (tm : MultiTapeTM k α) (tapes : Fin k → BiTape 
     Part (Fin k → BiTape α) :=
   ⟨∃ tapes', tm.TransformsTapes tapes tapes', fun h => h.choose⟩
 
+-- TODO use MultiTapeTM.configurations?
 -- TODO this is a simple consequence of relatesInSteps_iff_configurations_eq_some, maybe not needed.
 lemma configurations_of_transformsTapesInTime
     (tm : MultiTapeTM k α)
@@ -273,6 +297,7 @@ lemma configurations_of_transformsTapesInTime
   apply (relatesInSteps_iff_step_iter_eq_some tm (tm.initCfgTapes tapes) ⟨none, tapes'⟩ t).mp
   simpa using h_transforms
 
+-- TODO use MultiTapeTM.configurations?
 @[scoped grind =]
 lemma eval_iff_exists_steps_iter_eq_some
     {tm : MultiTapeTM k α}
@@ -302,10 +327,6 @@ lemma eval_iff_exists_steps_iter_eq_some
     · exact (h_dom.choose_spec : TransformsTapes tm tapes h_dom.choose)
     · use t
       simpa [TransformsTapesInTime, relatesInSteps_iff_step_iter_eq_some] using h_iter
-
-def spaceUsed {tm : MultiTapeTM k α} {tapes : Fin k → BiTape α} :
-
-
 
 /-- A proof of `tm` outputting `l'` on input `l`. -/
 def Outputs (tm : MultiTapeTM k α) (l l' : List α) : Prop :=
