@@ -303,6 +303,10 @@ lemma eval_iff_exists_steps_iter_eq_some
     · use t
       simpa [TransformsTapesInTime, relatesInSteps_iff_step_iter_eq_some] using h_iter
 
+def spaceUsed {tm : MultiTapeTM k α} {tapes : Fin k → BiTape α} :
+
+
+
 /-- A proof of `tm` outputting `l'` on input `l`. -/
 def Outputs (tm : MultiTapeTM k α) (l l' : List α) : Prop :=
   ReflTransGen tm.TransitionRelation (initCfg tm l) (haltCfg tm l')

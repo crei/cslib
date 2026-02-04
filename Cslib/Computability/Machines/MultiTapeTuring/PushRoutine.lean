@@ -19,7 +19,7 @@ namespace Turing
 
 namespace Routines
 
-variable [Inhabited α]
+variable [Inhabited α] [Fintype α]
 
 def push (w : List α) : MultiTapeTM 1 (WithSep α) where
   Λ := PUnit
@@ -30,6 +30,7 @@ def push (w : List α) : MultiTapeTM 1 (WithSep α) where
 lemma push_eval_list {w : List α} {ls : List (List α)} :
   (push w).eval_list [ls].get = .some [w :: ls].get := by
   sorry
+
 
 end Routines
 
