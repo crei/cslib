@@ -7,6 +7,7 @@ Authors: Christian Reitwiessner
 module
 
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
+public import Cslib.Computability.Machines.MultiTapeTuring.HeadStats
 
 import Mathlib.Tactic.DeriveFintype
 
@@ -48,6 +49,18 @@ public noncomputable def MultiTapeTM.eval_list
     (tapes : Fin k → List (List α)) :
     Part (Fin k → List (List α)) :=
   ⟨∃ tapes', tm.TransformsLists tapes tapes', fun h => h.choose⟩
+
+def MultiTapeTM.TransformsListsWithStats
+    (tm : MultiTapeTM k (WithSep α))
+    (tapes : Fin k → List (List α))
+    (ts : (Fin k → List (List α)) × (Fin k → HeadStats)) : Prop :=
+    tm.evalWithStats (listToTape ∘ tapes) = .some (listToTape ∘ ts.1, ts.2)
+
+public noncomputable def MultiTapeTM.evalWithStats_list
+    (tm : MultiTapeTM k (WithSep α))
+    (tapes : Fin k → List (List α)) :
+    Part ((Fin k → List (List α)) × (Fin k → HeadStats)) :=
+  ⟨∃ ts, tm.TransformsListsWithStats tapes ts, fun h => h.choose⟩
 
 
 end Turing

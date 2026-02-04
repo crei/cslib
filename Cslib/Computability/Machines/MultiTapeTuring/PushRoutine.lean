@@ -9,8 +9,8 @@ module
 import Cslib.Foundations.Data.BiTape
 import Cslib.Foundations.Data.RelatesInSteps
 
-import Cslib.Computability.Machines.MultiTapeTuring.Basic
-import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
+public import Cslib.Computability.Machines.MultiTapeTuring.Basic
+public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 
 -- TODO create a "common file"
 import Cslib.Computability.Machines.SingleTapeTuring.Basic
@@ -21,16 +21,22 @@ namespace Routines
 
 variable [Inhabited α] [Fintype α]
 
-def push (w : List α) : MultiTapeTM 1 (WithSep α) where
+public def push (w : List α) : MultiTapeTM 1 (WithSep α) where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
 
 @[simp]
-lemma push_eval_list {w : List α} {ls : List (List α)} :
+public lemma push_eval_list {w : List α} {ls : List (List α)} :
   (push w).eval_list [ls].get = .some [w :: ls].get := by
   sorry
 
+public lemma push_evalWithStats_list {w : List α} {ls : List (List α)} :
+  (push w).evalWithStats_list #v[ls].get =
+    .some (
+      [w :: ls].get,
+      [⟨-w.length - 1, 0, -w.length - 1, by omega⟩].get) := by
+  sorry
 
 end Routines
 

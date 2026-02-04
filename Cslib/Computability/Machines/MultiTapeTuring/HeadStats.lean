@@ -30,6 +30,12 @@ public structure HeadStats where
   final : ℤ
   h_bounds : min ≤ final ∧ final ≤ max ∧ min ≤ 0 ∧ 0 ≤ max
 
+/-- The space required. -/
+public def HeadStats.space (hs : HeadStats) : ℕ :=
+  (1 + hs.max - hs.min).toNat -- TODO we know it is nonnegative, is there a way to make use of that?
+
+
+/-- Compute the head statistics for a turing machine starting with a certain tape configuration. -/
 public def headStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
   Part (Fin k → HeadStats) := sorry
 
@@ -56,4 +62,7 @@ lemma seq_evalWithStats (tm₁ tm₂ : MultiTapeTM k α) (tapes : Fin k → BiTa
 
 -- Next step: relate space requirements and head stats.
 
+theorem stats_and_space (tm : MultiTapeTM k α) (tapes tapes' : Fin k → BiTape α) (s : ℕ) :
+  (∃ t, tm.TransformsTapesInTimeAndSpace tapes tapes' t s) ↔
+    ∃ hs, (∑ i, (hs i).space) ≤ s ∧ tm.evalWithStats tapes = .some (tapes', hs) := by sorry
 end Turing
