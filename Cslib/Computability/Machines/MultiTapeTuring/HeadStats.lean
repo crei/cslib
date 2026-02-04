@@ -33,23 +33,26 @@ public structure HeadStats where
 public def headStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
   Part (Fin k → HeadStats) := sorry
 
--- TODO maybe "tape with stats?"
+-- TODO maybe have a type "tape with stats?"
 public def MultiTapeTM.evalWithStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
   Part ((Fin k → BiTape α) × (Fin k → HeadStats)) := sorry
 
 -- move this somewhere else
 def seq (tm₁ tm₂ : MultiTapeTM k α) : MultiTapeTM k α := sorry
 
+def seq_combine_stats (stats₁ stats₂ : Fin k → HeadStats) : Fin k → HeadStats :=
+  fun i => match (stats₁ i, stats₂ i) with
+  | (⟨min₁, max₁, final₁, h₁⟩, ⟨min₂, max₂, final₂, h₂⟩) =>
+    ⟨min min₁ (min₂ + final₁),
+    max max₁ (max₂ + final₁),
+    final₁ + final₂,
+    by omega⟩
+
 lemma seq_evalWithStats (tm₁ tm₂ : MultiTapeTM k α) (tapes : Fin k → BiTape α) (i : Fin k) :
-  (seq tm₁ tm₂).evalWithStats tapes = ((tm₁.evalWithStats tapes).bind
-    (fun (tapes', stats₁) => (tm₂.evalWithStats tapes').map (fun (tapes'', stats₂) =>
-      (tapes'',
-      (fun i => (match (stats₁ i, stats₂ i) with
-      | (⟨min₁, max₁, final₁, h₁⟩, ⟨min₂, max₂, final₂, h₂⟩) =>
-        ⟨min min₁ (min₂ + final₁),
-        max max₁ (max₂ + final₁),
-        final₁ + final₂,
-        by omega⟩)))))) := by sorry
+  (seq tm₁ tm₂).evalWithStats tapes = do
+      let (tapes', stats₁) ← tm₁.evalWithStats tapes
+      let (tapes'', stats₂) ← tm₂.evalWithStats tapes'
+      return (tapes'', seq_combine_stats stats₁ stats₂) := by sorry
 
 -- Next step: relate space requirements and head stats.
 
