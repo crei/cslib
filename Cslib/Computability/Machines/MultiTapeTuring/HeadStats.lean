@@ -30,18 +30,26 @@ public structure HeadStats where
   final : ℤ
   h_bounds : min ≤ final ∧ final ≤ max ∧ min ≤ 0 ∧ 0 ≤ max
 
-public def headStats (tm : MultiTapeTM k α) (i : Fin k) : HeadStats := sorry
+public def headStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
+  Part (Fin k → HeadStats) := sorry
+
+-- TODO maybe "tape with stats?"
+public def MultiTapeTM.evalWithStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
+  Part ((Fin k → BiTape α) × (Fin k → HeadStats)) := sorry
 
 -- move this somewhere else
 def seq (tm₁ tm₂ : MultiTapeTM k α) : MultiTapeTM k α := sorry
 
-lemma seq_headStats (tm₁ tm₂ : MultiTapeTM k α) (i : Fin k) :
-  headStats (seq tm₁ tm₂) i = match (headStats tm₁ i, headStats tm₂ i) with
-  | (⟨min₁, max₁, final₁, h₁⟩, ⟨min₂, max₂, final₂, h₂⟩) =>
-    ⟨min min₁ (min₂ + final₁),
-     max max₁ (max₂ + final₁),
-     final₁ + final₂,
-     by omega⟩ := by sorry
+lemma seq_evalWithStats (tm₁ tm₂ : MultiTapeTM k α) (tapes : Fin k → BiTape α) (i : Fin k) :
+  (seq tm₁ tm₂).evalWithStats tapes = ((tm₁.evalWithStats tapes).bind
+    (fun (tapes', stats₁) => (tm₂.evalWithStats tapes').map (fun (tapes'', stats₂) =>
+      (tapes'',
+      (fun i => (match (stats₁ i, stats₂ i) with
+      | (⟨min₁, max₁, final₁, h₁⟩, ⟨min₂, max₂, final₂, h₂⟩) =>
+        ⟨min min₁ (min₂ + final₁),
+        max max₁ (max₂ + final₁),
+        final₁ + final₂,
+        by omega⟩)))))) := by sorry
 
 -- Next step: relate space requirements and head stats.
 
