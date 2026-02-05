@@ -16,6 +16,13 @@ import Cslib.Computability.Machines.SingleTapeTuring.Basic
 
 namespace Turing
 
+-- TODO use a better alphabet
+public inductive OneTwo where
+  | one
+  | two
+deriving DecidableEq, Inhabited, Fintype
+
+
 variable [Inhabited α] [Fintype α]
 
 /-- An alphabet for list encoding -/

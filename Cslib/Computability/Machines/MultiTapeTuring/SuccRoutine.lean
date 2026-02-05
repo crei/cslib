@@ -17,12 +17,6 @@ namespace Turing
 
 namespace Routines
 
--- TODO use a better alphabet
-public inductive OneTwo where
-  | one
-  | two
-deriving DecidableEq, Inhabited, Fintype
-
 public def succ : MultiTapeTM 1 (WithSep OneTwo) where
   Λ := PUnit
   q₀ := 0
@@ -62,6 +56,9 @@ public lemma push_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
 -- but then this has to hold for all inputs (that are list encodings)
 -- AND this is wrong for anything that uses auxiliary tapes for temporary values.
 -- So we have that plus an additional overhead for auxiliary tapes.
+
+-- TODO so maybe start with writing down the algorithm for Savitch and then see how we can analyze
+-- space usage.
 
 
 end Routines
