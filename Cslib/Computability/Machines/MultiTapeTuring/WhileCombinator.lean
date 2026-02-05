@@ -21,38 +21,40 @@ variable [Inhabited α] [Fintype α]
 variable {k : ℕ}
 
 --- Repeatedly run a sub routine as long as a condition on the symbol
---- at the first head is true.
-public def doWhileSymbol (cond : Option α → Bool) (tm : MultiTapeTM k.succ α) :
-    MultiTapeTM k.succ α where
+--- at the head of tape `i` is true.
+public def doWhileSymbol (cond : Option α → Bool) (i : Fin k) (tm : MultiTapeTM k α) :
+    MultiTapeTM k α where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
 
 @[simp]
 public theorem doWhileSymbol_eval
-  (tm : MultiTapeTM k.succ α)
   (cond : Option α → Bool)
-  (tapes_seq : ℕ → Fin k.succ → BiTape α)
-  (h_transform : ∀ i, tm.eval (tapes_seq i) = .some (tapes_seq i.succ))
-  (h_stops : ∃ m, ¬cond (tapes_seq m 0).head) :
-  (doWhileSymbol cond tm).eval (tapes_seq 0) = .some (tapes_seq (Nat.find h_stops)) := by
+  (i : Fin k)
+  (tm : MultiTapeTM k α)
+  (tapes_seq : ℕ → Fin k → BiTape α)
+  (h_transform : ∀ j, tm.eval (tapes_seq j) = .some (tapes_seq j.succ))
+  (h_stops : ∃ m, ¬cond (tapes_seq m i).head) :
+  (doWhileSymbol cond i tm).eval (tapes_seq 0) = .some (tapes_seq (Nat.find h_stops)) := by
   sorry
 
---- Repeatedly run a sub routine as long as the first word on the first tape is non-empty.
-public def doWhile (tm : MultiTapeTM k.succ (WithSep α)) :
-    MultiTapeTM k.succ (WithSep α) where
+--- Repeatedly run a sub routine as long as the first word on tape `i` is non-empty.
+public def doWhile (i : Fin k) (tm : MultiTapeTM k (WithSep α)) :
+    MultiTapeTM k (WithSep α) where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
 
 @[simp]
 public theorem doWhile_eval
-  (tm : MultiTapeTM k.succ (WithSep α))
-  (tapes_seq : ℕ → Fin k.succ → List (List α))
-  (h_transform : ∀ i, tm.eval_list (tapes_seq i) = .some (tapes_seq i.succ))
-  (h_nonempty : ∀ i, tapes_seq i 0 ≠ [])
-  (h_stops : ∃ m, (tapes_seq m 0).head (h_nonempty m) = []) :
-  (doWhile tm).eval_list (tapes_seq 0) = .some (tapes_seq (Nat.find h_stops)) := by
+  (i : Fin k)
+  (tm : MultiTapeTM k (WithSep α))
+  (tapes_seq : ℕ → Fin k → List (List α))
+  (h_transform : ∀ j, tm.eval_list (tapes_seq j) = .some (tapes_seq j.succ))
+  (h_nonempty : ∀ j, tapes_seq j i ≠ [])
+  (h_stops : ∃ m, (tapes_seq m i).head (h_nonempty m) = []) :
+  (doWhile i tm).eval_list (tapes_seq 0) = .some (tapes_seq (Nat.find h_stops)) := by
   sorry
 
 end Routines

@@ -11,13 +11,14 @@ import Cslib.Foundations.Data.RelatesInSteps
 
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
+public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
 import Mathlib.Data.Nat.Bits
 
 namespace Turing
 
 namespace Routines
 
-public def succ : MultiTapeTM 1 (WithSep OneTwo) where
+public def succ₀: MultiTapeTM 1 (WithSep OneTwo) where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
@@ -29,14 +30,31 @@ public def dya (n : ℕ) : List OneTwo :=
   else
     dya ((n - 1) / 2) ++ [.one]
 
+public def dya_inv : List OneTwo → ℕ := sorry
+
+@[simp, grind =]
+public lemma dya_inv_dya (n : ℕ) : dya_inv (dya n) = n := by sorry
+
+@[simp, grind =]
+public lemma dya_dya_inv (w : List OneTwo) : dya (dya_inv w) = w := by sorry
 
 @[simp]
-public lemma succ_eval_list {n : ℕ} {ls : List (List OneTwo)} :
-  succ.eval_list [(dya n) :: ls].get = .some [(dya n.succ) :: ls].get := by
+public lemma succ₀_eval_list {n : ℕ} {ls : List (List OneTwo)} :
+  succ₀.eval_list [(dya n) :: ls].get = .some [(dya n.succ) :: ls].get := by
   sorry
 
-public lemma push_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
-  succ.evalWithStats_list [(dya n) :: ls].get =
+public def succ {k : ℕ} (i : Fin k.succ) : MultiTapeTM k.succ (WithSep OneTwo) :=
+  succ₀.with_tapes #v[i] (h_le := by omega)
+
+@[simp]
+public theorem succ_eval_list {k : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List OneTwo)}
+  {h_ne : tapes i ≠ []} :
+  (succ i).eval_list tapes =
+    .some (Function.update tapes i ((dya ((dya_inv ((tapes i).head h_ne)).succ)) :: (tapes i).tail)) := by
+  sorry
+
+public lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
+  succ₀.evalWithStats_list [(dya n) :: ls].get =
     .some (
       [(dya n.succ) :: ls].get,
       -- this depends on if we have overflow on the highest dyadic character or not.
