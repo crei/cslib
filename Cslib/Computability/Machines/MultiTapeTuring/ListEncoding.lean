@@ -23,8 +23,6 @@ public inductive OneTwo where
 deriving DecidableEq, Inhabited, Fintype
 
 
-variable [Inhabited α] [Fintype α]
-
 /-- An alphabet for list encoding -/
 public inductive WithSep (α : Type) where
   | blank
@@ -69,5 +67,35 @@ public noncomputable def MultiTapeTM.evalWithStats_list
     Part ((Fin k → List (List α)) × (Fin k → HeadStats)) :=
   ⟨∃ ts, tm.TransformsListsWithStats tapes ts, fun h => h.choose⟩
 
+public def MultiTapeTM.cond_computes
+    (tm : MultiTapeTM k (WithSep α))
+    (f : (Fin k → List (List α)) → Option (Fin k → List (List α))) : Prop :=
+  ∀ tapes, tm.eval_list tapes = f tapes
+
+@[simp]
+theorem MultiTapeTM.eval_of_cond_computes
+    {tm : MultiTapeTM k (WithSep α)}
+    (f : (Fin k → List (List α)) → Option (Fin k → List (List α)))
+    (h_computes : tm.cond_computes f)
+    {tapes : Fin k → List (List α)} :
+    tm.eval_list tapes = f tapes := by
+  specialize h_computes tapes
+  simpa [MultiTapeTM.cond_computes] using h_computes
+
+-- TOOD how is the definition different from the theorem?
+public def MultiTapeTM.computes
+    (tm : MultiTapeTM k (WithSep α))
+    (f : (Fin k → List (List α)) → (Fin k → List (List α))) : Prop :=
+  ∀ tapes, tm.eval_list tapes = .some (f tapes)
+
+@[simp]
+theorem MultiTapeTM.eval_of_computes
+    {tm : MultiTapeTM k (WithSep α)}
+    {f : (Fin k → List (List α)) → (Fin k → List (List α))}
+    (h_computes : tm.computes f)
+    {tapes : Fin k → List (List α)} :
+    tm.eval_list tapes = .some (f tapes) := by
+  specialize h_computes tapes
+  simpa [MultiTapeTM.computes] using h_computes
 
 end Turing

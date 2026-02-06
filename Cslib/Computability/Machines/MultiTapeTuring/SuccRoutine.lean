@@ -47,6 +47,20 @@ public def succ {k : ℕ} (i : Fin k.succ) : MultiTapeTM k.succ (WithSep OneTwo)
   succ₀.with_tapes #v[i] (h_le := by omega)
 
 @[simp]
+public def succ_f {k : ℕ}
+  (i : Fin k.succ)
+  (tapes : Fin k.succ → List (List OneTwo)) : Option (Fin k.succ → List (List OneTwo)) :=
+  if h_ne : tapes i ≠ [] then
+    .some (Function.update tapes i ((dya ((dya_inv ((tapes i).head h_ne)).succ)) :: (tapes i).tail))
+  else
+    .none
+
+@[simp]
+public theorem succ_computes {k : ℕ} {i : Fin k.succ} :
+  (succ i).cond_computes (succ_f i) := by
+  sorry
+
+@[simp]
 public theorem succ_eval_list {k : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List OneTwo)}
   {h_ne : tapes i ≠ []} :
   (succ i).eval_list tapes =

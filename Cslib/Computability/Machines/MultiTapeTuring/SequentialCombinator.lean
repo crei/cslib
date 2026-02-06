@@ -45,7 +45,7 @@ public theorem seq_associative
   (seq (seq tm₁ tm₂) tm₃).eval = (seq tm₁ (seq tm₂ tm₃)).eval := by
   sorry
 
-infix:90 " <;> " => seq
+infixl:90 " <;> " => seq
 
 
 end MultiTapeTM

@@ -35,15 +35,15 @@ public theorem eq₀_eval_list (w₁ w₂ : List OneTwo) (ws₁ ws₂ ws₃ : Li
       [w₁ :: ws₁, w₂ :: ws₂, [] :: ws₃].get) := by
   sorry
 
-public def eq {k : ℕ} (q s t : Fin k)
+public def eq {k : ℕ} (q s t : Fin k.succ)
   (h_neq : q ≠ s := by decide) (h_neq' : q ≠ t := by decide) (h_neq'' : s ≠ t := by decide) :
-  MultiTapeTM k (WithSep OneTwo) :=
+  MultiTapeTM k.succ (WithSep OneTwo) :=
   eq₀.with_tapes #v[q, s, t] (h_le := by omega)
 
 @[simp, grind =]
-public theorem eq_eval_list {k : ℕ} {q s t : Fin k}
+public theorem eq_eval_list {k : ℕ} {q s t : Fin k.succ}
   {h_neq : q ≠ s} {h_neq' : q ≠ t} {h_neq'' : s ≠ t}
-  {tapes : Fin k → List (List OneTwo)} {h_q_nonempty : tapes q ≠ []} {h_s_nonempty : tapes s ≠ []} :
+  {tapes : Fin k.succ → List (List OneTwo)} {h_q_nonempty : tapes q ≠ []} {h_s_nonempty : tapes s ≠ []} :
   (eq q s t (h_neq := h_neq) (h_neq' := h_neq') (h_neq'' := h_neq'')).eval_list tapes =
     Part.some (Function.update tapes t
       ((if (tapes q).head h_q_nonempty = (tapes s).head h_s_nonempty then
