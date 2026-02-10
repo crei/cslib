@@ -190,37 +190,26 @@ public theorem add_eval_list {tapes : Fin 7 → List (List OneTwo)}
   add.eval_list tapes = .some
     (Function.update tapes 2 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
       dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 2)))) := by
-  simp [add, loop_eval_list, copy_eval_list, succ_iter, h_nonempty₁, h_nonempty₀]
+  -- TODO this is weird, the second case, j ≠ 2 somehow has problems
+  -- with the different Fin types.
+  simp only [add, Fin.isValue, MultiTapeTM.seq_eval_list, ne_eq, h_nonempty₁, not_false_eq_true,
+    copy_eval_list, Nat.succ_eq_add_one, Nat.reduceAdd, Part.bind_eq_bind, Part.bind_some,
+    Fin.coe_ofNat_eq_mod, Nat.zero_mod, Fin.zero_eta, Fin.reduceEq, Function.update_of_ne,
+    h_nonempty₀, loop_eval_list, Fin.reduceCastLE, Function.update_self, reduceCtorEq, succ_iter,
+    List.head_cons, List.tail_cons, Part.map_some, Part.some_inj]
   funext j
   by_cases hx : j = 2
   · simp [hx]
     grind
-  · sorry
-
-
-  --   simp [hx]
-  --   intro h_four
-  --   unfold Function.update
-  --   simp_all
-  --   intro h_two
-  --   have h_contra : j = 2 := by
-  --     simp_all
-
-
-  --   simp_all
-
-  --   unfold Function.update
-  --   simp_all
-  --   grind
-  --   split
-  --   · rename_i h_two
-  --     have : j = 2 := by omega
-  --     simp [this]
-  --     rw [Nat.add_comm]
-  --   · rename_i h_two
-  --     have : j = 2 := by omega
-  --     sorry
-  -- · simp [hx]; grind
+  · unfold Function.update
+    simp only [Fin.isValue, eq_rec_constant, Fin.castLE_mk, Fin.eta, hx, ↓reduceDIte, dite_eq_ite,
+      dite_eq_right_iff, ite_eq_right_iff]
+    intro h h_eq
+    have : (⟨↑j, h⟩ : Fin 4) = 2 := h_eq
+    have : j = 2 := by
+      ext
+      simpa using Fin.val_eq_of_eq this
+    contradiction
 
 public def add₀ : MultiTapeTM 4 (WithSep OneTwo) :=
   (((copy 1 2 <;> push 1 []) <;>
