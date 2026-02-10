@@ -23,10 +23,39 @@ public import Cslib.Computability.Machines.MultiTapeTuring.EqualRoutine
 
 namespace Turing
 
-namespace Routines
-
 variable [Inhabited α] [Fintype α]
 variable {k : ℕ}
+
+public structure MultiTapeTMWithAuxTapes (k aux : ℕ) (α : Type)
+    extends MultiTapeTM (k + aux) (WithSep α)
+
+--- Adds `aux` many tapes to the TM, which are guaranteed to be restored to their original
+--- content at the end of the computation.
+public def MultiTapeTM.allocate_aux_tapes (tm : MultiTapeTM k (WithSep α)) (aux : ℕ) :
+    MultiTapeTMWithAuxTapes k aux α where
+  toMultiTapeTM := tm.extend (by omega)
+
+--- Sets the last `aux` many tapes to be aux tapes, which are guaranteed to be restored to their
+--- original content at the end of the computation.
+public def MultiTapeTM.set_aux_tapes (aux : ℕ) (tm : MultiTapeTM (k + aux) (WithSep α)) :
+    MultiTapeTMWithAuxTapes k aux α where
+  toMultiTapeTM := tm
+
+public def MultiTapeTMWithAuxTapes.with_tapes
+  {aux₁ aux₂ k₁ k₂ : ℕ}
+  {h_le_k : k₁ ≤ k₂}
+  {h_le_aux : aux₁ ≤ aux₂}
+  (tm : MultiTapeTMWithAuxTapes k₁ aux₁ α)
+  (seq : Vector (Fin k₂) k₁) : MultiTapeTMWithAuxTapes k₂ aux₂ α :=
+  -- For (i, t) in seq, we need to swap i and t and then again for all
+  -- i = 1,...,aux₁, we need to swap (k₁ + i and k₂ + i).
+  (tm.toMultiTapeTM.with_tapes (h_le := by omega) (
+    ((seq.map fun (t : Fin k₂) => (⟨t, by omega⟩ : Fin (k₂ + aux₂))) : (Vector (Fin (k₂ + aux₂)) k₁)) ++
+    (((Vector.ofFn fun i => ⟨k₂ + i, by omega⟩) : (Vector (Fin (k₂ + aux₂)) aux₁))))).set_aux_tapes aux₂
+
+
+namespace Routines
+
 
 -- a
 -- b
@@ -78,6 +107,30 @@ def loop (i : Fin k) (tm : MultiTapeTM k (WithSep OneTwo)) :
   pop cond <;>
   pop counter <;>
   pop target
+
+-- loop is a TM with k  tapes and 3 aux tapes.
+
+-- TODO the main complication is how to use 'with_tapes', because it is supposed
+-- to assign the aux tapes to some tapes that we know are not used for anything else.
+-- So define a with_tapes function on MultiTapeTMWithAuxTapes
+
+def loop' (i : Fin k) (tm : MultiTapeTM k (WithSep OneTwo)) :
+    MultiTapeTMWithAuxTapes 3 k (WithSep OneTwo) :=
+  let target : Fin (k + 3) := ⟨k, by omega⟩
+  let counter : Fin (k + 3) := ⟨k.succ, by omega⟩
+  let cond : Fin (k + 3) := ⟨k.succ.succ, by omega⟩
+  (copy ⟨i, by omega⟩ target (h_neq := by grind) <;>
+  push counter [] <;>
+  neq target counter cond (by grind) (by grind) (by grind) <;>
+  doWhile cond (
+    pop cond <;>
+    tm.extend (by omega) <;>
+    succ counter <;>
+    neq target counter cond (by grind) (by grind) (by grind)) <;>
+  pop cond <;>
+  pop counter <;>
+  pop target).set_aux_tapes 3
+
 
 
 @[simp]
@@ -151,7 +204,7 @@ lemma succ_iter {k r : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List 
     grind
 
 -- Add 0 and 1 and store the result in 2.
-public def add : MultiTapeTM 7 (WithSep OneTwo) :=
+public def add : MultiTapeTMWithAuxTapes 3 4 (WithSep OneTwo) :=
   copy 1 2 <;>
   loop 0 (succ 2)
 
