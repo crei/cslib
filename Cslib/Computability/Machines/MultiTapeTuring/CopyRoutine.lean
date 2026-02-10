@@ -41,7 +41,7 @@ public def copy {k : ℕ} (i j : Fin k.succ) (h_neq : i ≠ j := by decide) :
 public lemma copy_eval_list
   {k : ℕ} {i j : Fin k.succ} {h_neq : i ≠ j}
   {tapes : Fin k.succ → List (List α)}
-  {h_tapes_i : tapes i ≠ []} :
+  (h_tapes_i : tapes i ≠ []) :
   (copy i j (h_neq := h_neq)).eval_list tapes = Part.some
     (Function.update tapes j (((tapes i).head h_tapes_i) :: (tapes j))) := by
   sorry

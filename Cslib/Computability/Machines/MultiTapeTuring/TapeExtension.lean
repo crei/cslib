@@ -34,7 +34,7 @@ public lemma MultiTapeTM.extend_eval {k₁ k₂ : ℕ} (h_le : k₁ ≤ k₂)
   {tapes : Fin k₂ → BiTape α} :
   (tm.extend h_le).eval tapes =
     (tm.eval (tapes ⟨·, by omega⟩)).map (fun tapes' =>
-      fun i : Fin k₂ => if h : i < k₁ then tapes' ⟨i, h⟩ else tapes i) := by
+      fun i : Fin k₂ => if h : i.val < k₁ then tapes' ⟨i, h⟩ else tapes i) := by
   sorry
 
 end Turing

@@ -67,6 +67,12 @@ public noncomputable def MultiTapeTM.evalWithStats_list
     Part ((Fin k → List (List α)) × (Fin k → HeadStats)) :=
   ⟨∃ ts, tm.TransformsListsWithStats tapes ts, fun h => h.choose⟩
 
+-- TODO Multiple ways to define this here:
+-- 1. Use Part, then it captures non-decidable computations as well.
+-- 2. Use Option but only make a partial statement: If the result of the function is None,
+--  then we do not know what the TM does.
+-- 3. State it as it is now.
+-- I think we should rather use 1 and 2, but it could complicate the usage.
 public def MultiTapeTM.cond_computes
     (tm : MultiTapeTM k (WithSep α))
     (f : (Fin k → List (List α)) → Option (Fin k → List (List α))) : Prop :=
@@ -89,7 +95,7 @@ public def MultiTapeTM.computes
   ∀ tapes, tm.eval_list tapes = .some (f tapes)
 
 @[simp]
-theorem MultiTapeTM.eval_of_computes
+public theorem MultiTapeTM.eval_of_computes
     {tm : MultiTapeTM k (WithSep α)}
     {f : (Fin k → List (List α)) → (Fin k → List (List α))}
     (h_computes : tm.computes f)
