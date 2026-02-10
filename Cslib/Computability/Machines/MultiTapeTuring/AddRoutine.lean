@@ -79,31 +79,6 @@ def loop (i : Fin k) (tm : MultiTapeTM k (WithSep OneTwo)) :
   pop counter <;>
   pop target
 
-theorem loop_computes_inner {i : Fin k}
-  {tm : MultiTapeTM k (WithSep OneTwo)}
-  {f_tm : (Fin k → List (List OneTwo)) → (Fin k → List (List OneTwo))}
-  {h_tm : tm.computes f_tm}
-  {tapes : Fin (k + 3) → List (List OneTwo)}
-  {h_tapes_i : tapes ⟨i, by omega⟩ ≠ []}
-  {h_tapes_cond : tapes ⟨k + 2, by omega⟩ ≠ []} :
-  let target : Fin (k + 3) := ⟨k, by omega⟩
-  let counter : Fin (k + 3) := ⟨k.succ, by omega⟩
-  let cond : Fin (k + 3) := ⟨k.succ.succ, by omega⟩
-  (pop cond <;>
-  tm.extend (by omega) <;>
-  succ counter <;>
-  neq target counter cond (by grind) (by grind) (by grind)).eval_list tapes = Part.some (do
-      let tapes ← (tm.extend (by omega)).eval_list tapes
-      let tapes := Function.update tapes cond ((tapes cond).tail h_tapes_cond)
-      let tapes := Function.update tapes counter (succ_f counter)
-        (dya ((dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)).succ)) :: (tapes counter).tail)) := by
-    tm.eva
-  (loop i tm).eval_list tapes = .some
-    fun j => if h : j < k then
-      (f_tm^[dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)] (fun i => tapes ⟨i, by omega⟩)) ⟨j, h⟩
-    else
-      tapes j := by
-  sorry
 
 @[simp]
 theorem loop_eval_list {i : Fin k}
@@ -116,16 +91,16 @@ theorem loop_eval_list {i : Fin k}
           fun j => if h : j.val < k then tapes' ⟨j, h⟩ else (tapes j) := by
   sorry
 
-@[simp]
-theorem loop_eval_list' {i : Fin k}
-  {tm : MultiTapeTM k (WithSep OneTwo)}
-  {tapes : Fin (k + 3) → List (List OneTwo)}
-  (h_tapes_i : tapes ⟨i, by omega⟩ ≠ []) :
-  (loop i tm).eval_list tapes =
-      (Part.bind · (tm.extend (k₂ := k + 3) (by omega)).eval_list)
-      ^[dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)]
-      (Part.some tapes) := by
-  sorry
+-- @[simp]
+-- theorem loop_eval_list' {i : Fin k}
+--   {tm : MultiTapeTM k (WithSep OneTwo)}
+--   {tapes : Fin (k + 3) → List (List OneTwo)}
+--   (h_tapes_i : tapes ⟨i, by omega⟩ ≠ []) :
+--   (loop i tm).eval_list tapes =
+--       (Part.bind · (tm.extend (k₂ := k + 3) (by omega)).eval_list)
+--       ^[dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)]
+--       (Part.some tapes) := by
+--   sorry
 
 /-- Execute `tm` in a loop as long as running `cond` pushes a non-empty value to the last tape. -/
 def whileCond (cond : MultiTapeTM k.succ (WithSep α)) (tm : MultiTapeTM k (WithSep α)) :
@@ -135,22 +110,22 @@ def whileCond (cond : MultiTapeTM k.succ (WithSep α)) (tm : MultiTapeTM k (With
   doWhile k ((pop k) <;> (tm.extend (by omega) <;> cond)) <;>
   (pop ⟨k, by omega⟩)
 
-lemma whileCond_eval_list {cond : MultiTapeTM k.succ (WithSep α)}
-  {tm : MultiTapeTM k (WithSep α)}
-  {tm_f : Fin k.succ → List (List α) → Option (Fin k.succ → List (List α))}
-  {cond_f : (Fin k.succ → List (List α)) → List α}
-  {h_cond_f : ∀ t, cond.eval_list t = Part.some (Function.update t ⟨k, _⟩ ((cond_f t) :: (t ⟨k, _⟩)))}
-  {tapes : Fin k.succ → List (List α)}
-  {h_nonempty : tapes ⟨k, by omega⟩ ≠ []} :
-  (whileCond cond tm).eval_list tapes =
-    cond.eval_list tapes >>= fun tapes' =>
-      doWhile_eval_list ⟨k, by omega⟩
-        (Function.update tapes' ⟨k, by omega⟩ (tapes' ⟨k, by omega⟩.tail))
-        (pop ⟨k, by omega⟩)
-        (tm.extend (by omega) <;> cond) >>= fun tapes'' =>
-          pop.eval_list tapes'' := by
-  simp [whileCond, seq_eval_list, doWhile_eval_list, pop_eval_list]
-  grind
+-- lemma whileCond_eval_list {cond : MultiTapeTM k.succ (WithSep α)}
+--   {tm : MultiTapeTM k (WithSep α)}
+--   {tm_f : Fin k.succ → List (List α) → Option (Fin k.succ → List (List α))}
+--   {cond_f : (Fin k.succ → List (List α)) → List α}
+--   {h_cond_f : ∀ t, cond.eval_list t = Part.some (Function.update t ⟨k, _⟩ ((cond_f t) :: (t ⟨k, _⟩)))}
+--   {tapes : Fin k.succ → List (List α)}
+--   {h_nonempty : tapes ⟨k, by omega⟩ ≠ []} :
+--   (whileCond cond tm).eval_list tapes =
+--     cond.eval_list tapes >>= fun tapes' =>
+--       doWhile_eval_list ⟨k, by omega⟩
+--         (Function.update tapes' ⟨k, by omega⟩ (tapes' ⟨k, by omega⟩.tail))
+--         (pop ⟨k, by omega⟩)
+--         (tm.extend (by omega) <;> cond) >>= fun tapes'' =>
+--           pop.eval_list tapes'' := by
+--   simp [whileCond, seq_eval_list, doWhile_eval_list, pop_eval_list]
+--   grind
 
 
 -- public def add₀ : MultiTapeTM 4 (WithSep OneTwo) :=
@@ -185,6 +160,7 @@ lemma Function.update_update {α β : Type} [DecidableEq α] {f : α → β} {i 
   Function.update (Function.update f i x) i y = Function.update f i y := by
   grind
 
+@[simp]
 public theorem add_eval_list {tapes : Fin 7 → List (List OneTwo)}
   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
   add.eval_list tapes = .some
@@ -211,43 +187,30 @@ public theorem add_eval_list {tapes : Fin 7 → List (List OneTwo)}
       simpa using Fin.val_eq_of_eq this
     contradiction
 
-public def add₀ : MultiTapeTM 4 (WithSep OneTwo) :=
-  (((copy 1 2 <;> push 1 []) <;>
-  -- Here we have [a, 0 :: b, b]
-  (whileCond ((eq 0 1 3) <;> isZero 3) (succ 1 <;> succ 2))) <;>
-  -- Here we have [a, a :: b, a + b]
-  (pop 1))
+-- Add head of 0 to head of 1 (and store it in head of 1).
+public def add_assign₀ : MultiTapeTM 7 (WithSep OneTwo) :=
+  add <;>
+  pop 1 <;>
+  copy 2 1 <;>
+  pop 2
 
--- lemma add₀_while_eval_list {tapes : Fin 4 → List (List OneTwo)}
---   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
---   (whileCond ((eq 0 1 3) <;> not 3) (succ 1 <;> succ 2)).eval_list tapes = .some
---     (Function.update tapes 2 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
---       dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 2)))) := by
-
-@[simp, grind =]
-theorem add₀_eval_list {tapes : Fin 4 → List (List OneTwo)}
+public theorem add_assign₀_eval_list {tapes : Fin 7 → List (List OneTwo)}
   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
-  add₀.eval_list tapes = .some
-    (Function.update tapes 2 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
-      dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 2)))) := by
-  sorry
+  add_assign₀.eval_list tapes = .some
+    (Function.update tapes 1 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
+      dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 1).tail))) := by
+  simp [add_assign₀, h_nonempty₀, h_nonempty₁]
+  grind
 
--- --- Repeatedly run a sub routine as long as a condition on the symbol
--- --- at the first head is true.
--- public def ite (tm₁ tm₂ : MultiTapeTM k.succ (WithSep α)) :
---     MultiTapeTM k.succ (WithSep α) where
---   Λ := PUnit
---   q₀ := 0
---   M _ syms := sorry
+public def add_assign {k : ℕ} (i j : Fin k) (h_neq : i ≠ j := by decide) :
+    MultiTapeTM k (WithSep OneTwo) :=
+  add_assign₀.with_tapes #v[i, j] (h_le := by omega)
 
--- @[simp]
--- public theorem ite_eval
---   (tm₁ tm₂ : MultiTapeTM k.succ (WithSep α))
---   (tapes : Fin k.succ → List (List α))
---   (h_nonempty : tapes 0 ≠ []) :
---   (ite tm₁ tm₂).eval_list tapes =
---     if (tapes 0).head h_nonempty = [] then tm₂.eval_list tapes else tm₁.eval_list tapes := by
---   sorry
+-- Multiplies the heads of 0 and 1 and stores the result in 2.
+public def mul : MultiTapeTM 7 (WithSep OneTwo) :=
+  loop 0 (
+    add_assigncopy 2 3 <;>
+    loop 3 (add_assign <;> push 2 []))
 
 end Routines
 
