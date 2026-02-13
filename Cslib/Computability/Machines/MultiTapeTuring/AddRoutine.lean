@@ -154,14 +154,24 @@ lemma succ_iter {k r : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List 
     simp [ih, succ_eval_list]
     grind
 
--- TODO continue here: see if we can prove `add` more easily now with the aux tapes
--- and maybe see if we can change the constant parameters from `Fin k` to `ℕ`, because
--- then we have a lower bound on k, otherwise they sometimes wrap.
+@[simp]
+lemma succ'_iter {k aux r : ℕ} {i : ℕ} {tapes : Fin k → List (List OneTwo)}
+  {h_i_lt : i < k}
+  {h_tapes_i : tapes ⟨i, h_i_lt⟩ ≠ []} :
+  (Part.bind · (succ' (aux := aux) i h_i_lt).eval_list)^[r] (.some tapes) =
+    Part.some (Function.update tapes ⟨i, h_i_lt⟩ (
+      (dya ((dya_inv ((tapes ⟨i, h_i_lt⟩).head h_tapes_i)) + r)) :: (tapes ⟨i, h_i_lt⟩).tail)) := by
+  induction r with
+  | zero => simp
+  | succ r ih =>
+    rw [Function.iterate_succ_apply']
+    simp [ih]
+    grind
 
 -- Add 0 and 1 and store the result in 2.
 public def add : MultiTapeTMWithAuxTapes 3 3 (WithSep OneTwo) :=
-  ((copy 1 2).allocate_aux_tapes 3) <;a>
-  loop 0 ((succ 2).set_aux_tapes 0)
+  (copy' 1 2) <;a>
+  loop 0 (succ' (aux := 0) 2)
 
 @[simp]
 lemma Function.update_update {α β : Type} [DecidableEq α] {f : α → β} {i : α} {x y : β} :
@@ -174,26 +184,8 @@ public theorem add_eval_list {tapes : Fin 3 → List (List OneTwo)}
   add.eval_list tapes = .some
     (Function.update tapes 2 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
       dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 2)))) := by
-  -- TODO this is weird, the second case, j ≠ 2 somehow has problems
-  -- with the different Fin types.
-  simp only [add, Fin.isValue, MultiTapeTM.seq_eval_list, ne_eq, h_nonempty₁, not_false_eq_true,
-    copy_eval_list, Nat.succ_eq_add_one, Nat.reduceAdd, Part.bind_eq_bind, Part.bind_some,
-    Fin.coe_ofNat_eq_mod, Nat.zero_mod, Fin.zero_eta, Fin.reduceEq, Function.update_of_ne,
-    h_nonempty₀, loop_eval_list, Fin.reduceCastLE, Function.update_self, reduceCtorEq, succ_iter,
-    List.head_cons, List.tail_cons, Part.map_some, Part.some_inj]
-  funext j
-  by_cases hx : j = 2
-  · simp [hx]
-    grind
-  · unfold Function.update
-    simp only [Fin.isValue, eq_rec_constant, Fin.castLE_mk, Fin.eta, hx, ↓reduceDIte, dite_eq_ite,
-      dite_eq_right_iff, ite_eq_right_iff]
-    intro h h_eq
-    have : (⟨↑j, h⟩ : Fin 4) = 2 := h_eq
-    have : j = 2 := by
-      ext
-      simpa using Fin.val_eq_of_eq this
-    contradiction
+  simp [add, h_nonempty₁, h_nonempty₀]
+  grind
 
 -- Add head of 0 to head of 1 (and store it in head of 1).
 public def add_assign₀ : MultiTapeTMWithAuxTapes 3 3 (WithSep OneTwo) :=
