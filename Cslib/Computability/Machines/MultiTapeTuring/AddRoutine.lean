@@ -64,7 +64,7 @@ public theorem neq_eval_list {k : ℕ} {q s t : Fin k.succ}
 
 /-- Execute `tm` a number of times as given by the first word on tape `i`.
 Note that the iteration counter is not directly available to the TM. -/
--- TODO actually we don't need three new aux tapes, we only need that aux is at least 3.
+-- TODO maybe it's easier to require that `aux` is at least 3
 def loop (i : Fin k) (tm : MultiTapeTMWithAuxTapes k aux (WithSep OneTwo)) :
     MultiTapeTMWithAuxTapes k (max aux 3) (WithSep OneTwo) :=
   sorry
@@ -190,7 +190,7 @@ public theorem add_eval_list {tapes : Fin 3 → List (List OneTwo)}
 -- Add head of 0 to head of 1 (and store it in head of 1).
 public def add_assign₀ : MultiTapeTMWithAuxTapes 3 3 (WithSep OneTwo) :=
   add <;a>
-  (pop 1 <;> copy 2 1 <;> pop 2).set_aux_tapes 3
+  (pop' 1 <;a> copy' 2 1 <;a> pop' 2).set_aux_tapes 3
 
 public theorem add_assign₀_eval_list {tapes : Fin 3 → List (List OneTwo)}
   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
@@ -198,6 +198,7 @@ public theorem add_assign₀_eval_list {tapes : Fin 3 → List (List OneTwo)}
     (Function.update tapes 1 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
       dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 1).tail))) := by
   simp [add_assign₀, h_nonempty₀, h_nonempty₁]
+  -- TODO continue here
   grind
 
 public def add_assign {k : ℕ} (i j : ℕ) (h_neq : i ≠ j := by decide) :
