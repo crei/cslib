@@ -20,6 +20,8 @@ namespace MultiTapeTM
 variable [Inhabited α]
 variable {k : ℕ}
 
+-- TODO maybe only define this on machines with aux tapes
+
 --- Run tm₂ after tm₁ has terminated.
 public def seq (tm₁ tm₂ : MultiTapeTM k α) : MultiTapeTM k α := sorry
 

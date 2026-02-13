@@ -33,17 +33,21 @@ public lemma copy₁_eval_list {w : List α} {ls₁ ls₂ : List (List α)} :
   copy₁.eval_list [w :: ls₁, ls₂].get = Part.some [w :: ls₁, w :: ls₂].get := by
   sorry
 
-public def copy {k : ℕ} (i j : Fin k.succ) (h_neq : i ≠ j := by decide) :
-  MultiTapeTM k.succ (WithSep α) :=
-  copy₁.with_tapes #v[i, j] (h_le := by omega)
+public def copy {k : ℕ} (i j : ℕ)
+  (h_neq : i ≠ j := by decide)
+  (h_i_lt : i < k := by decide)
+  (h_j_lt : j < k := by decide) :
+  MultiTapeTM k (WithSep α) :=
+  copy₁.with_tapes #v[⟨i, h_i_lt⟩, ⟨j, h_j_lt⟩] (h_le := by omega)
 
 @[simp, grind =]
 public lemma copy_eval_list
-  {k : ℕ} {i j : Fin k.succ} {h_neq : i ≠ j}
-  {tapes : Fin k.succ → List (List α)}
-  (h_tapes_i : tapes i ≠ []) :
-  (copy i j (h_neq := h_neq)).eval_list tapes = Part.some
-    (Function.update tapes j (((tapes i).head h_tapes_i) :: (tapes j))) := by
+  {k : ℕ} {i j : ℕ} {h_neq : i ≠ j} {h_i_lt : i < k} {h_j_lt : j < k}
+  {tapes : Fin k → List (List α)}
+  (h_tapes_i : tapes ⟨i, h_i_lt⟩ ≠ []) :
+  (copy i j (h_neq := h_neq) (h_i_lt) (h_j_lt)).eval_list tapes = Part.some
+    (Function.update tapes ⟨j, h_j_lt⟩
+      (((tapes ⟨i, h_i_lt⟩).head h_tapes_i) :: (tapes ⟨j, h_j_lt⟩))) := by
   sorry
 
 public lemma copy₁_evalWithStats {w : List α} {ls₁ ls₂ : List (List α)} :
