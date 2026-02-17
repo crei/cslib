@@ -44,18 +44,32 @@ instance : Coe (MultiTapeTM k α) (MultiTapeTMWithAuxTapes k 0 α) where
 
 namespace MultiTapeTMWithAuxTapes
 
---- We define `eval_list` only on the non-aux tapes and require that all aux tapes
---- are reset to their original contents.
+--- We define `eval_list` only on the non-aux tapes and require that when run on empty aux
+--- tapes, they are reset to empty at the end.
+--- The stricter requirement is that the aux tapes are also reset to their original
+--- contents when they are not empty, but it is not practical to model this here.
 public noncomputable def eval_list
     (tm : MultiTapeTMWithAuxTapes k aux (WithSep α))
     (tapes : Fin k → List (List α)) :
     Part (Fin k → List (List α)) :=
-  ⟨∃ final_tapes, ∀ existing_tapes : Fin (k + aux) → List (List α),
+  ⟨∃ final_tapes,
     tm.TransformsLists
       -- TODO maybe we need "extends" and "restricts" functions for tapes.
-      (fun i => if h : i < k then tapes ⟨i, h⟩ else existing_tapes ⟨i, by omega⟩)
-      (fun i => if h : i < k then final_tapes ⟨i, h⟩ else existing_tapes ⟨i, by omega⟩),
+      (fun i => if h : i < k then tapes ⟨i, h⟩ else [])
+      (fun i => if h : i < k then final_tapes ⟨i, h⟩ else []),
     fun h => h.choose⟩
+
+-- TODO continue here:
+
+public lemma set_aux_tapes_eval_list
+  (tm : MultiTapeTM (k + aux) (WithSep α))
+  (tapes : Fin k → List (List α))
+  (h_empty : sorry) -- TODO condition that on empty aux tapes, the aux tapes are empty again) :
+   :
+  (tm.set_aux_tapes aux).eval_list tapes =
+    (MultiTapeTM.eval_list tm (fun i => if h : i < k then tapes ⟨i, h⟩ else [])) := by sorry
+  sorry
+
 
 --- Require a minimum number of auxiliary tapes, adding new ones if needed.
 public def require_aux_tapes
@@ -76,6 +90,42 @@ public def with_tapes
   (tm.toMultiTapeTM.with_tapes (h_le := by omega) (
     ((seq.map fun (t : Fin k₂) => (⟨t, by omega⟩)) : (Vector (Fin (k₂ + aux₂)) k₁)) ++
     (((.ofFn fun i => ⟨k₂ + i, by omega⟩) : (Vector (Fin (k₂ + aux₂)) aux₁))))).set_aux_tapes aux₂
+
+-- --- Semantics of tm.with_tapes when tm is a 3-tape Turing machine.
+-- @[simp, grind =]
+-- public theorem with_tapes_eval_list_3
+--   {i j l : Fin k}
+--   (tm : MultiTapeTMWithAuxTapes 3 aux (WithSep α))
+--   (tapes : Fin k → List (List α)) :
+--   (tm.with_tapes #v[i, j, l]).eval_list tapes =
+--     (tm.eval_list (fun _ => tapes j)).map
+--     (fun tapes' t => if t = j then tapes' 0 else tapes t) := by
+--   unfold MultiTapeTM.with_tapes
+--   have h_tapes :
+--     ((fun tapes'' : Fin k.succ → BiTape α => tapes'' ∘ Equiv.swap 0 j) ∘
+--     (fun (tapes'' : Fin 1 → BiTape α) i =>
+--       if h : i = 0 then tapes'' ⟨i, by simp [h]⟩ else tapes (Equiv.swap 0 j i))) =
+--     fun tapes' => (fun t => if t = j then tapes' 0 else tapes t) := by
+--     grind
+--   simp [Part.map_map, h_tapes]
+
+-- --- Semantics of tm.with_tapes when tm is a 3-tape Turing machine.
+-- @[simp, grind =]
+-- public theorem with_tapes_eval_3
+--   {j : Fin k.succ}
+--   (tm : MultiTapeTMWithAuxTapes 3 aux α)
+--   (tapes : Fin k.succ → BiTape α) :
+--   (tm.with_tapes #v[j] (h_le := by omega)).eval tapes =
+--     (tm.eval (fun _ => tapes j)).map
+--     (fun tapes' t => if t = j then tapes' 0 else tapes t) := by
+--   unfold MultiTapeTM.with_tapes
+--   have h_tapes :
+--     ((fun tapes'' : Fin k.succ → BiTape α => tapes'' ∘ Equiv.swap 0 j) ∘
+--     (fun (tapes'' : Fin 1 → BiTape α) i =>
+--       if h : i = 0 then tapes'' ⟨i, by simp [h]⟩ else tapes (Equiv.swap 0 j i))) =
+--     fun tapes' => (fun t => if t = j then tapes' 0 else tapes t) := by
+--     grind
+--   simp [Part.map_map, h_tapes]
 
 --- Run tm₂ after tm₁ has terminated.
 public def seq (tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux α) : MultiTapeTMWithAuxTapes k aux α :=
