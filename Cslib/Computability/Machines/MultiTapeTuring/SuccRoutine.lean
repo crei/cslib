@@ -88,7 +88,7 @@ public def succ' {k aux : ℕ} (i : ℕ) (h_i_lt : i < k := by decide) :
 @[simp, grind =]
 public lemma succ'_eval_list {k aux : ℕ} {i : ℕ} {h_i_lt : i < k}
     {tapes : Fin k → List (List OneTwo)} :
-  (succ' (aux := aux) i h_i_lt).eval_list tapes = .some (
+  (succ' (aux := aux) i h_i_lt).eval_list_aux tapes = .some (
     if h_ne : tapes ⟨i, h_i_lt⟩ ≠ [] then
       Function.update tapes ⟨i, h_i_lt⟩
         ((dya ((dya_inv ((tapes ⟨i, h_i_lt⟩).head h_ne)).succ)) :: (tapes ⟨i, h_i_lt⟩).tail)

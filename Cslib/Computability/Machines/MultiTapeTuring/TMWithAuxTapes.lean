@@ -42,34 +42,42 @@ public def MultiTapeTM.set_aux_tapes (aux : ℕ) (tm : MultiTapeTM (k + aux) α)
 instance : Coe (MultiTapeTM k α) (MultiTapeTMWithAuxTapes k 0 α) where
   coe tm := tm.allocate_aux_tapes 0
 
+--- Extends the number of tapes (lists) from `k` to `k + aux` by adding empty lists.
+@[simp]
+public abbrev extend_tapes (tapes : Fin k → List (List α)) : Fin (k + aux) → List (List α) :=
+  fun i => if h : i < k then tapes ⟨i, h⟩ else []
+
+--- Reduces the number of tapes from `k + aux` to `k` if all the removed tapes (lists) are empty.
+@[simp, grind =]
+public def try_reduce_tapes_if_empty (tapes : Fin (k + aux) → List (List α)) :
+    Option (Fin k → List (List α)) :=
+  if ∀ i, (h : i < aux) → tapes ⟨k + i, by omega⟩ = [] then
+    some fun i => tapes ⟨i, by omega⟩
+  else
+    none
+
 namespace MultiTapeTMWithAuxTapes
 
 --- We define `eval_list` only on the non-aux tapes and require that when run on empty aux
---- tapes, they are reset to empty at the end.
+--- tapes, they are reset to empty at the end. If this is not the case, this function evaluates
+--- to `Part.none` even if the machine halts.
 --- The stricter requirement is that the aux tapes are also reset to their original
 --- contents when they are not empty, but it is not practical to model this here.
-public noncomputable def eval_list
+@[simp, grind =]
+public noncomputable def eval_list_aux
     (tm : MultiTapeTMWithAuxTapes k aux (WithSep α))
     (tapes : Fin k → List (List α)) :
     Part (Fin k → List (List α)) :=
-  ⟨∃ final_tapes,
-    tm.TransformsLists
-      -- TODO maybe we need "extends" and "restricts" functions for tapes.
-      (fun i => if h : i < k then tapes ⟨i, h⟩ else [])
-      (fun i => if h : i < k then final_tapes ⟨i, h⟩ else []),
-    fun h => h.choose⟩
+  (tm.toMultiTapeTM.eval_list (extend_tapes tapes)).bind
+    fun tapes => try_reduce_tapes_if_empty tapes
 
--- TODO continue here:
-
-public lemma set_aux_tapes_eval_list
+@[simp, grind =]
+public lemma set_aux_tapes_eval_list {α}
   (tm : MultiTapeTM (k + aux) (WithSep α))
-  (tapes : Fin k → List (List α))
-  (h_empty : sorry) -- TODO condition that on empty aux tapes, the aux tapes are empty again) :
-   :
-  (tm.set_aux_tapes aux).eval_list tapes =
-    (MultiTapeTM.eval_list tm (fun i => if h : i < k then tapes ⟨i, h⟩ else [])) := by sorry
-  sorry
-
+  (tapes : Fin k → List (List α)) :
+  (tm.set_aux_tapes aux).eval_list_aux tapes =
+    (tm.eval_list (extend_tapes tapes)).bind fun tapes => try_reduce_tapes_if_empty tapes := by
+  simp
 
 --- Require a minimum number of auxiliary tapes, adding new ones if needed.
 public def require_aux_tapes
@@ -135,9 +143,17 @@ public def seq (tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux α) : MultiTapeTMWit
 -- the use of eval_list).
 -- Do we need that?
 @[simp, grind=]
-public theorem seq_eval_list
+public theorem seq_eval_list_aux
   {tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux (WithSep α)}
   {tapes₀ : Fin k → List (List α)} :
+  (seq tm₁ tm₂).eval_list_aux tapes₀ =
+    tm₁.eval_list_aux tapes₀ >>= fun tape₁ => tm₂.eval_list_aux tape₁ := by
+  sorry
+
+@[simp, grind=]
+public theorem seq_eval_list
+  {tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux (WithSep α)}
+  {tapes₀ : Fin (k + aux) → List (List α)} :
   (seq tm₁ tm₂).eval_list tapes₀ =
     tm₁.eval_list tapes₀ >>= fun tape₁ => tm₂.eval_list tape₁ := by
   sorry

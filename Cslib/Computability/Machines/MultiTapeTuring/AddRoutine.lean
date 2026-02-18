@@ -90,8 +90,8 @@ theorem loop_eval_list {i : Fin k}
   {tm : MultiTapeTMWithAuxTapes k aux (WithSep OneTwo)}
   {tapes : Fin k → List (List OneTwo)}
   (h_tapes_i : tapes ⟨i, by omega⟩ ≠ []) :
-  (loop i tm).eval_list tapes =
-      ((Part.bind · tm.eval_list)^[dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)]
+  (loop i tm).eval_list_aux tapes =
+      ((Part.bind · tm.eval_list_aux)^[dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)]
         (Part.some tapes)) := by
   sorry
 
@@ -158,7 +158,7 @@ lemma succ_iter {k r : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List 
 lemma succ'_iter {k aux r : ℕ} {i : ℕ} {tapes : Fin k → List (List OneTwo)}
   {h_i_lt : i < k}
   {h_tapes_i : tapes ⟨i, h_i_lt⟩ ≠ []} :
-  (Part.bind · (succ' (aux := aux) i h_i_lt).eval_list)^[r] (.some tapes) =
+  (Part.bind · (succ' (aux := aux) i h_i_lt).eval_list_aux)^[r] (.some tapes) =
     Part.some (Function.update tapes ⟨i, h_i_lt⟩ (
       (dya ((dya_inv ((tapes ⟨i, h_i_lt⟩).head h_tapes_i)) + r)) :: (tapes ⟨i, h_i_lt⟩).tail)) := by
   induction r with
@@ -181,7 +181,7 @@ lemma Function.update_update {α β : Type} [DecidableEq α] {f : α → β} {i 
 @[simp, grind =]
 public theorem add₀_eval_list {tapes : Fin 3 → List (List OneTwo)}
   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
-  add₀.eval_list tapes = .some
+  add₀.eval_list_aux tapes = .some
     (Function.update tapes 2 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
       dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 2)))) := by
   simp [add₀, h_nonempty₁, h_nonempty₀]
@@ -206,18 +206,29 @@ public theorem add_eval_list {i j l : ℕ}
   {h_i_lt : i < k} {h_j_lt : j < k} {h_l_lt : l < k} {h_aux : 3 ≤ aux}
   {tapes : Fin k → List (List OneTwo)}
   {h_nonempty_i : tapes ⟨i, h_i_lt⟩ ≠ []} {h_nonempty_j : tapes ⟨j, h_j_lt⟩ ≠ []} :
-  (add i j l h_aux h_neq₁ h_neq₂ h_neq₃ h_i_lt h_j_lt h_l_lt).eval_list tapes =
+  (add i j l h_aux h_neq₁ h_neq₂ h_neq₃ h_i_lt h_j_lt h_l_lt).eval_list_aux tapes =
       .some (Function.update tapes ⟨l, h_l_lt⟩ (
         (dya (dya_inv ((tapes ⟨i, h_i_lt⟩).head h_nonempty_i) +
           dya_inv ((tapes ⟨j, h_j_lt⟩).head h_nonempty_j)) :: (tapes ⟨l, h_l_lt⟩)))) := by
   sorry
+
+-- TODO remove this? (inline)
 
 -- Add head of 0 to head of 1 (and store it in head of 1).
 def add_assign₀' : MultiTapeTMWithAuxTapes 3 3 (WithSep OneTwo) :=
   add (k := 3) (aux := 3) 0 1 2 <;a> pop' 1 <;a> copy' 2 1 <;a> pop' 2
 
 @[simp]
-lemma add_assign₀'_eval_list {tapes : Fin 3 → List (List OneTwo)}
+lemma add_assign₀'_eval_list_aux {tapes : Fin 3 → List (List OneTwo)}
+  {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
+  add_assign₀'.eval_list_aux tapes = .some
+    (Function.update tapes 1 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
+      dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 1).tail))) := by
+  simp [add_assign₀', h_nonempty₁, h_nonempty₀]
+  grind
+
+@[simp]
+lemma add_assign₀'_eval_list {tapes : Fin 6 → List (List OneTwo)}
   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
   add_assign₀'.eval_list tapes = .some
     (Function.update tapes 1 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
@@ -231,11 +242,22 @@ public def add_assign₀ : MultiTapeTMWithAuxTapes 2 4 (WithSep OneTwo) :=
 
 public theorem add_assign₀_eval_list {tapes : Fin 2 → List (List OneTwo)}
   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
-  add_assign₀.eval_list tapes = .some
+  add_assign₀.eval_list_aux tapes = .some
     (Function.update tapes 1 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
       dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 1).tail))) := by
-  simp [add_assign₀, h_nonempty₁, h_nonempty₀]
+  simp [add_assign₀]
+  have h_extend₀ : (extend_tapes (aux := 1) tapes) 0 ≠ [] := by simp [h_nonempty₀]
+  have h_extend₁ : (extend_tapes (aux := 1) tapes) 1 ≠ [] := by simp [h_nonempty₁]
+  let x := add_assign₀'_eval_list_aux (h_nonempty₀ := h_extend₀) (h_nonempty₁ := h_extend₁)
+    (tapes := (extend_tapes (aux := 1) tapes))
+  simp at x
+
+  simp [x]
+  refine add_assign₀'_eval_list
+  simp [add_assign₀'_eval_list h_nonempty₁ h_nonempty₀]
+
   -- TODO this is problematic because of adding and removing aux tapes.
+  -- we need theorems to relate eval_list
   sorry
 
 public def add_assign (i j : ℕ)

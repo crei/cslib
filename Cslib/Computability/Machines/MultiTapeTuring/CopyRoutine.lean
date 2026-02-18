@@ -65,7 +65,7 @@ public lemma copy'_eval_list
   {k aux : ℕ} {i j : ℕ} {h_neq : i ≠ j} {h_i_lt : i < k} {h_j_lt : j < k}
   {tapes : Fin k → List (List α)}
   (h_tapes_i : tapes ⟨i, h_i_lt⟩ ≠ []) :
-  (copy' (aux := aux) i j (h_neq := h_neq) (h_i_lt) (h_j_lt)).eval_list tapes = Part.some
+  (copy' (aux := aux) i j (h_neq := h_neq) (h_i_lt) (h_j_lt)).eval_list_aux tapes = Part.some
     (Function.update tapes ⟨j, h_j_lt⟩
       (((tapes ⟨i, h_i_lt⟩).head h_tapes_i) :: (tapes ⟨j, h_j_lt⟩))) := by
   sorry
