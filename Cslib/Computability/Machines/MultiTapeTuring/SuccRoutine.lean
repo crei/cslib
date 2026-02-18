@@ -35,6 +35,10 @@ public def dya (n : ℕ) : List OneTwo :=
 public def dya_inv : List OneTwo → ℕ := sorry
 
 @[simp, grind =]
+public lemma dya_inv_zero : dya_inv [] = 0 := by
+  sorry
+
+@[simp, grind =]
 public lemma dya_inv_dya (n : ℕ) : dya_inv (dya n) = n := by sorry
 
 @[simp, grind =]

@@ -42,10 +42,37 @@ public def MultiTapeTM.set_aux_tapes (aux : ℕ) (tm : MultiTapeTM (k + aux) α)
 instance : Coe (MultiTapeTM k α) (MultiTapeTMWithAuxTapes k 0 α) where
   coe tm := tm.allocate_aux_tapes 0
 
+@[simp]
+public abbrev tapes_take
+  (tapes : Fin k → List (List α))
+  (k' : ℕ)
+  (h_le : k' ≤ k) : Fin k' → List (List α) :=
+  fun i => tapes ⟨i, by omega⟩
+
+@[simp]
+public lemma Function.update_tapes_take
+    {α}
+    (k : ℕ)
+    {k' : ℕ}
+    {h_le : k' ≤ k}
+    {tapes : Fin k → List (List α)}
+    {p : Fin k'}
+    {v : List (List α)} :
+  Function.update (tapes_take tapes k' h_le) p v =
+    tapes_take (Function.update tapes ⟨p,  by omega⟩ v) k' h_le := by
+  sorry
+
+@[simp]
+public abbrev tapes_extend_by
+  (tapes : Fin k → List (List α))
+  (extend_by : Fin (k + aux) → List (List α)) :
+  Fin (k + aux) → List (List α) :=
+  fun i => if h : i < k then tapes ⟨i, h⟩ else extend_by i
+
 --- Extends the number of tapes (lists) from `k` to `k + aux` by adding empty lists.
 @[simp]
-public abbrev extend_tapes (tapes : Fin k → List (List α)) : Fin (k + aux) → List (List α) :=
-  fun i => if h : i < k then tapes ⟨i, h⟩ else []
+public abbrev tapes_extend (tapes : Fin k → List (List α)) : Fin (k + aux) → List (List α) :=
+  tapes_extend_by tapes (fun _ => [])
 
 --- Reduces the number of tapes from `k + aux` to `k` if all the removed tapes (lists) are empty.
 @[simp, grind =]
@@ -68,7 +95,7 @@ public noncomputable def eval_list_aux
     (tm : MultiTapeTMWithAuxTapes k aux (WithSep α))
     (tapes : Fin k → List (List α)) :
     Part (Fin k → List (List α)) :=
-  (tm.toMultiTapeTM.eval_list (extend_tapes tapes)).bind
+  (tm.toMultiTapeTM.eval_list (tapes_extend tapes)).bind
     fun tapes => try_reduce_tapes_if_empty tapes
 
 @[simp, grind =]
@@ -76,7 +103,7 @@ public lemma set_aux_tapes_eval_list {α}
   (tm : MultiTapeTM (k + aux) (WithSep α))
   (tapes : Fin k → List (List α)) :
   (tm.set_aux_tapes aux).eval_list_aux tapes =
-    (tm.eval_list (extend_tapes tapes)).bind fun tapes => try_reduce_tapes_if_empty tapes := by
+    (tm.eval_list (tapes_extend tapes)).bind fun tapes => try_reduce_tapes_if_empty tapes := by
   simp
 
 --- Require a minimum number of auxiliary tapes, adding new ones if needed.
@@ -136,35 +163,35 @@ public def with_tapes
 --   simp [Part.map_map, h_tapes]
 
 --- Run tm₂ after tm₁ has terminated.
-public def seq (tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux α) : MultiTapeTMWithAuxTapes k aux α :=
-  sorry
+-- public def seq (tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux α) : MultiTapeTMWithAuxTapes k aux α :=
+--   (MultiTapeTM.seq tm₁ tm₂).set_aux_tapes aux
 
--- TODO this requires the auxiliary tapes to be empty between the two computations (because of
--- the use of eval_list).
--- Do we need that?
-@[simp, grind=]
-public theorem seq_eval_list_aux
-  {tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux (WithSep α)}
-  {tapes₀ : Fin k → List (List α)} :
-  (seq tm₁ tm₂).eval_list_aux tapes₀ =
-    tm₁.eval_list_aux tapes₀ >>= fun tape₁ => tm₂.eval_list_aux tape₁ := by
-  sorry
+-- -- TODO this requires the auxiliary tapes to be empty between the two computations (because of
+-- -- the use of eval_list).
+-- -- Do we need that?
+-- @[simp, grind=]
+-- public theorem seq_eval_list_aux
+--   {tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux (WithSep α)}
+--   {tapes₀ : Fin k → List (List α)} :
+--   (seq tm₁ tm₂).eval_list_aux tapes₀ =
+--     tm₁.eval_list_aux tapes₀ >>= fun tape₁ => tm₂.eval_list_aux tape₁ := by
+--   sorry
 
-@[simp, grind=]
-public theorem seq_eval_list
-  {tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux (WithSep α)}
-  {tapes₀ : Fin (k + aux) → List (List α)} :
-  (seq tm₁ tm₂).eval_list tapes₀ =
-    tm₁.eval_list tapes₀ >>= fun tape₁ => tm₂.eval_list tape₁ := by
-  sorry
+-- @[simp, grind=]
+-- public theorem seq_eval_list
+--   {tm₁ tm₂ : MultiTapeTMWithAuxTapes k aux (WithSep α)}
+--   {tapes₀ : Fin (k + aux) → List (List α)} :
+--   (seq tm₁ tm₂).eval_list tapes₀ =
+--     tm₁.eval_list tapes₀ >>= fun tape₁ => tm₂.eval_list tape₁ := by
+--   sorry
 
-public theorem seq_associative
-  (tm₁ tm₂ tm₃ : MultiTapeTMWithAuxTapes k aux α)
-  (tapes₀ : Fin k → List (List α)) :
-  (seq (seq tm₁ tm₂) tm₃).eval = (seq tm₁ (seq tm₂ tm₃)).eval := by
-  sorry
+-- public theorem seq_associative
+--   (tm₁ tm₂ tm₃ : MultiTapeTMWithAuxTapes k aux α)
+--   (tapes₀ : Fin k → List (List α)) :
+--   (seq (seq tm₁ tm₂) tm₃).eval = (seq tm₁ (seq tm₂ tm₃)).eval := by
+--   sorry
 
-infixl:90 " <;a> " => seq
+-- infixl:90 " <;a> " => seq
 
 end MultiTapeTMWithAuxTapes
 

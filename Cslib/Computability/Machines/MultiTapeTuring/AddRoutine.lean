@@ -84,6 +84,24 @@ def loop (i : Fin k) (tm : MultiTapeTMWithAuxTapes k aux (WithSep OneTwo)) :
   -- pop counter <;>
   -- pop target).set_aux_tapes (aux + 3)
 
+def loop' (i : ℕ) {h_i : i < k}
+  (tm : MultiTapeTM k (WithSep OneTwo)) : MultiTapeTM (k + 3) (WithSep OneTwo) :=
+  sorry
+  -- let target : Fin (k + (aux + 3)) := ⟨aux, by omega⟩
+  -- let counter : Fin (k + (aux + 3)) := ⟨aux + 1, by omega⟩
+  -- let cond : Fin (k + (aux + 3)) := ⟨aux + 2, by omega⟩
+  -- (copy (k := k + (aux + 3)) i target (h_neq := by grind) <;>
+  -- push counter [] <;>
+  -- neq target counter cond (by grind) (by grind) (by grind) <;>
+  -- doWhile cond (
+  --   pop cond <;>
+  --   tm.toMultiTapeTM <;>
+  --   succ counter <;>
+  --   neq target counter cond (by grind) (by grind) (by grind)) <;>
+  -- pop cond <;>
+  -- pop counter <;>
+  -- pop target).set_aux_tapes (aux + 3)
+
 
 @[simp]
 theorem loop_eval_list {i : Fin k}
@@ -93,6 +111,17 @@ theorem loop_eval_list {i : Fin k}
   (loop i tm).eval_list_aux tapes =
       ((Part.bind · tm.eval_list_aux)^[dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)]
         (Part.some tapes)) := by
+  sorry
+
+@[simp]
+theorem loop'_eval_list {i : ℕ} {h_i : i < k}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  {tapes : Fin (k + 3) → List (List OneTwo)}
+  (h_tapes_i : tapes ⟨i, by omega⟩ ≠ []) :
+  (loop' i tm (h_i := h_i)).eval_list tapes =
+      (((Part.bind · tm.eval_list)^[dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)]
+        (Part.some (tapes_take tapes k (by omega))))).map
+          fun tapes' => tapes_extend_by tapes' tapes := by
   sorry
 
 -- @[simp]
@@ -143,6 +172,7 @@ def whileCond (cond : MultiTapeTM k.succ (WithSep α)) (tm : MultiTapeTM k (With
 --   simp [add₀]
 --   grind [add₀]
 
+@[simp]
 lemma succ_iter {k r : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List OneTwo)}
   {h_tapes_i : tapes i ≠ []} :
   (Part.bind · (succ i).eval_list)^[r] (.some tapes) = Part.some (Function.update tapes i (
@@ -169,9 +199,8 @@ lemma succ'_iter {k aux r : ℕ} {i : ℕ} {tapes : Fin k → List (List OneTwo)
     grind
 
 -- Add 0 and 1 and store the result in 2.
-public def add₀ : MultiTapeTMWithAuxTapes 3 3 (WithSep OneTwo) :=
-  (copy' 1 2) <;a>
-  loop 0 (succ' (aux := 0) 2)
+public def add₀ : MultiTapeTM 6 (WithSep OneTwo) :=
+  (copy 1 2) <;> loop' (h_i := by decide) 0 (succ (k := 2) 2)
 
 @[simp]
 lemma Function.update_update {α β : Type} [DecidableEq α] {f : α → β} {i : α} {x y : β} :
@@ -179,49 +208,50 @@ lemma Function.update_update {α β : Type} [DecidableEq α] {f : α → β} {i 
   grind
 
 @[simp, grind =]
-public theorem add₀_eval_list {tapes : Fin 3 → List (List OneTwo)}
+public theorem add₀_eval_list {tapes : Fin 6 → List (List OneTwo)}
   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
-  add₀.eval_list_aux tapes = .some
+  add₀.eval_list tapes = .some
     (Function.update tapes 2 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
       dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 2)))) := by
   simp [add₀, h_nonempty₁, h_nonempty₀]
   grind
 
-public def add {k aux : ℕ} (i j l : ℕ)
-  (h_aux : 3 ≤ aux := by decide)
-  (h_neq₁ : i ≠ j := by decide)
-  (h_neq₂ : i ≠ l := by decide)
-  (h_neq₃ : j ≠ l := by decide)
-  (h_i_lt : i < k := by decide)
-  (h_j_lt : j < k := by decide)
-  (h_l_lt : l < k := by decide) :
-  MultiTapeTMWithAuxTapes k aux (WithSep OneTwo) :=
-  add₀.with_tapes #v[⟨i, h_i_lt⟩, ⟨j, h_j_lt⟩, ⟨l, h_l_lt⟩]
-    (h_le_k := by omega)
-    (h_le_aux := h_aux)
+-- TODO do the 'aux, aux + 1, aux + 2' automatically.
+
+public def add {k : ℕ} (i j l aux : ℕ)
+  (h_bounds : i ≠ j ∧ i ≠ l ∧ j ≠ l ∧ i < aux ∧ j < aux ∧ l < aux ∧ aux + 3 ≤ k + 6) :
+  MultiTapeTM (k + 6) (WithSep OneTwo) :=
+  add₀.with_tapes #v[
+    ⟨i, by omega⟩, ⟨j, by omega⟩, ⟨l, by omega⟩,
+    ⟨aux, by omega⟩, ⟨aux + 1, by omega⟩, ⟨aux + 2, by omega⟩] (h_le := by omega)
 
 @[simp, grind =]
-public theorem add_eval_list {i j l : ℕ}
-  {h_neq₁ : i ≠ j} {h_neq₂ : i ≠ l} {h_neq₃ : j ≠ l}
-  {h_i_lt : i < k} {h_j_lt : j < k} {h_l_lt : l < k} {h_aux : 3 ≤ aux}
-  {tapes : Fin k → List (List OneTwo)}
-  {h_nonempty_i : tapes ⟨i, h_i_lt⟩ ≠ []} {h_nonempty_j : tapes ⟨j, h_j_lt⟩ ≠ []} :
-  (add i j l h_aux h_neq₁ h_neq₂ h_neq₃ h_i_lt h_j_lt h_l_lt).eval_list_aux tapes =
-      .some (Function.update tapes ⟨l, h_l_lt⟩ (
-        (dya (dya_inv ((tapes ⟨i, h_i_lt⟩).head h_nonempty_i) +
-          dya_inv ((tapes ⟨j, h_j_lt⟩).head h_nonempty_j)) :: (tapes ⟨l, h_l_lt⟩)))) := by
+public theorem add_eval_list {i j l aux : ℕ}
+  {h_bounds : i ≠ j ∧ i ≠ l ∧ j ≠ l ∧ i < aux ∧ j < aux ∧ l < aux ∧ aux + 3 ≤ k + 6}
+  {tapes : Fin (k + 6) → List (List OneTwo)}
+  {h_nonempty_i : tapes ⟨i, by omega⟩ ≠ []}
+  {h_nonempty_j : tapes ⟨j, by omega⟩ ≠ []} :
+  (add i j l aux h_bounds).eval_list tapes =
+      .some (Function.update tapes ⟨l, by omega⟩ (
+        (dya (dya_inv ((tapes ⟨i, by omega⟩).head h_nonempty_i) +
+          dya_inv ((tapes ⟨j, by omega⟩).head h_nonempty_j)) :: (tapes ⟨l, by omega⟩)))) := by
   sorry
 
 -- TODO remove this? (inline)
 
+-- TODO continue here:
+-- I think we don't even need eval_list on Aux machines.
+-- Check if it works to remove the whole aux machine stuff and instead provide an
+-- aux variable explicitly
+
 -- Add head of 0 to head of 1 (and store it in head of 1).
-def add_assign₀' : MultiTapeTMWithAuxTapes 3 3 (WithSep OneTwo) :=
-  add (k := 3) (aux := 3) 0 1 2 <;a> pop' 1 <;a> copy' 2 1 <;a> pop' 2
+def add_assign₀' : MultiTapeTM 6 (WithSep OneTwo) :=
+  add 0 1 2 3 (by decide) <;> pop 1 <;> copy 2 1 <;> pop 2
 
 @[simp]
-lemma add_assign₀'_eval_list_aux {tapes : Fin 3 → List (List OneTwo)}
+lemma add_assign₀'_eval_list_aux {tapes : Fin 6 → List (List OneTwo)}
   {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
-  add_assign₀'.eval_list_aux tapes = .some
+  add_assign₀'.eval_list tapes = .some
     (Function.update tapes 1 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
       dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 1).tail))) := by
   simp [add_assign₀', h_nonempty₁, h_nonempty₀]
@@ -236,42 +266,58 @@ lemma add_assign₀'_eval_list {tapes : Fin 6 → List (List OneTwo)}
   simp [add_assign₀', h_nonempty₁, h_nonempty₀]
   grind
 
--- Add head of 0 to head of 1 (and store it in head of 1).
-public def add_assign₀ : MultiTapeTMWithAuxTapes 2 4 (WithSep OneTwo) :=
-  add_assign₀'.set_aux_tapes 4
+public def add_assign
+  (i j aux : ℕ)
+  (h_bounds : i ≠ j ∧ i < aux ∧ j < aux ∧ aux + 4 ≤ k + 6) :
+  MultiTapeTM (k + 6) (WithSep OneTwo) :=
+  add_assign₀'.with_tapes #v[
+    ⟨i, by omega⟩, ⟨j, by omega⟩,
+    ⟨aux, by omega⟩, ⟨aux + 1, by omega⟩, ⟨aux + 2, by omega⟩, ⟨aux + 3, by omega⟩]
+    (h_le := by omega)
 
-public theorem add_assign₀_eval_list {tapes : Fin 2 → List (List OneTwo)}
-  {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
-  add_assign₀.eval_list_aux tapes = .some
-    (Function.update tapes 1 ((dya (dya_inv ((tapes 0).head h_nonempty₀) +
-      dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 1).tail))) := by
-  simp [add_assign₀]
-  have h_extend₀ : (extend_tapes (aux := 1) tapes) 0 ≠ [] := by simp [h_nonempty₀]
-  have h_extend₁ : (extend_tapes (aux := 1) tapes) 1 ≠ [] := by simp [h_nonempty₁]
-  let x := add_assign₀'_eval_list_aux (h_nonempty₀ := h_extend₀) (h_nonempty₁ := h_extend₁)
-    (tapes := (extend_tapes (aux := 1) tapes))
-  simp at x
-
-  simp [x]
-  refine add_assign₀'_eval_list
-  simp [add_assign₀'_eval_list h_nonempty₁ h_nonempty₀]
-
-  -- TODO this is problematic because of adding and removing aux tapes.
-  -- we need theorems to relate eval_list
+public theorem add_assign_eval_list {i j aux : ℕ}
+  {h_bounds : i ≠ j ∧ i < aux ∧ j < aux ∧ aux + 4 ≤ k + 6}
+  {tapes : Fin (k + 6) → List (List OneTwo)}
+  {h_nonempty_i : tapes ⟨i, by omega⟩ ≠ []}
+  {h_nonempty_j : tapes ⟨j, by omega⟩ ≠ []} :
+  (add_assign i j aux h_bounds).eval_list tapes =
+      .some (Function.update tapes ⟨j, by omega⟩ (
+        (dya (dya_inv ((tapes ⟨i, by omega⟩).head h_nonempty_i) +
+          dya_inv ((tapes ⟨j, by omega⟩).head h_nonempty_j)) :: (tapes ⟨j, by omega⟩).tail))) := by
   sorry
 
-public def add_assign (i j : ℕ)
-  (h_aux : 3 ≤ aux := by decide)
-  (h_neq : i ≠ j := by decide)
-  (h_i_lt : i < k := by decide)
-  (h_j_lt : j < k := by decide) :
-    MultiTapeTMWithAuxTapes k aux (WithSep OneTwo) :=
-  add_assign₀.with_tapes #v[⟨i, h_i_lt⟩, ⟨j, h_j_lt⟩] (h_le_aux := h_aux)
-
 -- Multiplies the heads of 0 and 1 and stores the result in 2.
-public def mul : MultiTapeTMWithAuxTapes 3 3 (WithSep OneTwo) :=
-  (push 2 []).allocate_aux_tapes 3 <;a>
-  loop 0 (add_assign 1 2)
+public def mul : MultiTapeTM 10 (WithSep OneTwo) :=
+  (push 2 []) <;> loop' 0 (h_i := by omega) (add_assign (k := 1) 1 2 3 (by omega))
+
+@[simp]
+lemma add_assign_iter {k i j aux r : ℕ}
+  {h_bounds : i ≠ j ∧ i < aux ∧ j < aux ∧ aux + 4 ≤ k + 6}
+  {tapes : Fin (k + 6) → List (List OneTwo)}
+  {h_tapes_i : tapes ⟨i, by omega⟩ ≠ []}
+  {h_tapes_j : tapes ⟨j, by omega⟩ ≠ []} :
+  (Part.bind · (add_assign i j aux h_bounds).eval_list)^[r] (.some tapes) =
+    Part.some (Function.update tapes ⟨j, by omega⟩ (
+      (dya ((dya_inv ((tapes ⟨j, by omega⟩).head h_tapes_j)) +
+        r * (dya_inv ((tapes ⟨i, by omega⟩).head h_tapes_i)))) ::
+        (tapes ⟨j, by omega⟩).tail)) := by
+  induction r with
+  | zero => simp
+  | succ r ih =>
+    rw [Function.iterate_succ_apply']
+    simp only [ih, Part.bind_some]
+    rw [add_assign_eval_list]
+    · simp; grind
+    · grind
+    · grind
+
+public theorem mul_eval_list {tapes : Fin 10 → List (List OneTwo)}
+  {h_nonempty₀ : tapes 0 ≠ []} {h_nonempty₁ : tapes 1 ≠ []} :
+  mul.eval_list tapes = .some
+    (Function.update tapes 2 ((dya (dya_inv ((tapes 0).head h_nonempty₀) *
+      dya_inv ((tapes 1).head h_nonempty₁)) :: (tapes 2)))) := by
+  simp [mul, h_nonempty₀, h_nonempty₁]
+  grind
 
 end Routines
 
