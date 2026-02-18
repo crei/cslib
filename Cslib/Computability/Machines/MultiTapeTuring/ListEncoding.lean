@@ -8,6 +8,7 @@ module
 
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.HeadStats
+public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
 
 import Mathlib.Tactic.DeriveFintype
 
@@ -54,6 +55,36 @@ public noncomputable def MultiTapeTM.eval_list
     (tapes : Fin k → List (List α)) :
     Part (Fin k → List (List α)) :=
   ⟨∃ tapes', tm.TransformsLists tapes tapes', fun h => h.choose⟩
+
+@[simp, grind =]
+public theorem MultiTapeTM.extend_eval_list
+    {α : Type} [Fintype α]
+    {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
+    {tm : MultiTapeTM k₁ (WithSep α)}
+    {tapes : Fin k₂ → List (List α)} :
+  (tm.extend h_le).eval_list tapes =
+    (tm.eval_list (tapes ⟨·, by omega⟩)).map (fun tapes' =>
+      fun i : Fin k₂ => if h : i.val < k₁ then tapes' ⟨i, h⟩ else tapes i) := by
+  sorry
+
+@[simp, grind =]
+public theorem MultiTapeTM.permute_tapes_eval_list
+  {α : Type} [Fintype α] [Inhabited α]
+  (tm : MultiTapeTM k (WithSep α)) (σ : Equiv.Perm (Fin k)) (tapes : Fin k → List (List α)) :
+  (tm.permute_tapes σ).eval_list tapes =
+    (tm.eval_list (tapes ∘ σ)).map (fun tapes' => tapes' ∘ σ.symm) := by
+  sorry
+
+@[simp, grind =]
+public theorem MultiTapeTM.with_tapes'_eval_list
+  {α : Type} [Fintype α] [Inhabited α]
+  {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
+  {tm : MultiTapeTM k₁ (WithSep α)} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
+  {tapes : Fin k₂ → List (List α)} :
+  (tm.with_tapes' f h_inj (h_le := h_le)).eval_list tapes =
+    (tm.eval_list (tapes ∘ f)).map
+      (fun tapes' => fun t => if h : ∃ i, f i = t then tapes' h.choose else tapes t) := by
+  sorry
 
 def MultiTapeTM.TransformsListsWithStats
     (tm : MultiTapeTM k (WithSep α))

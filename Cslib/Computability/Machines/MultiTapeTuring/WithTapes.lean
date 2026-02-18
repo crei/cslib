@@ -9,6 +9,8 @@ module
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.TapeExtension
 
+public import Mathlib.Logic.Equiv.Fintype
+
 -- TODO create a "common file"
 import Cslib.Computability.Machines.SingleTapeTuring.Basic
 
@@ -66,6 +68,30 @@ public theorem MultiTapeTM.with_tapes_eval_1
     grind
   simp [Part.map_map, h_tapes]
 
+public noncomputable def inj_to_perm {k₁ k₂ : ℕ} (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) :
+  Equiv.Perm (Fin k₂) :=
+  let f' : {i : Fin k₂ // i < k₁} → Fin k₂ := fun ⟨i, _⟩ => f ⟨i, by omega⟩
+  have h_f'_inj : f'.Injective := by sorry
+  (Equiv.ofInjective f' h_f'_inj).extendSubtype
 
+--- This is a different version of `with_tapes` that uses an injection instead of
+--- a generic list. The hope is that it is easier to prove a theorem about `eval` using this.
+public noncomputable def MultiTapeTM.with_tapes' {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
+  (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) : MultiTapeTM k₂ α :=
+  (tm.extend h_le).permute_tapes (inj_to_perm f h_inj)
+
+public theorem MultiTapeTM.with_tapes'_eval
+  {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
+  (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) {h_inj : f.Injective}
+  (tapes : Fin k₂ → BiTape α) :
+  (tm.with_tapes' f h_inj (h_le := h_le)).eval tapes =
+    (tm.eval (tapes ∘ f)).map
+      (fun tapes' => fun t => if h : ∃ i, f i = t then tapes' h.choose else tapes t) := by
+  simp [with_tapes', inj_to_perm]
+  sorry
+
+-- TODO continue here: This seems to work fine for copy, as long as we do not have
+-- any preconditions.
+-- Try to extend this to "loop" and "add" (also try to remove the preconditions).
 
 end Turing
