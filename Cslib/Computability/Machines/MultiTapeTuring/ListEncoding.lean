@@ -75,57 +75,6 @@ public theorem MultiTapeTM.permute_tapes_eval_list
     (tm.eval_list (tapes ∘ σ)).map (fun tapes' => tapes' ∘ σ.symm) := by
   sorry
 
--- TODO move somewhere else
-
-public noncomputable def apply_updates
-  {α : Type} [Fintype α] [Inhabited α]
-  {k₁ k₂ : ℕ}
-  (tapes : Fin k₂ → List (List α))
-  (tapes' : Fin k₁ → List (List α))
-  (f : Fin k₁ → Fin k₂)
-  (i : Fin k₂) : List (List α) :=
-  if h : ∃ j, f j = i then tapes' h.choose else tapes i
-
-@[simp, grind =]
-public lemma apply_updates_function_update
-  {α : Type} [Fintype α] [Inhabited α]
-  {k₁ k₂ : ℕ}
-  {tapes : Fin k₂ → List (List α)}
-  {f : Fin k₁ → Fin k₂}
-  {h_inj : f.Injective}
-  {t : Fin k₂}
-  {new_val : List (List α)} :
-  apply_updates tapes (Function.update tapes t new_val ∘ f) f =
-    Function.update tapes t new_val := by
-  sorry
-
-@[simp, grind =]
-public lemma apply_updates_function_update'
-  {α : Type} [Fintype α] [Inhabited α]
-  {k₁ k₂ : ℕ}
-  {tapes : Fin k₂ → List (List α)}
-  {f : Fin k₁ → Fin k₂}
-  (h_inj : f.Injective)
-  {t : Fin k₁}
-  {new_val : List (List α)} :
-  apply_updates tapes (Function.update (tapes ∘ f) t new_val) f =
-    Function.update tapes (f t) new_val := by
-  sorry
-
-@[simp, grind =]
-public lemma apply_updates_function_update_apply'
-  {α : Type} [Fintype α] [Inhabited α]
-  {k₁ k₂ : ℕ}
-  {tapes : Fin k₂ → List (List α)}
-  {f : Fin k₁ → Fin k₂}
-  (h_inj : f.Injective)
-  {t : Fin k₁}
-  {new_val : List (List α)}
-  {i : Fin k₂} :
-  apply_updates tapes (Function.update (tapes ∘ f) t new_val) f i =
-    Function.update tapes (f t) new_val i := by
-  sorry
-
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval_list
   {α : Type} [Fintype α] [Inhabited α]
@@ -135,8 +84,6 @@ public theorem MultiTapeTM.with_tapes_eval_list
   (tm.with_tapes f h_inj (h_le := h_le)).eval_list tapes =
     (tm.eval_list (tapes ∘ f)).map
       (fun tapes' => fun t => apply_updates tapes tapes' f t) := by
---      (fun tapes' => tapes ∘ (inj_to_perm f h_inj).invFun) := by
--- TODO Continue here. Maybe use invFun
    sorry
 
 def MultiTapeTM.TransformsListsWithStats

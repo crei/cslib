@@ -37,6 +37,10 @@ public theorem eq₀_eval_list {tapes : Fin 3 → List (List OneTwo)} :
       []) :: (tapes 2))) := by
   sorry
 
+--- A Turing machine that pushes the new word "1"
+--- to tape `t` if the first words on tape `q` and tape `s` are the same
+--- and otherwise pushes the empty word to tape `t`.
+--- If one of the tapes `q` or `s` are empty, uses the empty word for comparison.
 public def eq {k : ℕ} (q s t : Fin k)
   (h_neq : q ≠ s := by decide) (h_neq' : q ≠ t := by decide) (h_neq'' : s ≠ t := by decide) :
   MultiTapeTM k (WithSep OneTwo) :=

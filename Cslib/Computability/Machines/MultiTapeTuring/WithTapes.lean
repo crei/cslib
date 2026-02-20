@@ -65,6 +65,46 @@ public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
   (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) : MultiTapeTM k₂ α :=
   (tm.extend h_le).permute_tapes (inj_to_perm f h_inj)
 
+
+-- TODO do not use `h.choose` here but rather assume that `f` is injective.
+
+public noncomputable def apply_updates
+  {γ : Type}
+  {k₁ k₂ : ℕ}
+  (tapes : Fin k₂ → γ)
+  (tapes' : Fin k₁ → γ)
+  (f : Fin k₁ → Fin k₂)
+  (i : Fin k₂) : γ :=
+  if h : ∃ j, f j = i then tapes' h.choose else tapes i
+
+@[simp, grind =]
+public lemma apply_updates_function_update_apply
+  {γ : Type}
+  {k₁ k₂ : ℕ}
+  {tapes : Fin k₂ → γ}
+  {f : Fin k₁ → Fin k₂}
+  (h_inj : f.Injective)
+  {t : Fin k₁}
+  {new_val : γ}
+  {i : Fin k₂} :
+  apply_updates tapes (Function.update (tapes ∘ f) t new_val) f i =
+    Function.update tapes (f t) new_val i := by
+  sorry
+
+@[simp, grind =]
+public lemma apply_updates_function_update
+  {γ : Type}
+  {k₁ k₂ : ℕ}
+  {tapes : Fin k₂ → γ}
+  {f : Fin k₁ → Fin k₂}
+  (h_inj : f.Injective)
+  {t : Fin k₁}
+  {new_val : γ} :
+  apply_updates tapes (Function.update (tapes ∘ f) t new_val) f =
+    Function.update tapes (f t) new_val := by
+  funext i
+  apply apply_updates_function_update_apply h_inj
+
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval
   {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
@@ -72,8 +112,7 @@ public theorem MultiTapeTM.with_tapes_eval
   {tapes : Fin k₂ → BiTape α} :
   (tm.with_tapes f h_inj (h_le := h_le)).eval tapes =
     (tm.eval (tapes ∘ f)).map
-      (fun tapes' => fun t => if h : ∃ i, f i = t then tapes' h.choose else tapes t) := by
-      -- (fun tapes' => tapes ∘ (inj_to_perm f h_inj).symm) := by
+      (fun tapes' => fun t => apply_updates tapes tapes' f t) := by
   simp [with_tapes]
   sorry
 
