@@ -11,7 +11,6 @@ import Cslib.Foundations.Data.RelatesInSteps
 
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
-public import Cslib.Computability.Machines.MultiTapeTuring.HeadStats
 
 namespace Turing
 
@@ -20,11 +19,7 @@ namespace MultiTapeTM
 variable [Inhabited α]
 variable {k : ℕ}
 
--- TODO maybe only define this on machines with aux tapes
-
---- Run tm₂ after tm₁ has terminated.
 public def seq (tm₁ tm₂ : MultiTapeTM k α) : MultiTapeTM k α := sorry
-
 
 public theorem seq_eval
   (tm₁ tm₂ : MultiTapeTM k α)
@@ -33,7 +28,7 @@ public theorem seq_eval
     tm₁.eval tapes₀ >>= fun tape₁ => tm₂.eval tape₁ := by
   sorry
 
-@[simp, grind=]
+@[simp, grind =]
 public theorem seq_eval_list
   {tm₁ tm₂ : MultiTapeTM k (WithSep α)}
   {tapes₀ : Fin k → List (List α)} :

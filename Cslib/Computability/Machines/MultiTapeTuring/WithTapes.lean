@@ -39,7 +39,7 @@ private def findFin {k : ℕ} (p : Fin k → Prop) [DecidablePred p] (h : ∃ i,
     simp only [Finset.Nonempty, Finset.mem_filter, Finset.mem_univ, true_and]
     exact h)
 
-public def inj_to_perm {k₁ k₂ : ℕ} (h_le : k₁ ≤ k₂) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) :
+public def inj_to_perm {k₁ k₂ : ℕ} (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) :
   Equiv.Perm (Fin k₂)
   -- non-computable version
   --  let f' : {i : Fin k₂ // i < k₁} → Fin k₂ := fun ⟨i, _⟩ => f ⟨i, by omega⟩
@@ -63,7 +63,7 @@ has the right amount of tapes.
 -/
 public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
   (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) : MultiTapeTM k₂ α :=
-  (tm.extend h_le).permute_tapes (inj_to_perm h_le f h_inj)
+  (tm.extend h_le).permute_tapes (inj_to_perm f h_inj)
 
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval
@@ -73,7 +73,9 @@ public theorem MultiTapeTM.with_tapes_eval
   (tm.with_tapes f h_inj (h_le := h_le)).eval tapes =
     (tm.eval (tapes ∘ f)).map
       (fun tapes' => fun t => if h : ∃ i, f i = t then tapes' h.choose else tapes t) := by
-  simp [with_tapes, inj_to_perm]
+      -- (fun tapes' => tapes ∘ (inj_to_perm f h_inj).symm) := by
+  simp [with_tapes]
   sorry
+
 
 end Turing
