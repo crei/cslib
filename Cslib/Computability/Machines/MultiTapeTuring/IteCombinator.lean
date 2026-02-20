@@ -20,8 +20,8 @@ namespace Routines
 variable [Inhabited α] [Fintype α]
 variable {k : ℕ}
 
---- Repeatedly run a sub routine as long as a condition on the symbol
---- at the first head is true.
+--- Run `tm₁` if the first word on tape `i` exists and is non-empty,
+--- otherwise run `tm₂`.
 public def ite (i : Fin k) (tm₁ tm₂ : MultiTapeTM k (WithSep α)) :
     MultiTapeTM k (WithSep α) where
   Λ := PUnit
@@ -29,13 +29,12 @@ public def ite (i : Fin k) (tm₁ tm₂ : MultiTapeTM k (WithSep α)) :
   M _ syms := sorry
 
 @[simp, grind =]
-public theorem ite_eval
+public theorem ite_eval_list
   {i : Fin k}
   {tm₁ tm₂ : MultiTapeTM k (WithSep α)}
-  {tapes : Fin k → List (List α)}
-  {h_nonempty : tapes i ≠ []} :
+  {tapes : Fin k → List (List α)} :
   (ite i tm₁ tm₂).eval_list tapes =
-    if (tapes i).head h_nonempty = [] then tm₂.eval_list tapes else tm₁.eval_list tapes := by
+    if (tapes i).headD [] = [] then tm₂.eval_list tapes else tm₁.eval_list tapes := by
   sorry
 
 end Routines
