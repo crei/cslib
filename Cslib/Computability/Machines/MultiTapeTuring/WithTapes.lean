@@ -11,9 +11,6 @@ public import Cslib.Computability.Machines.MultiTapeTuring.TapeExtension
 
 public import Mathlib.Logic.Equiv.Fintype
 
--- TODO create a "common file"
-import Cslib.Computability.Machines.SingleTapeTuring.Basic
-
 namespace Turing
 
 variable [Inhabited α] [Fintype α]
@@ -39,7 +36,7 @@ public theorem MultiTapeTM.permute_tapes_eval
 public noncomputable def inj_to_perm {k₁ k₂ : ℕ} (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) :
   Equiv.Perm (Fin k₂) :=
   let f' : {i : Fin k₂ // i < k₁} → Fin k₂ := fun ⟨i, _⟩ => f ⟨i, by omega⟩
-  have h_f'_inj : f'.Injective := by sorry
+  have h_f'_inj : f'.Injective := by intro a b h; grind
   (Equiv.ofInjective f' h_f'_inj).extendSubtype
 
 /--
@@ -56,15 +53,15 @@ public noncomputable def MultiTapeTM.with_tapes {k₁ k₂ : ℕ} {h_le : k₁ �
   (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) : MultiTapeTM k₂ α :=
   (tm.extend h_le).permute_tapes (inj_to_perm f h_inj)
 
-@[simp, grind=]
+@[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval
   {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
   {tm : MultiTapeTM k₁ α} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
   {tapes : Fin k₂ → BiTape α} :
-  (tm.with_tapes' f h_inj (h_le := h_le)).eval tapes =
+  (tm.with_tapes f h_inj (h_le := h_le)).eval tapes =
     (tm.eval (tapes ∘ f)).map
       (fun tapes' => fun t => if h : ∃ i, f i = t then tapes' h.choose else tapes t) := by
-  simp [with_tapes', inj_to_perm]
+  simp [with_tapes, inj_to_perm]
   sorry
 
 end Turing

@@ -35,12 +35,12 @@ public lemma copy₁_eval_list {tapes : Fin 2 → List (List α)} :
     Part.some (Function.update tapes 1 (((tapes 0).headD []) :: tapes 1)) := by
   sorry
 
-public def copy {k : ℕ} (i j : ℕ)
+public noncomputable def copy {k : ℕ} (i j : ℕ)
   (h_neq : i ≠ j := by decide)
   (h_i_lt : i < k := by decide)
   (h_j_lt : j < k := by decide) :
   MultiTapeTM k (WithSep α) :=
-  copy₁.with_tapes #v[⟨i, h_i_lt⟩, ⟨j, h_j_lt⟩] (h_le := by omega)
+  copy₁.with_tapes [⟨i, h_i_lt⟩, ⟨j, h_j_lt⟩].get (by intro x y; grind) (h_le := by omega)
 
 @[simp, grind =]
 public lemma copy_eval_list

@@ -29,11 +29,6 @@ variable {aux k : ℕ}
 
 namespace Routines
 
-
--- a
--- b
--- 0
-
 def isZero (i : Fin k.succ) := ite i (pop i <;> push i []) (pop i <;> push i [OneTwo.one])
 
 @[simp, grind =]

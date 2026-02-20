@@ -51,8 +51,8 @@ public lemma succ₀_eval_list {n : ℕ} {ls : List (List OneTwo)} :
 
 -- TODO this is difficult to use because the Fin constructor from literals
 -- applies mod k.succ
-public def succ {k : ℕ} (i : Fin k.succ) : MultiTapeTM k.succ (WithSep OneTwo) :=
-  succ₀.with_tapes #v[i] (h_le := by omega)
+public noncomputable def succ {k : ℕ} (i : Fin k.succ) : MultiTapeTM k.succ (WithSep OneTwo) :=
+  succ₀.with_tapes (fun _ => i) (by intro x y; grind) (h_le := by omega)
 
 @[simp]
 public def succ_f {k : ℕ}
@@ -82,23 +82,6 @@ public theorem succ_eval_list {k : ℕ} {i : Fin k.succ} {tapes : Fin k.succ →
   (succ i).eval_list tapes = .some (succ_f i tapes) := by
   -- TOOD why does simp not find it?
   simp [MultiTapeTM.eval_of_computes succ_computes]
-
-public def succ' {k aux : ℕ} (i : ℕ) (h_i_lt : i < k := by decide) :
-    MultiTapeTMWithAuxTapes k aux (WithSep OneTwo) :=
-  (succ₀.allocate_aux_tapes aux).with_tapes #v[⟨i, h_i_lt⟩]
-    (h_le_k := by omega)
-    (h_le_aux := by rfl)
-
-@[simp, grind =]
-public lemma succ'_eval_list {k aux : ℕ} {i : ℕ} {h_i_lt : i < k}
-    {tapes : Fin k → List (List OneTwo)} :
-  (succ' (aux := aux) i h_i_lt).eval_list_aux tapes = .some (
-    if h_ne : tapes ⟨i, h_i_lt⟩ ≠ [] then
-      Function.update tapes ⟨i, h_i_lt⟩
-        ((dya ((dya_inv ((tapes ⟨i, h_i_lt⟩).head h_ne)).succ)) :: (tapes ⟨i, h_i_lt⟩).tail)
-    else
-      tapes) := by
-  sorry
 
 public lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
   succ₀.evalWithStats_list [(dya n) :: ls].get =

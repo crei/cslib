@@ -11,9 +11,6 @@ import Cslib.Foundations.Data.RelatesInSteps
 
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 
--- TODO create a "common file"
-import Cslib.Computability.Machines.SingleTapeTuring.Basic
-
 namespace Turing
 
 variable [Inhabited α] [Fintype α]

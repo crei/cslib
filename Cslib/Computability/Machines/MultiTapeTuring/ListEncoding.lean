@@ -76,12 +76,12 @@ public theorem MultiTapeTM.permute_tapes_eval_list
   sorry
 
 @[simp, grind =]
-public theorem MultiTapeTM.with_tapes'_eval_list
+public theorem MultiTapeTM.with_tapes_eval_list
   {α : Type} [Fintype α] [Inhabited α]
   {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
   {tm : MultiTapeTM k₁ (WithSep α)} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
   {tapes : Fin k₂ → List (List α)} :
-  (tm.with_tapes' f h_inj (h_le := h_le)).eval_list tapes =
+  (tm.with_tapes f h_inj (h_le := h_le)).eval_list tapes =
     (tm.eval_list (tapes ∘ f)).map
       (fun tapes' => fun t => if h : ∃ i, f i = t then tapes' h.choose else tapes t) := by
   sorry

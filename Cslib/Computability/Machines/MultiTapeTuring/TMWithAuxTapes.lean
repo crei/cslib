@@ -122,9 +122,7 @@ public def with_tapes
   {h_le_aux : aux₁ ≤ aux₂}
   (tm : MultiTapeTMWithAuxTapes k₁ aux₁ α)
   (seq : Vector (Fin k₂) k₁) : MultiTapeTMWithAuxTapes k₂ aux₂ α :=
-  (tm.toMultiTapeTM.with_tapes (h_le := by omega) (
-    ((seq.map fun (t : Fin k₂) => (⟨t, by omega⟩)) : (Vector (Fin (k₂ + aux₂)) k₁)) ++
-    (((.ofFn fun i => ⟨k₂ + i, by omega⟩) : (Vector (Fin (k₂ + aux₂)) aux₁))))).set_aux_tapes aux₂
+  sorry
 
 -- --- Semantics of tm.with_tapes when tm is a 3-tape Turing machine.
 -- @[simp, grind =]
