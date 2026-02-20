@@ -10,6 +10,7 @@ public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.TapeExtension
 
 public import Mathlib.Logic.Equiv.Fintype
+public import Mathlib.Data.Finset.Sort
 
 namespace Turing
 
@@ -33,11 +34,22 @@ public theorem MultiTapeTM.permute_tapes_eval
     (tm.eval (tapes ∘ σ)).map (fun tapes' => tapes' ∘ σ.symm) := by
   sorry
 
-public noncomputable def inj_to_perm {k₁ k₂ : ℕ} (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) :
-  Equiv.Perm (Fin k₂) :=
-  let f' : {i : Fin k₂ // i < k₁} → Fin k₂ := fun ⟨i, _⟩ => f ⟨i, by omega⟩
-  have h_f'_inj : f'.Injective := by intro a b h; grind
-  (Equiv.ofInjective f' h_f'_inj).extendSubtype
+private def findFin {k : ℕ} (p : Fin k → Prop) [DecidablePred p] (h : ∃ i, p i) : Fin k :=
+  (Finset.univ.filter p).min' (by
+    simp only [Finset.Nonempty, Finset.mem_filter, Finset.mem_univ, true_and]
+    exact h)
+
+public def inj_to_perm {k₁ k₂ : ℕ} (h_le : k₁ ≤ k₂) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) :
+  Equiv.Perm (Fin k₂)
+  -- non-computable version
+  --  let f' : {i : Fin k₂ // i < k₁} → Fin k₂ := fun ⟨i, _⟩ => f ⟨i, by omega⟩
+  --  have h_f'_inj : f'.Injective := by intro a b h; grind
+  --  (Equiv.ofInjective f' h_f'_inj).extendSubtype
+  where
+  toFun := sorry
+  invFun := sorry
+  left_inv := by sorry
+  right_inv := by sorry
 
 /--
 Change the order of the tapes of a Turing machine.
@@ -49,9 +61,9 @@ Note that `f` is a function to `Fin k₂`, which means that integer literals
 automatically wrap. You have to be careful to make sure that the target machine
 has the right amount of tapes.
 -/
-public noncomputable def MultiTapeTM.with_tapes {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
+public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
   (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) : MultiTapeTM k₂ α :=
-  (tm.extend h_le).permute_tapes (inj_to_perm f h_inj)
+  (tm.extend h_le).permute_tapes (inj_to_perm h_le f h_inj)
 
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval

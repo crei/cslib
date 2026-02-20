@@ -51,7 +51,7 @@ public lemma succ₀_eval_list {n : ℕ} {ls : List (List OneTwo)} :
 
 -- TODO this is difficult to use because the Fin constructor from literals
 -- applies mod k.succ
-public noncomputable def succ {k : ℕ} (i : Fin k.succ) : MultiTapeTM k.succ (WithSep OneTwo) :=
+public def succ {k : ℕ} (i : Fin k.succ) : MultiTapeTM k.succ (WithSep OneTwo) :=
   succ₀.with_tapes (fun _ => i) (by intro x y; grind) (h_le := by omega)
 
 @[simp]
