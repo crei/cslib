@@ -50,14 +50,14 @@ public lemma succ₀_eval_list {n : ℕ} {ls : List (List OneTwo)} :
   sorry
 
 -- TODO this is difficult to use because the Fin constructor from literals
--- applies mod k.succ
-public def succ {k : ℕ} (i : Fin k.succ) : MultiTapeTM k.succ (WithSep OneTwo) :=
-  succ₀.with_tapes (fun _ => i) (by intro x y; grind) (h_le := by omega)
+-- applies mod k
+public def succ {k : ℕ} (i : Fin k) : MultiTapeTM k (WithSep OneTwo) :=
+  succ₀.with_tapes (fun _ => i) (by intro x y; grind)
 
 @[simp]
 public def succ_f {k : ℕ}
-  (i : Fin k.succ)
-  (tapes : Fin k.succ → List (List OneTwo)) : Fin k.succ → List (List OneTwo) :=
+  (i : Fin k)
+  (tapes : Fin k → List (List OneTwo)) : Fin k → List (List OneTwo) :=
   if h_ne : tapes i ≠ [] then
     Function.update tapes i ((dya ((dya_inv ((tapes i).head h_ne)).succ)) :: (tapes i).tail)
   else
@@ -65,20 +65,20 @@ public def succ_f {k : ℕ}
 
 @[simp]
 public lemma succ_f_neq {k : ℕ}
-  (i : Fin k.succ)
-  (tapes : Fin k.succ → List (List OneTwo))
+  (i : Fin k)
+  (tapes : Fin k → List (List OneTwo))
   (h_ne : tapes i ≠ []) :
   succ_f i tapes = Function.update tapes i
     ((dya ((dya_inv ((tapes i).head h_ne)).succ)) :: (tapes i).tail) := by
   simp [succ_f, h_ne]
 
 @[simp]
-public theorem succ_computes {k : ℕ} {i : Fin k.succ} :
+public theorem succ_computes {k : ℕ} {i : Fin k} :
   (succ i).computes (succ_f i) := by
   sorry
 
 @[simp]
-public theorem succ_eval_list {k : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List OneTwo)} :
+public theorem succ_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
   (succ i).eval_list tapes = .some (succ_f i tapes) := by
   -- TOOD why does simp not find it?
   simp [MultiTapeTM.eval_of_computes succ_computes]

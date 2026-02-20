@@ -6,9 +6,6 @@ Authors: Christian Reitwiessner
 
 module
 
-import Cslib.Foundations.Data.BiTape
-import Cslib.Foundations.Data.RelatesInSteps
-
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
@@ -42,20 +39,19 @@ public theorem eq₀_eval_list {tapes : Fin 3 → List (List OneTwo)} :
 --- and otherwise pushes the empty word to tape `t`.
 --- If one of the tapes `q` or `s` are empty, uses the empty word for comparison.
 public def eq {k : ℕ} (q s t : Fin k)
-  (h_neq : q ≠ s := by decide) (h_neq' : q ≠ t := by decide) (h_neq'' : s ≠ t := by decide) :
+  (h_inj : [q, s, t].get.Injective := by intro x y; grind) :
   MultiTapeTM k (WithSep OneTwo) :=
-  eq₀.with_tapes [q, s, t].get (by intro x y; grind) (h_le := by omega)
+  eq₀.with_tapes [q, s, t].get h_inj
 
 @[simp, grind =]
 public theorem eq_eval_list {k : ℕ} {q s t : Fin k}
-  {h_neq : q ≠ s} {h_neq' : q ≠ t} {h_neq'' : s ≠ t}
+  {h_inj : [q, s, t].get.Injective}
   {tapes : Fin k → List (List OneTwo)} :
-  (eq q s t (h_neq := h_neq) (h_neq' := h_neq') (h_neq'' := h_neq'')).eval_list tapes =
+  (eq q s t).eval_list tapes =
     Part.some (Function.update tapes t ((if (tapes q).headD [] = (tapes s).headD [] then
       [.one]
     else
       []) :: (tapes t))) := by
-  have h_inj : [q, s, t].get.Injective := by intro x y; grind
   simp [eq]
   grind
 

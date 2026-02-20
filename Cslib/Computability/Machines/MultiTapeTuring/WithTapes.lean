@@ -61,10 +61,11 @@ Note that `f` is a function to `Fin k₂`, which means that integer literals
 automatically wrap. You have to be careful to make sure that the target machine
 has the right amount of tapes.
 -/
-public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
+public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ}
+-- TODO use embedding instead?
   (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) : MultiTapeTM k₂ α :=
-  (tm.extend h_le).permute_tapes (inj_to_perm f h_inj)
-
+  (tm.extend
+    (by simpa using Fintype.card_le_of_injective f h_inj)).permute_tapes (inj_to_perm f h_inj)
 
 -- TODO do not use `h.choose` here but rather assume that `f` is injective.
 
@@ -107,10 +108,10 @@ public lemma apply_updates_function_update
 
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval
-  {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
+  {k₁ k₂ : ℕ}
   {tm : MultiTapeTM k₁ α} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
   {tapes : Fin k₂ → BiTape α} :
-  (tm.with_tapes f h_inj (h_le := h_le)).eval tapes =
+  (tm.with_tapes f h_inj).eval tapes =
     (tm.eval (tapes ∘ f)).map
       (fun tapes' => fun t => apply_updates tapes tapes' f t) := by
   simp [with_tapes]

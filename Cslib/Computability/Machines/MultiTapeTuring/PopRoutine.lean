@@ -6,16 +6,10 @@ Authors: Christian Reitwiessner
 
 module
 
-import Cslib.Foundations.Data.BiTape
-import Cslib.Foundations.Data.RelatesInSteps
-
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
 public import Cslib.Computability.Machines.MultiTapeTuring.TMWithAuxTapes
-
--- TODO create a "common file"
-import Cslib.Computability.Machines.SingleTapeTuring.Basic
 
 namespace Turing
 
@@ -34,14 +28,14 @@ public lemma pop₁_eval_list {tapes : Fin 1 → List (List α)} :
   sorry
 
 public def pop {k : ℕ} (i : Fin k.succ) : MultiTapeTM k.succ (WithSep α) :=
-  pop₁.with_tapes [i].get (by intro x y; grind) (h_le := by omega)
+  pop₁.with_tapes [i].get (by intro x y; grind)
 
 @[simp, grind =]
 public theorem pop_eval_list {k : ℕ} {i : Fin k.succ}
   {tapes : Fin k.succ → List (List α)} :
   (pop i).eval_list tapes = .some (Function.update tapes i (tapes i).tail) := by
-  simp [pop]
-  grind
+  have h_inj : [i].get.Injective := by intro x y; grind
+  simp_all [pop]
 
 end Routines
 

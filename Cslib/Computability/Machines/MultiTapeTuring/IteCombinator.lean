@@ -6,9 +6,6 @@ Authors: Christian Reitwiessner
 
 module
 
-import Cslib.Foundations.Data.BiTape
-import Cslib.Foundations.Data.RelatesInSteps
-
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 public import Cslib.Computability.Machines.MultiTapeTuring.HeadStats

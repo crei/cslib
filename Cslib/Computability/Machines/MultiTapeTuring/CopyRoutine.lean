@@ -6,17 +6,9 @@ Authors: Christian Reitwiessner
 
 module
 
-import Cslib.Foundations.Data.BiTape
-import Cslib.Foundations.Data.RelatesInSteps
-
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
-public import Cslib.Computability.Machines.MultiTapeTuring.HeadStats
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
-public import Cslib.Computability.Machines.MultiTapeTuring.TMWithAuxTapes
-
--- TODO create a "common file"
-import Cslib.Computability.Machines.SingleTapeTuring.Basic
 
 namespace Turing
 
@@ -40,7 +32,7 @@ public def copy {k : ℕ} (i j : ℕ)
   (h_i_lt : i < k := by decide)
   (h_j_lt : j < k := by decide) :
   MultiTapeTM k (WithSep α) :=
-  copy₁.with_tapes [⟨i, h_i_lt⟩, ⟨j, h_j_lt⟩].get (by intro x y; grind) (h_le := by omega)
+  copy₁.with_tapes [⟨i, h_i_lt⟩, ⟨j, h_j_lt⟩].get (by intro x y; grind)
 
 @[simp, grind =]
 public lemma copy_eval_list
@@ -49,8 +41,8 @@ public lemma copy_eval_list
   (copy i j (h_neq := h_neq) (h_i_lt) (h_j_lt)).eval_list tapes = Part.some
     (Function.update tapes ⟨j, h_j_lt⟩
       (((tapes ⟨i, h_i_lt⟩).headD []) :: (tapes ⟨j, h_j_lt⟩))) := by
-  simp [copy]
-  grind
+  have h_inj : [(⟨i, h_i_lt⟩ : Fin k), ⟨j, h_j_lt⟩].get.Injective := by intro x y; grind
+  simp_all [copy]
 
 end Routines
 

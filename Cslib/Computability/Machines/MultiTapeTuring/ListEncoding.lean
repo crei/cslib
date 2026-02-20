@@ -12,9 +12,6 @@ public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
 
 import Mathlib.Tactic.DeriveFintype
 
--- TODO create a "common file"
-import Cslib.Computability.Machines.SingleTapeTuring.Basic
-
 namespace Turing
 
 -- TODO use a better alphabet
@@ -78,10 +75,10 @@ public theorem MultiTapeTM.permute_tapes_eval_list
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval_list
   {α : Type} [Fintype α] [Inhabited α]
-  {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
+  {k₁ k₂ : ℕ}
   {tm : MultiTapeTM k₁ (WithSep α)} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
   {tapes : Fin k₂ → List (List α)} :
-  (tm.with_tapes f h_inj (h_le := h_le)).eval_list tapes =
+  (tm.with_tapes f h_inj).eval_list tapes =
     (tm.eval_list (tapes ∘ f)).map
       (fun tapes' => fun t => apply_updates tapes tapes' f t) := by
    sorry
