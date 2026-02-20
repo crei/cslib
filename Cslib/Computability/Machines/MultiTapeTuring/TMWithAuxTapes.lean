@@ -42,32 +42,6 @@ public def MultiTapeTM.set_aux_tapes (aux : ℕ) (tm : MultiTapeTM (k + aux) α)
 instance : Coe (MultiTapeTM k α) (MultiTapeTMWithAuxTapes k 0 α) where
   coe tm := tm.allocate_aux_tapes 0
 
-@[simp]
-public abbrev tapes_take
-  (tapes : Fin k → List (List α))
-  (k' : ℕ)
-  (h_le : k' ≤ k) : Fin k' → List (List α) :=
-  fun i => tapes ⟨i, by omega⟩
-
-@[simp]
-public lemma Function.update_tapes_take
-    {α}
-    (k : ℕ)
-    {k' : ℕ}
-    {h_le : k' ≤ k}
-    {tapes : Fin k → List (List α)}
-    {p : Fin k'}
-    {v : List (List α)} :
-  Function.update (tapes_take tapes k' h_le) p v =
-    tapes_take (Function.update tapes ⟨p,  by omega⟩ v) k' h_le := by
-  sorry
-
-@[simp]
-public abbrev tapes_extend_by
-  (tapes : Fin k → List (List α))
-  (extend_by : Fin (k + aux) → List (List α)) :
-  Fin (k + aux) → List (List α) :=
-  fun i => if h : i < k then tapes ⟨i, h⟩ else extend_by i
 
 --- Extends the number of tapes (lists) from `k` to `k + aux` by adding empty lists.
 @[simp]

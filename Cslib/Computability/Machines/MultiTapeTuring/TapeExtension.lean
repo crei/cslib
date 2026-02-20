@@ -25,13 +25,43 @@ public def MultiTapeTM.extend {k₁ k₂ : ℕ} (h_le : k₁ ≤ k₂)
     | (stmts, q') =>
       (fun i => if h : i < k₁ then stmts ⟨i, h⟩ else default, q')
 
+@[simp]
+public abbrev tapes_take
+  {γ : Type}
+  (tapes : Fin k → γ)
+  (k' : ℕ)
+  (h_le : k' ≤ k)
+  (i : Fin k') : γ :=
+  tapes ⟨i, by omega⟩
+
+@[simp]
+public lemma Function.update_tapes_take
+  {γ : Type}
+  (k : ℕ)
+  {k' : ℕ}
+  {h_le : k' ≤ k}
+  {tapes : Fin k → γ}
+  {p : Fin k'}
+  {v : γ} :
+  Function.update (tapes_take tapes k' h_le) p v =
+    tapes_take (Function.update tapes ⟨p, by omega⟩ v) k' h_le := by
+  sorry
+
+@[simp]
+public abbrev tapes_extend_by
+  {γ : Type}
+  {k₁ k₂ : ℕ}
+  (tapes : Fin k₁ → γ)
+  (extend_by : Fin k₂ → γ)
+  (i : Fin k₂) : γ :=
+  if h : i < k₁ then tapes ⟨i, h⟩ else extend_by i
+
 @[simp, grind =]
 public lemma MultiTapeTM.extend_eval {k₁ k₂ : ℕ} (h_le : k₁ ≤ k₂)
   (tm : MultiTapeTM k₁ α)
   {tapes : Fin k₂ → BiTape α} :
   (tm.extend h_le).eval tapes =
-    (tm.eval (tapes ⟨·, by omega⟩)).map (fun tapes' =>
-      fun i : Fin k₂ => if h : i.val < k₁ then tapes' ⟨i, h⟩ else tapes i) := by
+    (tm.eval (tapes ⟨·, by omega⟩)).map (fun tapes' => tapes_extend_by tapes' tapes) := by
   sorry
 
 end Turing

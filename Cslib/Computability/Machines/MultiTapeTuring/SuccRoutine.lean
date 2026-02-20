@@ -12,7 +12,6 @@ import Cslib.Foundations.Data.RelatesInSteps
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
-public import Cslib.Computability.Machines.MultiTapeTuring.TMWithAuxTapes
 
 import Mathlib.Data.Nat.Bits
 
@@ -71,6 +70,14 @@ public lemma succ_f_neq {k : ℕ}
   succ_f i tapes = Function.update tapes i
     ((dya ((dya_inv ((tapes i).head h_ne)).succ)) :: (tapes i).tail) := by
   simp [succ_f, h_ne]
+
+@[simp]
+public lemma succ_f_empty {k : ℕ}
+  (i : Fin k)
+  (tapes : Fin k → List (List OneTwo))
+  (h_empty : tapes i = []) :
+  succ_f i tapes = tapes := by
+  simp [succ_f, h_empty]
 
 @[simp]
 public theorem succ_computes {k : ℕ} {i : Fin k} :

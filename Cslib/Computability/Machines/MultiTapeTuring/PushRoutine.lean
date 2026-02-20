@@ -31,7 +31,7 @@ public def push {k : ℕ} (i : Fin k) (w : List α) : MultiTapeTM k (WithSep α)
 
 @[simp, grind =]
 public theorem push_eval_list {k : ℕ}
-  {i : Fin k.succ} {w : List α} {tapes : Fin k.succ → List (List α)} :
+  {i : Fin k} {w : List α} {tapes : Fin k → List (List α)} :
   (push i w).eval_list tapes =
     .some (Function.update tapes i (w :: (tapes i))) := by
   have h_inj : [i].get.Injective := by intro x y; grind
