@@ -30,13 +30,7 @@ public def copy₁ : MultiTapeTM 2 (WithSep α) where
   M _ syms := sorry
 
 @[simp]
-public lemma copy₁_eval_list {w : List α} {ls₁ ls₂ : List (List α)} :
-  copy₁.eval_list [w :: ls₁, ls₂].get = Part.some [w :: ls₁, w :: ls₂].get := by
-  sorry
-
-@[simp]
-public lemma copy₁_eval_list'
-  {tapes : Fin 2 → List (List α)} :
+public lemma copy₁_eval_list {tapes : Fin 2 → List (List α)} :
   copy₁.eval_list tapes =
     Part.some (Function.update tapes 1 (((tapes 0).headD []) :: tapes 1)) := by
   sorry
