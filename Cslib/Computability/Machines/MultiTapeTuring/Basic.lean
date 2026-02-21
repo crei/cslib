@@ -74,6 +74,8 @@ structure MultiTapeTM k α where
 
 namespace MultiTapeTM
 
+def tapeCount (_ : MultiTapeTM k α) := k
+
 section Cfg
 
 /-!
