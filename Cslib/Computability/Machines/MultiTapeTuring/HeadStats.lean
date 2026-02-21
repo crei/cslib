@@ -14,7 +14,7 @@ import Cslib.Computability.Machines.SingleTapeTuring.Basic
 
 namespace Turing
 
-variable [Inhabited α] [Fintype α]
+variable [Inhabited α]
 
 variable {k : ℕ}
 

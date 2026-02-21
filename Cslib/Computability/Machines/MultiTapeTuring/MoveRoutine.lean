@@ -6,13 +6,7 @@ Authors: Christian Reitwiessner
 
 module
 
-import Cslib.Foundations.Data.BiTape
-import Cslib.Foundations.Data.RelatesInSteps
-
-import Cslib.Computability.Machines.MultiTapeTuring.Basic
-
--- TODO create a "common file"
-import Cslib.Computability.Machines.SingleTapeTuring.Basic
+public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 
 namespace Turing
 
@@ -22,13 +16,13 @@ variable [Inhabited α] [Fintype α]
 
 /-- A 1-tape Turing machine that moves its head in a given direction
 once and then halts. -/
-def move (dir : Dir) : MultiTapeTM 1 α where
+public def move (dir : Dir) : MultiTapeTM 1 α where
   Λ := PUnit
   q₀ := 0
   M _ syms := (fun i => ⟨syms i, some dir⟩, none)
 
 @[simp]
-lemma move_eval (tape : BiTape α) (dir : Turing.Dir) :
+public lemma move_eval (tape : BiTape α) (dir : Turing.Dir) :
   (move dir).eval (fun _ => tape) = .some (fun _ => tape.move dir) := by
   rw [MultiTapeTM.eval_iff_exists_steps_iter_eq_some]
   use 1
@@ -36,13 +30,12 @@ lemma move_eval (tape : BiTape α) (dir : Turing.Dir) :
 
 /-- A 1-tape Turing machine that moves its head in a given direction until a condition
 on the read symbol is met. -/
-def move_until (dir : Turing.Dir) (cond : (Option α) → Bool) : MultiTapeTM 1 α where
+public def move_until (dir : Turing.Dir) (cond : (Option α) → Bool) : MultiTapeTM 1 α where
   Λ := PUnit
   q₀ := PUnit.unit
   M q syms := match cond (syms 0) with
     | false  => (fun _ => ⟨syms 0, some dir⟩, some q)
     | true => (fun _ => ⟨syms 0, none⟩, none)
-
 
 lemma move_until_step_cond_false
   {tape : BiTape α}
@@ -62,7 +55,7 @@ lemma move_until_step_cond_true
     some ⟨none, (fun _ => tape)⟩ := by
   simp [move_until, h_neg_stop, BiTape.optionMove, MultiTapeTM.step]
 
-theorem move_until.right_semantics
+public theorem move_until.right_semantics
   (tape : BiTape α)
   (stop_condition : Option α → Bool)
   (h_stop : ∃ n : ℕ, stop_condition (tape.nth n)) :

@@ -19,7 +19,7 @@ namespace Turing
 
 namespace Routines
 
-public def succ₀: MultiTapeTM 1 (WithSep OneTwo) where
+public def succ₀ : MultiTapeTM 1 (WithSep OneTwo) where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
