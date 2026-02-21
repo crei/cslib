@@ -35,7 +35,7 @@ public theorem doWhileSymbol_eval
   (tm : MultiTapeTM k α)
   (tapes_seq : ℕ → Fin k → BiTape α)
   (h_transform : ∀ j, tm.eval (tapes_seq j) = .some (tapes_seq j.succ))
-  (h_stops : ∃ m, ¬cond (tapes_seq m i).head) :
+  (h_stops : ∃ m, cond (tapes_seq m i).head = false) :
   (doWhileSymbol cond i tm).eval (tapes_seq 0) = .some (tapes_seq (Nat.find h_stops)) := by
   sorry
 

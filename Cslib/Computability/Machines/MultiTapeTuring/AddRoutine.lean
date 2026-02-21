@@ -39,19 +39,23 @@ lemma succ_iter {k r : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List 
       · simp [h_empty]
         grind
 
--- Add 0 and 1 and store the result in 2.
--- Assumes zero for an empty tape.
-public def add₀ : MultiTapeTM 6 (WithSep OneTwo) :=
+--- Add 0 and 1 and store the result in 2.
+--- Assumes zero for an empty tape.
+def add₀ : MultiTapeTM 6 (WithSep OneTwo) :=
   (copy 1 2) <;> loop (h_i := by decide) 0 (succ 2)
 
 @[simp, grind =]
-public theorem add₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
+theorem add₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
   add₀.eval_list tapes = .some
     (Function.update tapes 2 ((dya (dya_inv ((tapes 0).headD []) +
       dya_inv ((tapes 1).headD [])) :: (tapes 2)))) := by
   simp [add₀]
   grind
 
+/--
+A Turing machine that adds the heads of tapes i and j (in dyadic encoding) and pushes the result
+to tape l.
+Assumes zero for an empty tape. -/
 public def add (i j l : Fin (k + 6)) (aux : Fin (k + 6) := ⟨k + 3, by omega⟩)
   (h_inj : [i, j, l, aux, aux + 1, aux + 2].get.Injective := by decide) :
   MultiTapeTM (k + 6) (WithSep OneTwo) :=
