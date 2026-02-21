@@ -18,7 +18,9 @@ variable [Inhabited α] [Fintype α]
 
 variable {k : ℕ}
 
---- Permute tapes according to a bijection
+/--
+Permute tapes according to a bijection.
+-/
 public def MultiTapeTM.permute_tapes
   (tm : MultiTapeTM k α) (σ : Equiv.Perm (Fin k)) : MultiTapeTM k α where
   Λ := tm.Λ
@@ -39,7 +41,7 @@ private def findFin {k : ℕ} (p : Fin k → Prop) [DecidablePred p] (h : ∃ i,
     simp only [Finset.Nonempty, Finset.mem_filter, Finset.mem_univ, true_and]
     exact h)
 
-public def inj_to_perm {k₁ k₂ : ℕ} (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) :
+def inj_to_perm {k₁ k₂ : ℕ} (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) :
   Equiv.Perm (Fin k₂)
   -- non-computable version
   --  let f' : {i : Fin k₂ // i < k₁} → Fin k₂ := fun ⟨i, _⟩ => f ⟨i, by omega⟩
@@ -69,6 +71,9 @@ public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ}
 
 -- TODO do not use `h.choose` here but rather assume that `f` is injective.
 
+/--
+Updates `tapes` by choosing elements from `tapes'` according to (the partial inverse of) `f`.
+-/
 public noncomputable def apply_updates
   {γ : Type}
   {k₁ k₂ : ℕ}

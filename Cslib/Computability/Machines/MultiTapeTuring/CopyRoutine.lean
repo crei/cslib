@@ -16,17 +16,21 @@ namespace Routines
 
 variable [Inhabited α] [Fintype α]
 
-public def copy₁ : MultiTapeTM 2 (WithSep α) where
+def copy₁ : MultiTapeTM 2 (WithSep α) where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
 
 @[simp]
-public lemma copy₁_eval_list {tapes : Fin 2 → List (List α)} :
+lemma copy₁_eval_list {tapes : Fin 2 → List (List α)} :
   copy₁.eval_list tapes =
     Part.some (Function.update tapes 1 (((tapes 0).headD []) :: tapes 1)) := by
   sorry
 
+/--
+A Turing machine that copies the first word on tape `i` to tape `j`.
+If Tape `i` is empty, pushes the empty word to tape `j`.
+-/
 public def copy {k : ℕ} (i j : ℕ)
   (h_neq : i ≠ j := by decide)
   (h_i_lt : i < k := by decide)

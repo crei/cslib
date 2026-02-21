@@ -17,8 +17,9 @@ namespace Routines
 variable [Inhabited α] [Fintype α]
 variable {k : ℕ}
 
---- Run `tm₁` if the first word on tape `i` exists and is non-empty,
---- otherwise run `tm₂`.
+/--
+A Turing machine combinator that runs `tm₁` if the first word on tape `i` exists and is non-empty,
+otherwise it runs `tm₂`. -/
 public def ite (i : Fin k) (tm₁ tm₂ : MultiTapeTM k (WithSep α)) :
     MultiTapeTM k (WithSep α) where
   Λ := PUnit

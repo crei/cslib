@@ -74,8 +74,6 @@ structure MultiTapeTM k α where
 
 namespace MultiTapeTM
 
-def tapeCount (_tm : MultiTapeTM k α) := k
-
 section Cfg
 
 /-!
@@ -145,6 +143,7 @@ This is to ensure that distinct lists map to distinct initial configurations.
 def initCfg (s : List α) : tm.Cfg :=
   ⟨some tm.q₀, first_tape s⟩
 
+/-- Create an initial configuration given a tuple of tapes. -/
 @[simp, grind =]
 def initCfgTapes (tapes : Fin k → BiTape α) : tm.Cfg :=
   ⟨some tm.q₀, tapes⟩
@@ -156,6 +155,7 @@ def initCfgTapes (tapes : Fin k → BiTape α) : tm.Cfg :=
 def haltCfg (s : List α) : tm.Cfg :=
   ⟨none, first_tape s⟩
 
+/-- The final configuration of a Turing machine given a sequence of tapes. -/
 @[simp, grind =]
 def haltCfgTapes (tapes : Fin k → BiTape α) : tm.Cfg :=
   ⟨none, tapes⟩
@@ -198,6 +198,7 @@ which maps a configuration to its next configuration, if it exists.
 @[scoped grind =]
 def TransitionRelation (tm : MultiTapeTM k α) (c₁ c₂ : tm.Cfg) : Prop := tm.step c₁ = some c₂
 
+/-- The Turing machine `tm` transforms tapes `tapes` to `tapes'` in exactly `t` steps. -/
 def TransformsTapesInTime
     (tm : MultiTapeTM k α)
     (tapes tapes' : Fin k → BiTape α)
@@ -215,6 +216,8 @@ def UsesSpaceUpToStep
       | none => true
       | some cfg => cfg.space_used ≤ s
 
+/-- The Turing machine `tm` transforms tapes `tapes` to `tapes'` in `t` steps and uses at most
+`s` space. -/
 def TransformsTapesInTimeAndSpace
     (tm : MultiTapeTM k α)
     (tapes tapes' : Fin k → BiTape α)
@@ -222,12 +225,14 @@ def TransformsTapesInTimeAndSpace
   tm.TransformsTapesInTime tapes tapes' t ∧
     tm.UsesSpaceUpToStep tapes s t
 
+/-- The Turing machine `tm` transforms tapes `tapes` to `tapes'` in `t` steps. -/
 def TransformsTapesWithinTime
     (tm : MultiTapeTM k α)
     (tapes tapes' : Fin k → BiTape α)
     (t : ℕ) : Prop :=
   RelatesWithinSteps tm.TransitionRelation ⟨some tm.q₀, tapes⟩ ⟨none, tapes'⟩ t
 
+/-- The Turing machine `tm` transforms tapes `tapes` to `tapes'`. -/
 def TransformsTapes
     (tm : MultiTapeTM k α)
     (tapes tapes' : Fin k → BiTape α) : Prop :=
@@ -283,6 +288,8 @@ lemma transformsTapes_unique (tm : MultiTapeTM k α)
 
 -- TODO we can actually make it computable, but we have to go a different route
 -- via iterated steps
+/--
+Execute the Turing machine `tm` on initial tapes `tapes`. -/
 public noncomputable def eval (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
     Part (Fin k → BiTape α) :=
   ⟨∃ tapes', tm.TransformsTapes tapes tapes', fun h => h.choose⟩

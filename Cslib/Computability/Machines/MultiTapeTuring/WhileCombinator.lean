@@ -20,8 +20,10 @@ namespace Routines
 variable [Inhabited α] [Fintype α]
 variable {k : ℕ}
 
---- Repeatedly run a sub routine as long as a condition on the symbol
---- at the head of tape `i` is true.
+/--
+Repeatedly run a sub routine as long as a condition on the symbol
+at the head of tape `i` is true.
+-/
 public def doWhileSymbol (cond : Option α → Bool) (i : Fin k) (tm : MultiTapeTM k α) :
     MultiTapeTM k α where
   Λ := PUnit
@@ -39,7 +41,8 @@ public theorem doWhileSymbol_eval
   (doWhileSymbol cond i tm).eval (tapes_seq 0) = .some (tapes_seq (Nat.find h_stops)) := by
   sorry
 
---- Repeatedly run a sub routine as long as the first word on tape `i` is non-empty.
+/-- Repeatedly run a sub routine as long as the first word on tape `i` is non-empty.
+-/
 public def doWhile (i : Fin k) (tm : MultiTapeTM k (WithSep α)) :
     MultiTapeTM k (WithSep α) where
   Λ := PUnit

@@ -16,16 +16,19 @@ namespace Routines
 
 variable [Inhabited α] [Fintype α]
 
-public def push₁ (w : List α) : MultiTapeTM 1 (WithSep α) where
+def push₁ (w : List α) : MultiTapeTM 1 (WithSep α) where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
 
 @[simp]
-public lemma push₁_eval_list {w : List α} {tapes : Fin 1 → List (List α)} :
+lemma push₁_eval_list {w : List α} {tapes : Fin 1 → List (List α)} :
   (push₁ w).eval_list tapes = .some (Function.update tapes 0 (w :: (tapes 0))) := by
   sorry
 
+/--
+A Turing machine that pushes the word `w` to tape `i`.
+-/
 public def push {k : ℕ} (i : Fin k) (w : List α) : MultiTapeTM k (WithSep α) :=
   (push₁ w).with_tapes [i].get (by intro x y; grind)
 

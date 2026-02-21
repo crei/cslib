@@ -19,22 +19,25 @@ namespace Turing
 
 namespace Routines
 
-public def succ₀ : MultiTapeTM 1 (WithSep OneTwo) where
+def succ₀ : MultiTapeTM 1 (WithSep OneTwo) where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
 
 @[simp]
-public lemma succ₀_eval_list {n : ℕ} {ls : List (List OneTwo)} :
+lemma succ₀_eval_list {n : ℕ} {ls : List (List OneTwo)} :
   succ₀.eval_list [(dya n) :: ls].get = .some [(dya n.succ) :: ls].get := by
   sorry
 
--- TODO this is difficult to use because the Fin constructor from literals
--- applies mod k
+/--
+A Turing machine that increments the head of tape `i` by one (in dyadic encoding).
+Pushes zero if the tape is empty. -/
 public def succ {k : ℕ} (i : Fin k) : MultiTapeTM k (WithSep OneTwo) :=
   succ₀.with_tapes (fun _ => i) (by intro x y; grind)
 
-@[simp]
+/--
+The function computed by `succ`.
+-/
 public def succ_f {k : ℕ}
   (i : Fin k)
   (tapes : Fin k → List (List OneTwo)) : Fin k → List (List OneTwo) :=
@@ -71,7 +74,7 @@ public theorem succ_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (Lis
   -- TOOD why does simp not find it?
   simp [MultiTapeTM.eval_of_computes succ_computes]
 
-public lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
+lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
   succ₀.evalWithStats_list [(dya n) :: ls].get =
     .some (
       [(dya n.succ) :: ls].get,
@@ -81,20 +84,6 @@ public lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
       else
         [⟨-1, (dya n).length, -1, by omega⟩].get) := by
   sorry
-
--- TODO for space complexity, the max head position here is actually not important,
--- because we know that the tape has already been used.
-
--- TODO actually the better notion is actually to prove for all "list routines"
--- that the space used is
--- the currently used tape plus the new word (including separator) plus one (because we sometimes
--- overshoot by one cell to the left).
--- but then this has to hold for all inputs (that are list encodings)
--- AND this is wrong for anything that uses auxiliary tapes for temporary values.
--- So we have that plus an additional overhead for auxiliary tapes.
-
--- TODO so maybe start with writing down the algorithm for Savitch and then see how we can analyze
--- space usage.
 
 
 end Routines

@@ -19,6 +19,10 @@ namespace MultiTapeTM
 variable [Inhabited α]
 variable {k : ℕ}
 
+/--
+Sequential combination of Turing machines. Runs `tm₁` and then `tm₂` on the resulting tapes
+(if the first one halts).
+-/
 public def seq (tm₁ tm₂ : MultiTapeTM k α) : MultiTapeTM k α := sorry
 
 public theorem seq_eval
@@ -42,6 +46,9 @@ public theorem seq_associative
   (seq (seq tm₁ tm₂) tm₃).eval = (seq tm₁ (seq tm₂ tm₃)).eval := by
   sorry
 
+/--
+Sequential combination of Turing machines.
+-/
 infixl:90 " <;> " => seq
 
 

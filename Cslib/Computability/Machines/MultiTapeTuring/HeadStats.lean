@@ -18,15 +18,16 @@ variable [Inhabited α]
 
 variable {k : ℕ}
 
+/-- Statistics on the tape head movements. -/
 public structure HeadStats where
-  --- The minimal (left-most) position of the head during the computation,
-  --- relative to the starting position.
+  /-- The minimal (left-most) position of the head during the computation,
+  relative to the starting position. -/
   min : ℤ
-  --- The maximal (right-most) position of the head during the computation,
-  --- relative to the starting position.
+  /-- The maximal (right-most) position of the head during the computation,
+  relative to the starting position. -/
   max : ℤ
-  --- The final position of the head after the computation, relative to the
-  --- starting position.
+  /-- The final position of the head after the computation, relative to the
+  starting position. -/
   final : ℤ
   h_bounds : min ≤ final ∧ final ≤ max ∧ min ≤ 0 ∧ 0 ≤ max
 
@@ -39,7 +40,7 @@ public def HeadStats.space (hs : HeadStats) : ℕ :=
 public def headStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
   Part (Fin k → HeadStats) := sorry
 
--- TODO maybe have a type "tape with stats?"
+/-- Execute a Turing machine and also compute head statistics. -/
 public def MultiTapeTM.evalWithStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
   Part ((Fin k → BiTape α) × (Fin k → HeadStats)) := sorry
 

@@ -16,16 +16,19 @@ namespace Routines
 
 variable [Inhabited α] [Fintype α]
 
-public def pop₁ : MultiTapeTM 1 (WithSep α) where
+def pop₁ : MultiTapeTM 1 (WithSep α) where
   Λ := PUnit
   q₀ := 0
   M _ syms := sorry
 
 @[simp]
-public lemma pop₁_eval_list {tapes : Fin 1 → List (List α)} :
+lemma pop₁_eval_list {tapes : Fin 1 → List (List α)} :
   pop₁.eval_list tapes = .some (Function.update tapes 0 (tapes 0).tail) := by
   sorry
 
+/--
+A Turing machine that removes the first word on tape `i`. If the tape is empty, does nothing.
+-/
 public def pop {k : ℕ} (i : Fin k) : MultiTapeTM k (WithSep α) :=
   pop₁.with_tapes [i].get (by intro x y; grind)
 

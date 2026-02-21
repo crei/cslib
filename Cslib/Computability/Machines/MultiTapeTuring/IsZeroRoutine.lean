@@ -19,6 +19,9 @@ variable {k : ℕ}
 
 namespace Routines
 
+/--
+A Turing machine that computes the logical negation: It replaces an empty (or non-existing) head
+on tape `i` by the word "1" and everything else by the empty word. -/
 public def isZero (i : Fin k) := ite i (pop i <;> push i []) (pop i <;> push i [OneTwo.one])
 
 @[simp, grind =]

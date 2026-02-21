@@ -25,6 +25,9 @@ public def MultiTapeTM.extend {k₁ k₂ : ℕ} (h_le : k₁ ≤ k₂)
     | (stmts, q') =>
       (fun i => if h : i < k₁ then stmts ⟨i, h⟩ else default, q')
 
+/--
+Restrict a sequence of tapes to the first `k'` tapes.
+-/
 @[simp]
 public abbrev tapes_take
   {γ : Type}
@@ -47,6 +50,10 @@ public lemma Function.update_tapes_take
     tapes_take (Function.update tapes ⟨p, by omega⟩ v) k' h_le := by
   sorry
 
+/--
+Extend a sequence of tapes by adding more tapes at the end.
+Ignores the first `k₁` tapes of `extend_by` and uses the rest.
+-/
 @[simp]
 public abbrev tapes_extend_by
   {γ : Type}
