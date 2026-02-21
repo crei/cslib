@@ -47,10 +47,11 @@ public def eq {k : ℕ} (q s t : Fin k)
   MultiTapeTM k (WithSep OneTwo) :=
   eq₀.with_tapes [q, s, t].get h_inj
 
+-- TODO why does the linter complain about simp here?
 @[grind =]
-public theorem eq_eval_list {k : ℕ} {q s t : Fin k}
+public theorem eq_eval_list {k : ℕ} {q s t : Fin k.succ}
   (h_inj : [q, s, t].get.Injective)
-  {tapes : Fin k → List (List OneTwo)} :
+  {tapes : Fin k.succ → List (List OneTwo)} :
   (eq q s t).eval_list tapes =
     Part.some (Function.update tapes t ((if (tapes q).headD [] = (tapes s).headD [] then
       [.one]

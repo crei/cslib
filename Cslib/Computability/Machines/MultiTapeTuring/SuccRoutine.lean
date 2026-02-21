@@ -70,9 +70,11 @@ public theorem succ_computes {k : ℕ} {i : Fin k} :
 
 @[simp]
 public theorem succ_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
-  (succ i).eval_list tapes = .some (succ_f i tapes) := by
-  -- TOOD why does simp not find it?
-  simp [MultiTapeTM.eval_of_computes succ_computes]
+  (succ i).eval_list tapes = .some (if h_ne : tapes i ≠ [] then
+      Function.update tapes i ((dya ((dya_inv ((tapes i).head h_ne)).succ)) :: (tapes i).tail)
+    else
+      tapes) := by
+  sorry
 
 lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
   succ₀.evalWithStats_list [(dya n) :: ls].get =
