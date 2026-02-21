@@ -6,9 +6,6 @@ Authors: Christian Reitwiessner
 
 module
 
-import Cslib.Foundations.Data.BiTape
-import Cslib.Foundations.Data.RelatesInSteps
-
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 public import Cslib.Computability.Machines.MultiTapeTuring.HeadStats
@@ -41,31 +38,56 @@ uses "goto", and every variable is a stack:
 def reachable(a, b, t, r):
   terminate = 0
   result = 0
-  section = [0]
+  initial_t = t
+  section = [:terminate, :fun_start]
   while !terminate:
     match section.pop()
-    | 0 =>
+    | :fun_start =>
       if t = 0:
         result = r(a, b)
-        terminate = 1
-        section.push(7)
+        section.push(:fun_return)
       else:
-        section.push(1)
-    | 1 =>
-      c.push(0)
-      section.push(2)
-    | 2 =>
+        c.push(0)
+        section.push(:loop_start)
+    | :loop_start =>
       if c.top() = num_vertices:
-        section.push(6)
+        c.pop()
+        result = 0
+        section.push(:fun_return)
       else:
         a.push(a.top())
         b.push(c.top())
-        section.push(0)
         t.push(t.top() - 1)
-        section.push(3)
-    | 3 =>
-      section.push(4)
-
+        section.push(:after_first_rec)
+        section.push(:fun_start)
+    | :after_first_rec =>
+        if result == 1:
+          a.push(c.top())
+          b.push(b.top())
+          t.push(t.top() - 1)
+          section.push(:after_second_rec)
+          section.push(0)
+        else:
+          result = 0
+          section.push(:loop_continue)
+    | :after_second_rec =>
+        if result == 1:
+          c.pop()
+          section.push(:fun_return)
+        else:
+          section.push(:loop_continue)
+    | :loop_continue =>
+        c.push(c.top() + 1)
+        section.push(:loop_start)
+    | :fun_return =>
+      a.pop()
+      b.pop()
+      t.pop()
+    | :terminate =>
+      terminate = 1
+  -- cleanup
+  terminate.pop()
+  initial_t.pop()
 
 
 -/
