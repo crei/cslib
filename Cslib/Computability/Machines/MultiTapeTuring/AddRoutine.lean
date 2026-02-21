@@ -116,9 +116,7 @@ public theorem add₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
   simp [add₀]
   grind
 
--- TODO we could also use `k + 3` for aux and thus assume it's always the last `aux` tapes.
-
-public def add (i j l aux : Fin (k + 6))
+public def add (i j l : Fin (k + 6)) (aux : Fin (k + 6) := ⟨k + 3, by omega⟩)
   (h_inj : [i, j, l, aux, aux + 1, aux + 2].get.Injective := by decide) :
   MultiTapeTM (k + 6) (WithSep OneTwo) :=
   add₀.with_tapes [i, j, l, aux, aux + 1, aux + 2].get h_inj
@@ -135,7 +133,7 @@ public theorem add_eval_list (i j l aux : Fin (k + 6))
 
 -- Add head of 0 to head of 1 (and store it in head of 1).
 def add_assign₀ : MultiTapeTM 6 (WithSep OneTwo) :=
-  add 0 1 2 3 (by decide) <;> pop 1 <;> copy 2 1 <;> pop 2
+  add 0 1 2 (h_inj := by decide) <;> pop 1 <;> copy 2 1 <;> pop 2
 
 @[simp]
 lemma add_assign₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
@@ -146,7 +144,8 @@ lemma add_assign₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
   grind
 
 public def add_assign
-  (i j aux : Fin (k + 6))
+  (i j : Fin (k + 6))
+  (aux : Fin (k + 6) := ⟨k + 2, by omega⟩)
   (h_inj : [i, j, aux, aux + 1, aux + 2, aux + 3].get.Injective := by decide) :
   MultiTapeTM (k + 6) (WithSep OneTwo) :=
   add_assign₀.with_tapes [i, j, aux, aux + 1, aux + 2, aux + 3].get h_inj
@@ -198,7 +197,8 @@ theorem mul₀_eval_list {tapes : Fin 9 → List (List OneTwo)} :
     grind
 
 public def mul
-  (i j l aux : Fin (k + 9))
+  (i j l : Fin (k + 9))
+  (aux : Fin (k + 9) := ⟨k + 3, by omega⟩)
   (h_inj : [i, j, l, aux, aux + 1, aux + 2, aux + 3, aux + 4, aux + 5].get.Injective := by decide) :
   MultiTapeTM (k + 9) (WithSep OneTwo) :=
   mul₀.with_tapes [i, j, l, aux, aux + 1, aux + 2, aux + 3, aux + 4, aux + 5].get h_inj
