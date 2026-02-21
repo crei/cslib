@@ -132,4 +132,26 @@ public theorem MultiTapeTM.eval_of_computes
   specialize h_computes tapes
   simpa [MultiTapeTM.computes] using h_computes
 
+
+--- Dyadic encoding of natural numbers.
+public def dya (n : ℕ) : List OneTwo :=
+  if n = 0 then []
+  else if Even n then
+    dya (n / 2 - 1) ++ [.two]
+  else
+    dya ((n - 1) / 2) ++ [.one]
+
+--- Dyadic decoding of natural numbers.
+public def dya_inv : List OneTwo → ℕ := sorry
+
+@[simp, grind =]
+public lemma dya_inv_zero : dya_inv [] = 0 := by
+  sorry
+
+@[simp, grind =]
+public lemma dya_inv_dya (n : ℕ) : dya_inv (dya n) = n := by sorry
+
+@[simp, grind =]
+public lemma dya_dya_inv (w : List OneTwo) : dya (dya_inv w) = w := by sorry
+
 end Turing

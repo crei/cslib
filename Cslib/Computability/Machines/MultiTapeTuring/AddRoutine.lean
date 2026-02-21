@@ -6,85 +6,21 @@ Authors: Christian Reitwiessner
 
 module
 
-import Cslib.Foundations.Data.BiTape
-import Cslib.Foundations.Data.RelatesInSteps
-
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 public import Cslib.Computability.Machines.MultiTapeTuring.SuccRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.CopyRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.PushRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.PopRoutine
-public import Cslib.Computability.Machines.MultiTapeTuring.WhileCombinator
+public import Cslib.Computability.Machines.MultiTapeTuring.LoopCombinator
 public import Cslib.Computability.Machines.MultiTapeTuring.SequentialCombinator
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
-public import Cslib.Computability.Machines.MultiTapeTuring.IteCombinator
-public import Cslib.Computability.Machines.MultiTapeTuring.EqualRoutine
 
 namespace Turing
 
-variable [Inhabited α] [Fintype α]
 variable {k : ℕ}
 
 namespace Routines
-
-def isZero (i : Fin k) := ite i (pop i <;> push i []) (pop i <;> push i [OneTwo.one])
-
-@[simp, grind =]
-theorem isZero_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
-  (isZero i).eval_list tapes = .some (Function.update tapes i (
-    (if (tapes i).headD [] = [] then [OneTwo.one] else []) :: (tapes i).tail)) := by
-  simp [isZero]
-  grind
-
-public def neq {k : ℕ} (q s t : Fin k)
-  (h_inj : [q, s, t].get.Injective := by decide) :
-  MultiTapeTM k (WithSep OneTwo) := eq q s t <;> isZero t
-
-@[simp, grind =]
-public theorem neq_eval_list {k : ℕ} {q s t : Fin k}
-  {h_inj : [q, s, t].get.Injective}
-  {tapes : Fin k → List (List OneTwo)} :
-  (neq q s t h_inj).eval_list tapes =
-    Part.some (Function.update tapes t
-      ((if (tapes q).headD [] = (tapes s).headD [] then
-        []
-      else
-        [.one]) :: (tapes t))) := by
-  -- TOOD why do we need to instantiate eq_eval_list here?
-  simp_all [neq, eq_eval_list (h_inj := h_inj)]
-
-/-- Execute `tm` a number of times as given by the first word on tape `i`.
-If tape `i` is empty, do not execute the TM.
-Note that the iteration counter is not directly available to the TM. -/
-def loop (i : ℕ) {h_i : i < k}
-  (tm : MultiTapeTM k (WithSep OneTwo)) : MultiTapeTM (k + 3) (WithSep OneTwo) :=
-  sorry
-  -- let target : Fin (k + (aux + 3)) := ⟨aux, by omega⟩
-  -- let counter : Fin (k + (aux + 3)) := ⟨aux + 1, by omega⟩
-  -- let cond : Fin (k + (aux + 3)) := ⟨aux + 2, by omega⟩
-  -- (copy (k := k + (aux + 3)) i target (h_neq := by grind) <;>
-  -- push counter [] <;>
-  -- neq target counter cond (by grind) (by grind) (by grind) <;>
-  -- doWhile cond (
-  --   pop cond <;>
-  --   tm.toMultiTapeTM <;>
-  --   succ counter <;>
-  --   neq target counter cond (by grind) (by grind) (by grind)) <;>
-  -- pop cond <;>
-  -- pop counter <;>
-  -- pop target).set_aux_tapes (aux + 3)
-
-
-@[simp]
-theorem loop_eval_list {i : ℕ} {h_i : i < k}
-  {tm : MultiTapeTM k (WithSep OneTwo)}
-  {tapes : Fin (k + 3) → List (List OneTwo)} :
-  (loop i tm (h_i := h_i)).eval_list tapes =
-      (((Part.bind · tm.eval_list)^[dya_inv ((tapes ⟨i, by omega⟩).headD [])]
-        (Part.some (tapes_take tapes k (by omega))))).map
-          fun tapes' => tapes_extend_by tapes' tapes := by
-  sorry
 
 @[simp]
 lemma succ_iter {k r : ℕ} {i : Fin k.succ} {tapes : Fin k.succ → List (List OneTwo)} :
@@ -143,6 +79,9 @@ lemma add_assign₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
   simp [add_assign₀]
   grind
 
+/--
+A Turing machine that adds the head of tape `i` to the head of tape `j` (and updates the
+head of tape `j` with the result). -/
 public def add_assign
   (i j : Fin (k + 6))
   (aux : Fin (k + 6) := ⟨k + 2, by omega⟩)
@@ -159,58 +98,6 @@ public theorem add_assign_eval_list {i j aux : Fin (k + 6)}
         (dya (dya_inv ((tapes i).headD []) +
           dya_inv ((tapes j).headD [])) :: (tapes j).tail))) := by
   simpa [add_assign] using apply_updates_function_update h_inj
-
--- Multiplies the heads of 0 and 1 and stores the result in 2.
-def mul₀ : MultiTapeTM 9 (WithSep OneTwo) :=
-  (push 2 []) <;> loop 0 (h_i := by omega) (add_assign 1 2 3)
-
-@[simp]
-lemma add_assign_iter {i j aux : Fin (k + 6)} {r : ℕ}
-  (h_inj : [i, j, aux, aux + 1, aux + 2, aux + 3].get.Injective)
-  {tapes : Fin (k + 6) → List (List OneTwo)} :
-  (Part.bind · (add_assign i j aux h_inj).eval_list)^[r] (.some tapes) =
-    Part.some (Function.update tapes j (
-      if r = 0 then
-        tapes j
-      else
-        (dya ((dya_inv ((tapes j).headD [])) + r * (dya_inv ((tapes i).headD [])))) ::
-          (tapes j).tail)) := by
-  induction r with
-  | zero => simp
-  | succ r ih =>
-    rw [Function.iterate_succ_apply']
-    simp only [ih, Part.bind_some]
-    rw [add_assign_eval_list]
-    have h_neq : i ≠ j := Function.Injective.ne h_inj (a₁ := 0) (a₂ := 1) (by grind)
-    simp
-    grind
-
-@[simp]
-theorem mul₀_eval_list {tapes : Fin 9 → List (List OneTwo)} :
-  mul₀.eval_list tapes = .some
-    (Function.update tapes 2 (
-      (dya (dya_inv ((tapes 0).headD []) * dya_inv ((tapes 1).headD [])) :: (tapes 2)))) := by
-  by_cases h_zero: dya_inv ((tapes 0).head?.getD []) = 0
-  · simp [mul₀, h_zero]
-    grind
-  · simp [mul₀, h_zero]
-    grind
-
-public def mul
-  (i j l : Fin (k + 9))
-  (aux : Fin (k + 9) := ⟨k + 3, by omega⟩)
-  (h_inj : [i, j, l, aux, aux + 1, aux + 2, aux + 3, aux + 4, aux + 5].get.Injective := by decide) :
-  MultiTapeTM (k + 9) (WithSep OneTwo) :=
-  mul₀.with_tapes [i, j, l, aux, aux + 1, aux + 2, aux + 3, aux + 4, aux + 5].get h_inj
-
-@[simp, grind =]
-public theorem mul_eval_list (i j l aux : Fin (k + 9))
-  {h_inj : [i, j, l, aux, aux + 1, aux + 2, aux + 3, aux + 4, aux + 5].get.Injective}
-  {tapes : Fin (k + 9) → List (List OneTwo)} :
-  (mul i j l aux h_inj).eval_list tapes =
-      .some (Function.update tapes l (
-        (dya (dya_inv ((tapes i).headD []) * dya_inv ((tapes j).headD [])) :: (tapes l)))) := by
-  simpa [mul] using apply_updates_function_update h_inj
 
 end Routines
 

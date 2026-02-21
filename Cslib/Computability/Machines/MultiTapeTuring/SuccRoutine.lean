@@ -24,25 +24,6 @@ public def succ₀ : MultiTapeTM 1 (WithSep OneTwo) where
   q₀ := 0
   M _ syms := sorry
 
-public def dya (n : ℕ) : List OneTwo :=
-  if n = 0 then []
-  else if Even n then
-    dya (n / 2 - 1) ++ [.two]
-  else
-    dya ((n - 1) / 2) ++ [.one]
-
-public def dya_inv : List OneTwo → ℕ := sorry
-
-@[simp, grind =]
-public lemma dya_inv_zero : dya_inv [] = 0 := by
-  sorry
-
-@[simp, grind =]
-public lemma dya_inv_dya (n : ℕ) : dya_inv (dya n) = n := by sorry
-
-@[simp, grind =]
-public lemma dya_dya_inv (w : List OneTwo) : dya (dya_inv w) = w := by sorry
-
 @[simp]
 public lemma succ₀_eval_list {n : ℕ} {ls : List (List OneTwo)} :
   succ₀.eval_list [(dya n) :: ls].get = .some [(dya n.succ) :: ls].get := by
