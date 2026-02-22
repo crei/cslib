@@ -29,22 +29,10 @@ def dec₀ : MultiTapeTM 6 (WithSep OneTwo) :=
   pop 1
 
 @[simp]
-lemma inner_eval_list {tapes : Fin 3 → List (List OneTwo)} :
-  (pop 2 <;> copy 1 2 <;> succ 1).eval_list tapes = .some (
-    (if h : tapes 1 = [] then Function.update tapes 2 ((tapes 1).head?.getD [] :: (tapes 2).tail)
-  else
-    Function.update (Function.update tapes 2 ((tapes 1).head?.getD [] :: (tapes 2).tail)) 1
-      (dya (dya_inv ((tapes 1).headD []) + 1) :: (tapes 1).tail))) := by
-  simp
-  grind
-
-@[simp]
 lemma inner_eval_iter {r : ℕ} {tapes : Fin 3 → List (List OneTwo)} :
   (Part.bind · (pop 2 <;> copy 1 2 <;> succ 1).eval_list)^[r] (.some tapes) = Part.some (
     if r = 0 then
       tapes
-    else if tapes 1 = [] then
-      Function.update tapes 2 ([] :: (tapes 2).tail)
     else
       Function.update (Function.update tapes
         2 ((dya ((dya_inv ((tapes 1).headD [])) + (r - 1))) :: (tapes 2).tail))
@@ -53,48 +41,50 @@ lemma inner_eval_iter {r : ℕ} {tapes : Fin 3 → List (List OneTwo)} :
   | zero => simp
   | succ r ih =>
     rw [Function.iterate_succ_apply']
-    simp [ih, inner_eval_list, -copy_eval_list, -succ_eval_list, -pop_eval_list, -MultiTapeTM.seq_eval_list]
-    by_cases h_tape1_empty : tapes 1 = []
-    · simp [h_tape1_empty]
-      by_cases h : r = 0
-      · simp [h]; grind
-      · simp [h]; grind
-    · simp [h_tape1_empty]
-      by_cases h : r = 0
-      · simp [h, h_tape1_empty]
-      · simp [h]; grind
+    simp [ih]
+    grind
+
+@[simp]
+lemma loop_eval_iter {tapes : Fin 6 → List (List OneTwo)} :
+  (loop 0 (h_i := by decide) (pop 2 <;> copy 1 2 <;> succ 1)).eval_list tapes = .some (
+    if dya_inv ((tapes 0).head?.getD []) = 0 then
+      tapes
+    else
+      Function.update (Function.update tapes
+        2 (dya (dya_inv ((tapes 1).head?.getD []) +
+               (dya_inv ((tapes 0).head?.getD []) - 1)) :: (tapes 2).tail))
+        1 (dya (dya_inv ((tapes 1).head?.getD []) +
+                dya_inv ((tapes 0).head?.getD [])) :: (tapes 1).tail)) := by
+  by_cases h : dya_inv ((tapes 0).head?.getD []) = 0
+  · simp [h]
+  · simp [h]; grind
 
 @[simp, grind =]
 lemma dec₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
   dec₀.eval_list tapes = .some (Function.update tapes 0
     ((dya ((dya_inv ((tapes 0).headD [])) - 1)) :: (tapes 0).tail)) := by
-  simp [dec₀]
-  grind
+  by_cases h : dya_inv ((tapes 0).head?.getD []) = 0
+  · simp [dec₀, h]; grind
+  · simp [dec₀, h]; grind
 
 /--
 A Turing machine that decrements the dyadic value at the head of tape `i`.
 If the value is zero already, keeps it at zero. If the tape is empty, pushes zero.
 -/
-public def dec {k : ℕ} (i : Fin (k + 3))
-  (aux : Fin (k + 3) := ⟨k, by omega⟩)
-  (h_inj : [i, aux, aux + 1].get.Injective := by intro x y; grind) :
+public def dec {k : ℕ} (i : Fin (k + 6))
+  (aux : Fin (k + 6) := ⟨k, by omega⟩)
+  (h_inj : [i, aux, aux + 1, aux + 2, aux + 3, aux + 4].get.Injective :=
+    by intro x y; grind) :
   MultiTapeTM (k + 6) (WithSep OneTwo) :=
-  push ⟨aux, by omega⟩ [] <;> push ⟨aux + 1, by omega⟩ [] <;>
-  loop i (h_i := by omega) (copy aux (aux + 1) (by sorry) <;> succ aux) <;>
-  pop ⟨i, by omega⟩ <;>
-  copy ⟨aux + 1, by omega⟩ ⟨i, by omega⟩ (by sorry) <;>
-  pop ⟨aux + 1, by omega⟩ <;>
-  pop ⟨aux, by omega⟩
+  dec₀.with_tapes [i, aux, aux + 1, aux + 2, aux + 3, aux + 4].get h_inj
 
 @[simp, grind =]
-public theorem duplicate_eval_list {k : ℕ} {i : Fin k.succ}
-  (aux : Fin k.succ := ⟨k, by omega⟩)
-  (h_inj : [i, aux].get.Injective)
-  {tapes : Fin k.succ → List (List OneTwo)} :
-  (duplicate i aux h_inj).eval_list tapes = Part.some (Function.update tapes i
-    (((tapes i).headD []) :: (tapes i))) := by
-  simp [duplicate]
-  grind
+public theorem dec_eval_list {k : ℕ} (i aux : Fin (k + 6))
+  (h_inj : [i, aux, aux + 1, aux + 2, aux + 3, aux + 4].get.Injective)
+  (tapes : Fin (k + 6) → List (List OneTwo)) :
+  (dec i aux h_inj).eval_list tapes = .some (Function.update tapes i
+    ((dya ((dya_inv ((tapes i).headD [])) - 1)) :: (tapes i).tail)) := by
+  simpa [dec] using apply_updates_function_update h_inj
 
 end Routines
 
