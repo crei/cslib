@@ -72,7 +72,7 @@ A Turing machine that decrements the dyadic value at the head of tape `i`.
 If the value is zero already, keeps it at zero. If the tape is empty, pushes zero.
 -/
 public def dec {k : ℕ} (i : Fin (k + 6))
-  (aux : Fin (k + 6) := ⟨k, by omega⟩)
+  (aux : Fin (k + 6) := ⟨k + 1, by omega⟩)
   (h_inj : [i, aux, aux + 1, aux + 2, aux + 3, aux + 4].get.Injective :=
     by intro x y; grind) :
   MultiTapeTM (k + 6) (WithSep OneTwo) :=

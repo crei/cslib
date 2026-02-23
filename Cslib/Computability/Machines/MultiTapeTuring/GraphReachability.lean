@@ -14,6 +14,7 @@ public import Cslib.Computability.Machines.MultiTapeTuring.EqualRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.PushRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.PopRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.DuplicateRoutine
+public import Cslib.Computability.Machines.MultiTapeTuring.DecRoutine
 
 
 namespace Turing
@@ -83,7 +84,7 @@ def reachable(a, b, t, edge):
         else:
           pc.push(:loop_continue)
     | :loop_continue =>
-        c.push(c.top() + 1)
+        c.top() += 1
         pc.push(:loop_start)
   -- cleanup
   initial_t.pop()
@@ -92,21 +93,25 @@ def reachable(a, b, t, edge):
   b.pop()
 -/
 
-def tapeCount := 20
+abbrev tapeCount := 20
 
+@[simp, grind =]
 lemma tape_count_eq : tapeCount = 20 := rfl
 
-def a : Fin tapeCount := ⟨3, sorry⟩
-def b : Fin tapeCount := ⟨4, sorry⟩
-def t : Fin tapeCount := ⟨5, sorry⟩
-def result : Fin tapeCount := ⟨6, sorry⟩
-def initialT : Fin tapeCount := ⟨7, sorry⟩
-def pc : Fin tapeCount := ⟨8, sorry⟩
-def c : Fin tapeCount := ⟨9, sorry⟩
-def mainAux : Fin tapeCount := ⟨10, sorry⟩
+abbrev a : Fin tapeCount := ⟨3, sorry⟩
+abbrev b : Fin tapeCount := ⟨4, sorry⟩
+abbrev t : Fin tapeCount := ⟨5, sorry⟩
+abbrev result : Fin tapeCount := ⟨6, sorry⟩
+abbrev initialT : Fin tapeCount := ⟨7, sorry⟩
+abbrev pc : Fin tapeCount := ⟨8, sorry⟩
+abbrev c : Fin tapeCount := ⟨9, sorry⟩
+abbrev mainAux : Fin tapeCount := ⟨10, sorry⟩
 
-def l_funStart := dya 1
-def l_loopStart := dya 2
+abbrev l_funStart := dya 1
+abbrev l_loopStart := dya 2
+abbrev l_afterFirstRec := dya 3
+abbrev l_afterSecondRec := dya 4
+abbrev l_loopContinue := dya 5
 
 -- if t = 0:
 --   result = edge(a, b)
@@ -127,9 +132,7 @@ lemma funStart_eval_list
     else
       .some (Function.update (Function.update tapes c ([] :: (tapes c)))
         pc (l_loopStart :: (tapes pc))) := by
-  have : pc ≠ c := by decide
   simp [funStart]
-  grind
 
 def infiniteLoop {α : Type} {k : ℕ} : MultiTapeTM k (WithSep α) := sorry
 
@@ -142,6 +145,7 @@ public def eqLit {k : ℕ}
   MultiTapeTM (k + 3) (WithSep OneTwo) :=
     push aux w <;> eq q aux s h_inj <;> pop aux
 
+@[simp]
 public theorem eqLit_eval_list {k : ℕ} {q s aux : Fin (k + 3)} {w : List OneTwo}
   {h_inj : [q, aux, s].get.Injective}
   {tapes : Fin (k + 3) → List (List OneTwo)} :
@@ -171,7 +175,79 @@ def loopStart (maxConfig : List OneTwo) :=
   eqLit c maxConfig mainAux <;>
     ite mainAux
       (pop mainAux <;> pop c <;> push result [])
-      (duplicate a <;> copy c b <;> dec t <;> push pc l_funStart <;> push pc l_loopStart)
+      (pop mainAux <;> duplicate a <;> copy c b <;>
+        dec t mainAux (by decide) <;> push pc l_afterFirstRec <;> push pc l_funStart)
+
+-- TODO this simp lemma is probably not really needed, because the proof is just `simp [loopStart]`
+
+-- @[simp]
+-- lemma loopStart_eval_list
+--   (maxConfig : List OneTwo)
+--   (loopStart maxConfig).eval_list tapes = .some sorry := by
+--   simp [loopStart]
+--   sorry
+
+-- | :after_first_rec =>
+--     a.pop()
+--     b.pop()
+--     t = t + 1
+--     if result == 1:
+--       a.push(c.top())
+--       b.push(b.top())
+--       t = t - 1
+--       pc.push(:after_second_rec)
+--       pc.push(:fun_start)
+--     else:
+--       result = 0
+--       pc.push(:loop_continue)
+
+def afterFirstRec :=
+  pop a <;> pop b <;> succ t <;> ite result
+    (duplicate c <;> duplicate b <;> dec t mainAux (by decide) <;>
+      push pc l_afterSecondRec <;> push pc l_funStart)
+    (pop result <;> push result [] <;> push pc l_loopContinue)
+
+-- | :after_second_rec =>
+--     a.pop()
+--     b.pop()
+--     t = t + 1
+--     if result == 1:
+--       c.pop()
+--     else:
+--       pc.push(:loop_continue)
+
+def afterSecondRec :=
+  pop a <;> pop b <;> succ t <;> ite result (pop c) (push pc l_loopContinue)
+
+-- | :loop_continue =>
+--     c.top() += 1
+--     pc.push(:loop_start)
+
+def loopContinue := succ c <;> push pc l_loopStart
+
+public def iteLit {k : ℕ}
+  (i : Fin (k + 3))
+  (w : List OneTwo)
+  (aux : Fin (k + 3) := ⟨k + 1, by omega⟩)
+  (tm₁ tm₂ : MultiTapeTM (k + 3) (WithSep OneTwo))
+  (h_inj : [i, aux, aux + 1].get.Injective := by decide) :
+  MultiTapeTM (k + 3) (WithSep OneTwo) :=
+    eqLit i w (aux + 1) aux (h_inj := by intro x y; grind) <;>
+      ite (aux + 1) (pop (aux + 1) <;> tm₁) (pop (aux + 1) <;> tm₂)
+
+-- TODO not sure if this simp lemma is needed. We can also put @[simp] at iteLit instead.
+
+@[simp]
+lemma itLit_eval_list {k : ℕ}
+  (i : Fin (k + 3))
+  (w : List OneTwo)
+  (aux : Fin (k + 3))
+  (tm₁ tm₂ : MultiTapeTM (k + 3) (WithSep OneTwo))
+  (h_inj : [i, aux, aux + 1].get.Injective)
+  (tapes : Fin (k + 3) → List (List OneTwo)) :
+  (iteLit i w aux tm₁ tm₂ h_inj).eval_list tapes =
+      if (tapes i).headD [] = w then tm₁.eval_list tapes else tm₂.eval_list tapes := by
+  simp [iteLit]
 
 public def matchCombine {k : ℕ}
   (i : Fin (k + 3)) (aux : Fin (k + 3)) (h_inj : [i, aux, aux + 1].get.Injective)
@@ -183,15 +259,22 @@ public def matchCombine {k : ℕ}
       eqLit i w aux (aux + 1) (h_inj := by sorry /- use swap on h_inj? -/) <;>
         ite aux (pop aux <;> tm) (pop aux <;> matchCombine i aux (by intro x y; grind) branches)
 
-def innerLoop (edge : MultiTapeTM tapeCount (WithSep OneTwo)) :
+def innerLoop (edge : MultiTapeTM tapeCount (WithSep OneTwo)) (maxConfig : List OneTwo) :
     MultiTapeTM tapeCount (WithSep OneTwo) :=
-  matchCombine pc mainAux (by decide)
-  [ (l_funStart, funStart edge),
-    (l_loopStart, loop 1, infiniteLoop) ]
+  iteLit pc l_funStart mainAux (pop pc <;> funStart edge)
+    (iteLit pc l_loopStart mainAux (pop pc <;> loopStart maxConfig)
+      (iteLit pc l_afterFirstRec mainAux (pop pc <;> afterFirstRec)
+        (iteLit pc l_afterSecondRec mainAux (pop pc <;> afterSecondRec)
+          (pop pc <;> loopContinue))))
 
+lemma innerLoop_eval_list
+  (edge : MultiTapeTM tapeCount (WithSep OneTwo))
+  (maxConfig : List OneTwo)
+  (tapes : Fin tapeCount → List (List OneTwo)) :
+  (innerLoop edge maxConfig).eval_list tapes = sorry := by
+  simp [innerLoop, loopStart, afterFirstRec, afterSecondRec, loopContinue]
+  sorry
 
-
-theorem reachable
 
 end Routines
 end Turing
