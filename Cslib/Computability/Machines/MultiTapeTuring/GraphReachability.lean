@@ -15,7 +15,7 @@ public import Cslib.Computability.Machines.MultiTapeTuring.PushRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.PopRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.DuplicateRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.DecRoutine
-
+public import Cslib.Computability.Machines.MultiTapeTuring.WhileCombinator
 
 namespace Turing
 
@@ -42,7 +42,6 @@ uses "goto", and every variable is a stack:
 
 def reachable(a, b, t, edge):
   result = 0
-  initial_t = t
   pc = [:fun_start]
   while !pc.is_empty():
     match pc.pop()
@@ -87,7 +86,6 @@ def reachable(a, b, t, edge):
         c.top() += 1
         pc.push(:loop_start)
   -- cleanup
-  initial_t.pop()
   t.pop()
   a.pop()
   b.pop()
@@ -98,10 +96,10 @@ abbrev tapeCount := 20
 @[simp, grind =]
 lemma tape_count_eq : tapeCount = 20 := rfl
 
-abbrev a : Fin tapeCount := ⟨3, sorry⟩
-abbrev b : Fin tapeCount := ⟨4, sorry⟩
-abbrev t : Fin tapeCount := ⟨5, sorry⟩
-abbrev result : Fin tapeCount := ⟨6, sorry⟩
+abbrev a : Fin tapeCount := ⟨0, sorry⟩
+abbrev b : Fin tapeCount := ⟨1, sorry⟩
+abbrev t : Fin tapeCount := ⟨3, sorry⟩
+abbrev result : Fin tapeCount := ⟨2, sorry⟩
 abbrev initialT : Fin tapeCount := ⟨7, sorry⟩
 abbrev pc : Fin tapeCount := ⟨8, sorry⟩
 abbrev c : Fin tapeCount := ⟨9, sorry⟩
@@ -274,6 +272,103 @@ lemma innerLoop_eval_list
   (innerLoop edge maxConfig).eval_list tapes = sorry := by
   simp [innerLoop, loopStart, afterFirstRec, afterSecondRec, loopContinue]
   sorry
+
+lemma relatesInStepsExp {α : Type}
+  (r : α → α → Prop)
+  (a b : α)
+  (t : ℕ) :
+  (Relation.RelatesInSteps r a b (Nat.pow 2 t.succ)) ↔
+  ∃ c, Relation.RelatesInSteps r a c (Nat.pow 2 t) ∧
+       Relation.RelatesInSteps r c b (Nat.pow 2 t) := by
+  sorry
+
+def finiteRel (r : (List OneTwo) → (List OneTwo) → Prop) (max : ℕ) : Prop :=
+  ∀ a b, r a b → (dya_inv a < max ∧ dya_inv b < max)
+
+def edge_semantics
+  (r : (List OneTwo) → (List OneTwo) → Prop)
+  (h_r_dec : ∀ x y, Decidable (r x y))
+  (edge : MultiTapeTM tapeCount (WithSep OneTwo)) : Prop :=
+  ∀ tapes,
+  edge.eval_list tapes = .some (if r ((tapes a).headD []) ((tapes b).headD []) then
+    Function.update tapes result ([.one] :: (tapes result))
+  else
+    Function.update tapes result ([] :: (tapes result)))
+
+lemma inner_loop_induction_basis
+  (r : (List OneTwo) → (List OneTwo) → Prop)
+  (h_r_dec : ∀ x y, Decidable (r x y))
+  (max : ℕ)
+  (edge : MultiTapeTM tapeCount (WithSep OneTwo))
+  (h_edge_semantics : edge_semantics r h_r_dec edge)
+  (tapes : Fin tapeCount → List (List OneTwo))
+  (h_pc : (tapes pc).head?.getD [] = l_funStart)
+  (h_t : (tapes t).head?.getD [] = []) :
+  (innerLoop edge (dya max)).eval_list tapes = .some
+    (Function.update (Function.update tapes
+      pc (tapes pc).tail)
+      result (if r ((tapes a).headD []) ((tapes b).headD []) then
+        [.one] :: (tapes result)
+      else
+        [] :: (tapes result))) := by
+  unfold edge_semantics at h_edge_semantics
+  simp [innerLoop, h_pc, h_t, h_edge_semantics]
+  grind
+
+def reachability (edge : MultiTapeTM tapeCount (WithSep OneTwo)) (maxConfig : List OneTwo) :
+    MultiTapeTM tapeCount (WithSep OneTwo) :=
+  doWhile pc (innerLoop edge maxConfig)
+
+theorem reachability_eval_list
+  (r : (List OneTwo) → (List OneTwo) → Prop)
+  (h_r_dec : ∀ x y, Decidable (r x y))
+  (h_rs_dec : ∀ x y t, Decidable (Relation.RelatesInSteps r x y t))
+  (max : ℕ)
+  (h_finite : finiteRel r max)
+  (edge : MultiTapeTM tapeCount (WithSep OneTwo))
+  (h_edge_semantics : edge_semantics r h_r_dec edge)
+  (t_val : ℕ)
+  (a_val b_val : List OneTwo)
+  (tapes : Fin tapeCount → List (List OneTwo)) :
+  (push a a_val <;> push b b_val <;> push t (dya t_val) <;>
+    reachability edge (dya max)).eval_list tapes = .some (Function.update tapes result (
+      if Relation.RelatesInSteps r a_val b_val t_val then
+        [.one] :: (tapes result)
+      else
+        [] :: (tapes result))) := by
+  sorry
+
+lemma induction_step
+  (r : (List OneTwo) → (List OneTwo) → Prop)
+  (h_r_dec : ∀ x y, Decidable (r x y))
+  (max : ℕ)
+  (edge : MultiTapeTM tapeCount (WithSep OneTwo))
+  (h_edge_semantics : edge_semantics r h_r_dec edge)
+  (tapes : Fin tapeCount → List (List OneTwo))
+  (h_pc : (tapes pc).head?.getD [] = l_funStart)
+  (t_val : ℕ)
+  (h_t : (tapes t).head?.getD [] = dya t_val.succ)
+  (h_ih : ∀ tapes',
+    (tapes' pc).head?.getD [] = l_funStart →
+    (tapes' t).head?.getD [] = dya t_val →
+    (innerLoop edge (dya max)).eval_list tapes' = .some
+      (Function.update (Function.update tapes'
+        pc (tapes' pc).tail)
+        result (if r ((tapes' a).headD []) ((tapes' b).headD []) then
+          [.one] :: (tapes' result)
+        else
+          [] :: (tapes' result))) →
+   :
+  (innerLoop edge (dya max)).eval_list tapes = .some
+    (Function.update (Function.update tapes
+      pc (tapes pc).tail)
+      result (if r ((tapes a).headD []) ((tapes b).headD []) then
+        [.one] :: (tapes result)
+      else
+        [] :: (tapes result))) := by
+  unfold edge_semantics at h_edge_semantics
+  simp [innerLoop, h_pc, h_t, h_edge_semantics]
+  grind
 
 
 end Routines
