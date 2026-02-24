@@ -53,6 +53,12 @@ public def MultiTapeTM.TransformsLists
     (tapes tapes' : Fin k → List (List α)) : Prop :=
   tm.TransformsTapes (listToTape ∘ tapes) (listToTape ∘ tapes')
 
+/-- The Turing machine `tm` halts starting with list-encoded tapes `tapes`. -/
+public def MultiTapeTM.HaltsOnLists
+    (tm : MultiTapeTM k (WithSep α))
+    (tapes : Fin k → List (List α)) : Prop :=
+  ∃ tapes', tm.TransformsTapes (listToTape ∘ tapes) (listToTape ∘ tapes')
+
 /-- Execute the Turing machine `tm` on the list-encoded tapes `tapes`. -/
 public noncomputable def MultiTapeTM.eval_list
     (tm : MultiTapeTM k (WithSep α))
