@@ -57,14 +57,21 @@ public def MultiTapeTM.TransformsLists
 public def MultiTapeTM.HaltsOnLists
     (tm : MultiTapeTM k (WithSep α))
     (tapes : Fin k → List (List α)) : Prop :=
-  ∃ tapes', tm.TransformsTapes (listToTape ∘ tapes) (listToTape ∘ tapes')
+  ∃ tapes', tm.TransformsLists tapes tapes'
 
 /-- Execute the Turing machine `tm` on the list-encoded tapes `tapes`. -/
 public noncomputable def MultiTapeTM.eval_list
     (tm : MultiTapeTM k (WithSep α))
     (tapes : Fin k → List (List α)) :
     Part (Fin k → List (List α)) :=
-  ⟨∃ tapes', tm.TransformsLists tapes tapes', fun h => h.choose⟩
+  ⟨tm.HaltsOnLists tapes, fun h => h.choose⟩
+
+public theorem MultiTapeTM.HaltsOnLists_of_eval_list
+    {tm : MultiTapeTM k (WithSep α)}
+    {tapes : Fin k → List (List α)}
+    (h_dom : (tm.eval_list tapes).Dom) :
+    tm.HaltsOnLists tapes := by
+  simpa using h_dom
 
 /-- Execute the Turing machine `tm` knowing that it always halts, thus yielding a total function
 on the tapes. -/
