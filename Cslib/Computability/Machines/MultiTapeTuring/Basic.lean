@@ -298,6 +298,9 @@ public noncomputable def eval (tm : MultiTapeTM k α) (tapes : Fin k → BiTape 
     Part (Fin k → BiTape α) :=
   ⟨∃ tapes', tm.TransformsTapes tapes tapes', fun h => h.choose⟩
 
+/--
+Execute the Turing machine `tm` on initial tapes `tapes` given a proof that it always halts
+and thus this yields a total function. -/
 public noncomputable def eval_tot (tm : MultiTapeTM k α) {h : ∀ tapes, tm.haltsOn tapes}
   (tapes : Fin k → BiTape α) : Fin k → BiTape α :=
   (tm.eval tapes).get (h tapes)

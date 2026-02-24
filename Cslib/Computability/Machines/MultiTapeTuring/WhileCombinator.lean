@@ -54,10 +54,10 @@ public theorem doWhile_eval_list
   {i : Fin k}
   {tm : MultiTapeTM k (WithSep α)}
   {tapes : Fin k → List (List α)}
-  (h_halts : ∀ tapes', tm.HaltsOnLists tapes')
-  (h_loopEnds : ∃ t, ((tm.eval_list_tot h_halts)^[n] tapes i).headD [] = []) :
-  (doWhile i tm).eval_list tapes = .some
-    ((tm.eval_list_tot h_halts)^[Nat.find h_loopEnds] tapes) := by
+  (h_halts : ∀ tapes', tm.HaltsOnLists tapes') :
+  (doWhile i tm).eval_list tapes =
+    ⟨∃ n, ((tm.eval_list_tot h_halts)^[n] tapes i).head?.getD [] = [],
+      fun h_loopEnds => (tm.eval_list_tot h_halts)^[Nat.find h_loopEnds] tapes⟩ := by
   sorry
 
 end Routines
