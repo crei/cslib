@@ -315,6 +315,29 @@ lemma inner_loop_induction_basis
   simp [innerLoop, h_pc, h_t, h_edge_semantics]
   grind
 
+lemma inner_loop_halts_on_lists
+  {r : (List OneTwo) → (List OneTwo) → Prop}
+  {h_r_dec : ∀ x y, Decidable (r x y)}
+  {edge : MultiTapeTM tapeCount (WithSep OneTwo)}
+  (h_edge_semantics : edge_semantics r h_r_dec edge)
+  {maxConfig : List OneTwo} :
+  ∀ tapes, (innerLoop edge maxConfig).HaltsOnLists tapes := by
+  intro tapes
+  apply MultiTapeTM.HaltsOnLists_of_eval_list
+  unfold edge_semantics at h_edge_semantics
+  simp [innerLoop, loopStart, afterFirstRec, afterSecondRec, loopContinue, h_edge_semantics]
+  split_ifs -- todo use <;>
+  · simp
+  · simp
+  · simp
+  · simp
+  · simp
+  · simp
+  · simp
+  · simp
+  · simp
+  · simp
+
 def reachability (edge : MultiTapeTM tapeCount (WithSep OneTwo)) (maxConfig : List OneTwo) :
     MultiTapeTM tapeCount (WithSep OneTwo) :=
   doWhile pc (innerLoop edge maxConfig)
@@ -336,6 +359,9 @@ theorem reachability_eval_list
         [.one] :: (tapes result)
       else
         [] :: (tapes result))) := by
+  simp [reachability]
+  rw [doWhile_eval_list (inner_loop_halts_on_lists h_edge_semantics)]
+  simp
   sorry
 
 lemma induction_step
