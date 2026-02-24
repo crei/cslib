@@ -51,13 +51,13 @@ public def doWhile (i : Fin k) (tm : MultiTapeTM k (WithSep α)) :
 
 @[simp]
 public theorem doWhile_eval_list
-  (i : Fin k)
-  (tm : MultiTapeTM k (WithSep α))
+  {i : Fin k}
+  {tm : MultiTapeTM k (WithSep α)}
   {tapes : Fin k → List (List α)}
-  (f : (Fin k → List (List α)) → Fin k → List (List α))
-  (h_computes : ∀ tapes, tm.eval_list tapes = .some (f tapes))
-  (h_halts : ∃ t, (f^[t] tapes) i = []) :
-  (doWhile i tm).eval_list tapes = .some (f^[Nat.find h_halts] tapes) := by
+  (h_halts : ∀ tapes', tm.HaltsOnLists tapes') :
+  (doWhile i tm).eval_list tapes =
+    ⟨∃ n, ((tm.eval_list_tot h_halts)^[n] tapes i).head?.getD [] = [],
+      fun h_loopEnds => (tm.eval_list_tot h_halts)^[Nat.find h_loopEnds] tapes⟩ := by
   sorry
 
 end Routines
