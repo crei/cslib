@@ -82,6 +82,14 @@ public noncomputable def MultiTapeTM.eval_list_tot
   Fin k → List (List α) :=
   (tm.eval_list tapes).get (h_alwaysHalts tapes)
 
+@[simp]
+public theorem MultiTapeTM.eval_list_tot_eq_eval_list_get
+  (tm : MultiTapeTM k (WithSep α))
+  (h_alwaysHalts : ∀ tapes, tm.HaltsOnLists tapes)
+  (tapes : Fin k → List (List α)) :
+  tm.eval_list_tot h_alwaysHalts tapes =
+  (tm.eval_list tapes).get (sorry /- this should be h_alwaysHalts tapes --/) := by rfl
+
 @[simp, grind =]
 public theorem MultiTapeTM.extend_eval_list
     {α : Type} [Fintype α]
@@ -165,6 +173,9 @@ public def dya (n : ℕ) : List OneTwo :=
 
 /-- Dyadic decoding of natural numbers. -/
 public def dya_inv : List OneTwo → ℕ := sorry
+
+@[simp, grind =]
+public lemma dya_zero : dya 0 = [] := by simp [dya]
 
 @[simp, grind =]
 public lemma dya_inv_zero : dya_inv [] = 0 := by
