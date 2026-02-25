@@ -42,6 +42,9 @@ public theorem succ_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (Lis
     ((dya (dya_inv ((tapes i).headD [])).succ) :: (tapes i).tail)) := by
   simpa [succ] using apply_updates_function_update (by intro x y; grind)
 
+@[simp]
+public def dya_succ (w : List OneTwo) := dya ((dya_inv w).succ)
+
 lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
   succ₀.evalWithStats_list [(dya n) :: ls].get =
     .some (

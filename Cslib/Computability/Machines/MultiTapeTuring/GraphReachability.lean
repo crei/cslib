@@ -203,8 +203,6 @@ def afterSecondRec :=
   pop a <;> pop b <;> succ t <;>
     combineOr result <;> combineOr result <;> succ c <;> push pc l_loopStart
 
-
-@[simp]
 def innerLoop (edge : MultiTapeTM tapeCount (WithSep OneTwo)) (maxConfig : List OneTwo) :
     MultiTapeTM tapeCount (WithSep OneTwo) :=
   iteLit pc l_funStart mainAux (pop pc <;> funStart edge)
@@ -252,7 +250,7 @@ lemma inner_loop_halts_on_lists
   intro tapes
   apply MultiTapeTM.HaltsOnLists_of_eval_list
   unfold edge_semantics at h_edge_semantics
-  simp [h_edge_semantics]
+  simp [h_edge_semantics, innerLoop]
   split_ifs
   · simp
   · simp
@@ -281,7 +279,6 @@ def iter_count_bound (max : ℕ) (t : ℕ) : ℕ := match t with
   | .zero => 1
   | .succ t' => 2 + max * (3 + 2 * iter_count_bound max t')
 
-@[simp]
 noncomputable def innerLoopFun
   {r : (List OneTwo) → (List OneTwo) → Prop}
   {h_r_dec : ∀ x y, Decidable (r x y)}
@@ -312,23 +309,51 @@ lemma loop_semantics
           [] :: (tapes result)) ∧
       ∀ n' < iter_count_bound max (dya_inv ((tapes t).headD [])),
         (((innerLoopFun max h_edge_semantics)^[n'] tapes) pc).length ≥ (tapes pc).length := by
-  induction h_t : (dya_inv ((tapes t).headD [])) generalizing tapes with
+  induction h_t : (dya_inv ((tapes t).head?.getD [])) generalizing tapes with
     | zero =>
       have h_t_dya : (tapes t).head?.getD [] = dya 0 := by rw [← h_t]; simp
       unfold edge_semantics at h_edge_semantics
-      simp [h_edge_semantics, h_pc_funStart, h_t_dya, Relation.RelatesInSteps.single_iff]
+      simp [h_edge_semantics, h_pc_funStart, h_t_dya, Relation.RelatesInSteps.single_iff,
+            innerLoop, innerLoopFun]
       split
       · simp
       · simp
     | succ t_val ih =>
+      have h_inner (tapes : Fin tapeCount → List (List OneTwo))
+        (h_pc : (tapes pc).head?.getD [] = l_loopStart)
+        (h_c : (tapes c).head?.getD [] ≠ dya max)
+        (h_t : dya_inv ((tapes t).head?.getD []) = t_val.succ) :
+        (innerLoopFun max h_edge_semantics)^[3 + 2 * (iter_count_bound max t_val)] tapes =
+          Function.update (Function.update tapes
+              c ((dya_succ ((tapes c).headD [])) :: (tapes pc).tail))
+              result (if
+                ((tapes result).headD [] != []) ∨
+                (Relation.RelatesInSteps r ((tapes a).headD []) ((tapes c).headD []) (2 ^ t_val) ∧
+                Relation.RelatesInSteps r ((tapes c).headD []) ((tapes b).headD []) (2 ^ t_val))
+                then
+                  [.one] :: (tapes result).tail
+                else
+                  [] :: (tapes result).tail) := by
+        have {α : Type} {x : α} {n : ℕ} (f : α → α): f^[3 + 2 * n] x =
+            f (f^[n] (f (f^[n] (f x)))) := by
+          rw [← Function.iterate_succ_apply, ← Function.iterate_succ_apply]
+          rw [← Function.iterate_add_apply, ← Function.iterate_succ_apply' (f := f)]
+          grind
+        rw [this]
+        simp [innerLoopFun]
+        -- TODO continue here, see if we can apply the IH two times.
+        rw [(ih tapes (by sorry) (by sorry)).1]
+        simpa using h_fun_start
+        exact h_fun_start
+        sorry
+
       by_cases h_rel : Relation.RelatesInSteps r
           ((tapes a).headD []) ((tapes b).headD []) (Nat.pow 2 (t_val + 1))
-      · simp only [h_rel]
+      · -- simp only [h_rel]
         simp
-        obtain ⟨c, h_c_rel⟩ :=
+        obtain ⟨c_val, h_c_rel⟩ :=
           (relatesInStepsExp r ((tapes a).headD []) ((tapes b).headD []) t_val).mp h_rel
-        have h_c_le : dya_inv c < max := by sorry
-
+        have h_c_le : dya_inv c_val < max := by sorry
         sorry
       · sorry
 
