@@ -137,6 +137,16 @@ public def iteLit {k : ℕ}
       ite (aux + 1) (pop (aux + 1) <;> tm₁) (pop (aux + 1) <;> tm₂)
 
 @[simp]
+public def combineAnd {k : ℕ} (i : Fin k) :
+  MultiTapeTM k (WithSep OneTwo) :=
+    ite i
+      (pop i <;>
+        ite i
+          (pop i <;> push i [OneTwo.one])
+          (pop i <;> push i []))
+      (pop i <;> pop i <;> push i [])
+
+@[simp]
 public def combineOr {k : ℕ} (i : Fin k) :
   MultiTapeTM k (WithSep OneTwo) :=
     ite i
@@ -201,7 +211,7 @@ def afterFirstRec :=
 @[simp]
 def afterSecondRec :=
   pop a <;> pop b <;> succ t <;>
-    combineOr result <;> combineOr result <;> succ c <;> push pc l_loopStart
+    combineAnd result <;> combineOr result <;> succ c <;> push pc l_loopStart
 
 def innerLoop (edge : MultiTapeTM tapeCount (WithSep OneTwo)) (maxConfig : List OneTwo) :
     MultiTapeTM tapeCount (WithSep OneTwo) :=
@@ -263,6 +273,9 @@ lemma inner_loop_halts_on_lists
     · simp
     · simp
   · simp
+    split_ifs
+    · simp
+    · simp
   · simp
 
 def reachability
@@ -305,6 +318,80 @@ lemma inner_loop_start
   · simp
   · simp; grind
 
+-- TODO the result of eval_list makes heavy use of
+-- Function.update tapes x (f(tapes) :: (tapes x).tail)
+-- create an abstraction for that? Sometimes we need .tail.tail
+
+lemma inner_loop_after_first_rec
+  {max : ℕ}
+  {edge : MultiTapeTM tapeCount (WithSep OneTwo)}
+  {tapes : Fin tapeCount → List (List OneTwo)}
+  (h_pc_afterFirstRec : (tapes pc).head?.getD [] = l_afterFirstRec) :
+  (innerLoop edge (dya max)).eval_list tapes = Part.some (
+    Function.update (Function.update (Function.update tapes
+    a ((tapes c).head?.getD [] :: (tapes a).tail))
+    b ((tapes b)[1]?.getD [] :: (tapes b).tail))
+    pc (l_funStart :: l_afterSecondRec :: (tapes pc).tail)) := by
+  simp [innerLoop, h_pc_afterFirstRec]
+  grind
+
+lemma function_update_sort
+  {α : Type} {k : ℕ} {x y : Fin k} {h_lt : x.val < y.val}
+  {a b : α} {f : Fin k → α} :
+  Function.update (Function.update f y b) x a =
+    Function.update (Function.update f x a) y b := by grind
+
+lemma inner_loop_after_second_rec
+  {max : ℕ}
+  {edge : MultiTapeTM tapeCount (WithSep OneTwo)}
+  {tapes : Fin tapeCount → List (List OneTwo)}
+  (h_pc_afterSecondRec : (tapes pc).head?.getD [] = l_afterSecondRec) :
+  (innerLoop edge (dya max)).eval_list tapes = Part.some (
+    Function.update (Function.update (Function.update (Function.update
+      (Function.update (Function.update tapes
+    a (tapes a).tail)
+    b (tapes b).tail)
+    t (dya (dya_inv ((tapes t).head?.getD []) + 1) :: (tapes t).tail))
+    result (
+      (if (((tapes result).head?.getD [] != []) ∧
+         (tapes result)[1]?.getD [] != []) ∨
+         (tapes result)[2]?.getD [] != [] then
+        [.one]
+      else
+        []) :: (tapes result).tail.tail.tail))
+    c (dya (dya_inv ((tapes c).head?.getD []) + 1) :: (tapes c).tail))
+    pc (l_loopStart :: (tapes pc).tail)) := by
+  simp [innerLoop, h_pc_afterSecondRec]
+  split_ifs
+  · simp
+    split_ifs
+    · simp
+      grind
+    · simp
+      grind
+  · simp
+    split_ifs
+    · simp
+      grind
+    · simp
+      grind
+  · simp
+    split_ifs
+    · simp
+      grind
+    · simp
+      grind
+  · simp
+    split_ifs
+    · simp
+      grind
+    · simp
+      grind
+  · simp
+    grind
+  · simp
+    grind
+
 -- TODO continue here: prove this theorem by induction.
 lemma loop_semantics
   {r : (List OneTwo) → (List OneTwo) → Prop}
@@ -342,8 +429,10 @@ lemma loop_semantics
         (h_c : (tapes c).head?.getD [] ≠ dya max)
         (h_t : dya_inv ((tapes t).head?.getD []) = t_val.succ) :
         (innerLoopFun max h_edge_semantics)^[3 + 2 * (iter_count_bound max t_val)] tapes =
-          Function.update (Function.update tapes
-              c ((dya_succ ((tapes c).headD [])) :: (tapes pc).tail))
+          Function.update (Function.update (Function.update (Function.update tapes
+              c ((dya_succ ((tapes c).headD [])) :: (tapes c).tail))
+              t (dya (t_val.succ) :: (tapes t).tail)) -- TODO But we already have that
+              pc (l_loopStart :: (tapes pc).tail))
               result (if
                 ((tapes result).headD [] != []) ∨
                 (Relation.RelatesInSteps r ((tapes a).headD []) ((tapes c).headD []) (2 ^ t_val) ∧
@@ -362,22 +451,39 @@ lemma loop_semantics
         rw [inner_loop_start h_pc]
         simp [h_c]
         simp [innerLoopFun] at ih
-        -- TODO continue here. We need to make the iteration count and the head on tape t
-        -- equal
-        rw [(ih _ (by sorry) (by sorry)).1]
-        simpa using h_fun_start
-        exact h_fun_start
+        simp [h_t]
+        let ih' := ih (Function.update (Function.update (Function.update (Function.update tapes
+            a ((tapes a).head?.getD [] :: tapes a))
+            b ((tapes c).head?.getD [] :: tapes b))
+            t ((dya t_val) :: (tapes t).tail))
+            pc (l_funStart :: l_afterFirstRec :: (tapes pc).tail))
+        simp at ih'
+        let ih' := ih'.1
+        simp [ih']
+        simp [inner_loop_after_first_rec]
+        let ih' := ih  (Function.update
+            (Function.update
+              (Function.update
+                (Function.update
+                      (Function.update
+                        (Function.update
+                          (Function.update (Function.update tapes 0 ((tapes 0).head?.getD [] :: tapes 0)) 1
+                            ((tapes c).head?.getD [] :: tapes 1))
+                          t (dya t_val :: (tapes t).tail))
+                        pc (l_afterFirstRec :: (tapes pc).tail))
+                      result
+                      (if Relation.RelatesInSteps r ((tapes 0).head?.getD []) ((tapes c).head?.getD []) (2 ^ t_val) then
+                        [OneTwo.one] :: tapes result
+                      else [] :: tapes result))
+                0 ((tapes c).head?.getD [] :: tapes 0))
+              1 ((tapes 1)[0]?.getD [] :: tapes 1))
+            pc (l_funStart :: l_afterSecondRec :: (tapes pc).tail))
+        simp at ih'
+        let ih' := ih'.1
+        simp [ih']
+        simp [inner_loop_after_second_rec]
         sorry
-
-      by_cases h_rel : Relation.RelatesInSteps r
-          ((tapes a).headD []) ((tapes b).headD []) (Nat.pow 2 (t_val + 1))
-      · -- simp only [h_rel]
-        simp
-        obtain ⟨c_val, h_c_rel⟩ :=
-          (relatesInStepsExp r ((tapes a).headD []) ((tapes b).headD []) t_val).mp h_rel
-        have h_c_le : dya_inv c_val < max := by sorry
-        sorry
-      · sorry
+      sorry
 
 
 theorem reachability_eval_list
