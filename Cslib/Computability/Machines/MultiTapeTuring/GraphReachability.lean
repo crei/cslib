@@ -95,11 +95,11 @@ abbrev pc : Fin tapeCount := ⟨8, sorry⟩
 abbrev c : Fin tapeCount := ⟨9, sorry⟩
 abbrev mainAux : Fin tapeCount := ⟨10, sorry⟩
 
-abbrev l_funStart := dya 1
-abbrev l_loopStart := dya 2
-abbrev l_afterFirstRec := dya 3
-abbrev l_afterSecondRec := dya 4
-abbrev l_loopContinue := dya 5
+abbrev l_funStart := [OneTwo.one]
+abbrev l_loopStart := [OneTwo.two]
+abbrev l_afterFirstRec := [OneTwo.one, OneTwo.one]
+abbrev l_afterSecondRec := [OneTwo.one, OneTwo.two]
+abbrev l_loopContinue := [OneTwo.two, OneTwo.one]
 
 public def eqLit {k : ℕ}
   (q : Fin (k + 3))
@@ -287,6 +287,24 @@ noncomputable def innerLoopFun
   (h_edge_semantics : edge_semantics r h_r_dec edge) :=
     (innerLoop edge (dya max)).eval_list_tot (inner_loop_halts_on_lists h_edge_semantics)
 
+lemma inner_loop_start
+  {max : ℕ}
+  {edge : MultiTapeTM tapeCount (WithSep OneTwo)}
+  {tapes : Fin tapeCount → List (List OneTwo)}
+  (h_pc_loopStart : (tapes pc).head?.getD [] = l_loopStart) :
+  (innerLoop edge (dya max)).eval_list tapes = Part.some (if (tapes c).head?.getD [] = dya max then
+      Function.update (Function.update tapes pc (tapes pc).tail) c (tapes c).tail
+    else
+      Function.update (Function.update (Function.update (Function.update tapes
+        a ((tapes a).head?.getD [] :: tapes a))
+        b ((tapes c).head?.getD [] :: tapes b))
+        t (dya (dya_inv ((tapes t).head?.getD []) - 1) :: (tapes t).tail))
+        pc (l_funStart :: l_afterFirstRec :: (tapes pc).tail)) := by
+  simp [innerLoop, h_pc_loopStart]
+  split_ifs
+  · simp
+  · simp; grind
+
 -- TODO continue here: prove this theorem by induction.
 lemma loop_semantics
   {r : (List OneTwo) → (List OneTwo) → Prop}
@@ -341,8 +359,12 @@ lemma loop_semantics
           grind
         rw [this]
         simp [innerLoopFun]
-        -- TODO continue here, see if we can apply the IH two times.
-        rw [(ih tapes (by sorry) (by sorry)).1]
+        rw [inner_loop_start h_pc]
+        simp [h_c]
+        simp [innerLoopFun] at ih
+        -- TODO continue here. We need to make the iteration count and the head on tape t
+        -- equal
+        rw [(ih _ (by sorry) (by sorry)).1]
         simpa using h_fun_start
         exact h_fun_start
         sorry
