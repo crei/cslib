@@ -460,18 +460,22 @@ lemma loop_semantics
           rw [← Function.iterate_add_apply, ← Function.iterate_succ_apply' (f := f)]
           grind
         rw [this]
-        simp [innerLoopFun]
+        simp only [innerLoopFun, MultiTapeTM.eval_list_tot_eq_eval_list_get]
         rw [inner_loop_start h_pc]
-        simp [h_c]
-        simp [innerLoopFun] at ih
-        simp [h_t]
-        let ih' := ih (Function.update (Function.update (Function.update (Function.update tapes
+        simp only [Part.get_some]
+        simp only [h_c, h_t]
+        simp only [↓reduceIte]
+        simp only [Nat.succ_eq_add_one, add_tsub_cancel_right]
+        simp only [innerLoopFun] at ih
+        let tapes₁ := (Function.update (Function.update (Function.update (Function.update tapes
             a ((tapes a).head?.getD [] :: tapes a))
             b ((tapes c).head?.getD [] :: tapes b))
             t ((dya t_val) :: (tapes t).tail))
             pc (l_funStart :: l_afterFirstRec :: (tapes pc).tail))
-        simp at ih'
-        let ih' := ih'.1
+        let ih' := (ih tapes₁ (by simp [tapes₁]) (by simp [tapes₁])).1
+        have : (dya_inv ((tapes₁ t).headD [])) = t_val := by simp [tapes₁]
+        rw [this] at ih'
+        simp [tapes₁] at ih'
         simp [ih']
         simp [inner_loop_after_first_rec]
         let ih' := ih  (Function.update
@@ -514,6 +518,7 @@ lemma loop_semantics
             grind
           · simp [h_r₁, h_r₂]
             grind
+
       sorry
 
 
