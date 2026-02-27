@@ -336,10 +336,16 @@ lemma inner_loop_after_first_rec
   grind
 
 lemma function_update_sort
-  {α : Type} {k : ℕ} {x y : Fin k} {h_lt : x.val < y.val}
+  {α : Type} {k : ℕ} {x y : Fin k} {h_lt : x < y}
   {a b : α} {f : Fin k → α} :
-  Function.update (Function.update f y b) x a =
-    Function.update (Function.update f x a) y b := by grind
+  Function.update (Function.update f x a) y b =
+    Function.update (Function.update f y b) x a := by grind
+
+lemma function_update_pull
+  {α : Type} {k : ℕ} (x : Fin k) {y : Fin k} {h_lt : x ≠ y}
+  {a b : α} {f : Fin k → α} :
+  Function.update (Function.update f x a) y b =
+    Function.update (Function.update f y b) x a := by grind
 
 lemma inner_loop_after_second_rec
   {max : ℕ}
@@ -391,6 +397,13 @@ lemma inner_loop_after_second_rec
     grind
   · simp
     grind
+
+@[simp]
+lemma list_getElem?_zero_eq_head? {α : Type} (l : List α) :
+  l[0]? = l.head? := by
+  cases l with
+  | nil => simp
+  | cons a l => simp
 
 -- TODO continue here: prove this theorem by induction.
 lemma loop_semantics
@@ -476,13 +489,31 @@ lemma loop_semantics
                         [OneTwo.one] :: tapes result
                       else [] :: tapes result))
                 0 ((tapes c).head?.getD [] :: tapes 0))
-              1 ((tapes 1)[0]?.getD [] :: tapes 1))
+              1 ((tapes 1).head?.getD [] :: tapes 1))
             pc (l_funStart :: l_afterSecondRec :: (tapes pc).tail))
         simp at ih'
         let ih' := ih'.1
         simp [ih']
         simp [inner_loop_after_second_rec]
-        sorry
+        simp [function_update_pull 0]
+        simp [function_update_pull 1]
+        simp [function_update_pull result]
+        simp [function_update_pull pc]
+        simp [function_update_pull c]
+        simp [function_update_pull t]
+        by_cases h_r₁ : Relation.RelatesInSteps r
+          ((tapes 0).head?.getD []) ((tapes c).head?.getD []) (2 ^ t_val)
+        · by_cases h_r₂ : Relation.RelatesInSteps r
+            ((tapes c).head?.getD []) ((tapes 1).head?.getD []) (2 ^ t_val)
+          · simp [h_r₁, h_r₂]
+          · simp [h_r₁, h_r₂]
+            grind
+        · by_cases h_r₂ : Relation.RelatesInSteps r
+            ((tapes c).head?.getD []) ((tapes 1).head?.getD []) (2 ^ t_val)
+          · simp [h_r₁, h_r₂]
+            grind
+          · simp [h_r₁, h_r₂]
+            grind
       sorry
 
 
