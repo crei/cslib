@@ -52,7 +52,6 @@ theorem mul₀_eval_list {tapes : Fin 9 → List (List OneTwo)} :
       (dya (dya_inv ((tapes 0).headD []) * dya_inv ((tapes 1).headD [])) :: (tapes 2)))) := by
   by_cases h_zero: dya_inv ((tapes 0).head?.getD []) = 0
   · simp [mul₀, h_zero]
-    grind
   · simp [mul₀, h_zero]
     grind
 
