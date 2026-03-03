@@ -51,6 +51,17 @@ theorem add₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
   · simp [h]; grind
   · grind
 
+theorem add₀_spaceUsed {tapes : Fin 6 → List (List OneTwo)} :
+  add₀.spaceUsed_list tapes (h_halts := by sorry) = fun j : Fin 6 =>
+    match j with
+    | 0 => 1 + spaceUsed_init tapes 0
+    | 1 => 1 + spaceUsed_init tapes 1
+    | 2 => 1 + ((dya (dya_inv ((tapes 2).headD [])).succ) :: (tapes 2).tail).length
+    | 3 => 1 + ((tapes 3).headD []).length + spaceUsed_init tapes 3
+    | 4 => 1 + ((tapes 4).headD []).length + spaceUsed_init tapes 4
+    | 5 => 1 + ((tapes 5).headD []).length + spaceUsed_init tapes 5 := by
+  sorry
+
 /--
 A Turing machine that adds the heads of tapes i and j (in dyadic encoding) and pushes the result
 to tape l.

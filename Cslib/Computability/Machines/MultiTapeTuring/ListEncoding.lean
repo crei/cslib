@@ -42,6 +42,18 @@ of the resulting string (if the list is non-empty). -/
 public def listToString (ls : List (List α)) : List (WithSep α) :=
   (ls.map (fun w : List α => (w.map .ofChar) ++ [.comma])).flatten
 
+@[simp, grind =]
+public theorem listToString_length_nil :
+    (listToString ([] : List (List α))).length = 0 := by
+  simp [listToString]
+
+@[simp, grind =]
+public theorem listToString_length_cons
+    (w : List α) (ls : List (List α)) :
+    (listToString (w :: ls)).length = w.length + 1 + (listToString ls).length := by
+  simp [listToString]
+  grind
+
 /-- Encodes a list of words into a tape. -/
 public def listToTape (ls : List (List α)) : BiTape (WithSep α) :=
   BiTape.mk₁ (listToString ls)
@@ -118,6 +130,20 @@ def MultiTapeTM.TransformsListsWithStats
     (ts : (Fin k → List (List α)) × (Fin k → HeadStats)) : Prop :=
     tm.evalWithStats (listToTape ∘ tapes) = .some (listToTape ∘ ts.1, ts.2)
 
+/-- Head statistics for list computations.
+The assumption is that the head starts on the leftmost symbol of the initial tape and ends on the
+leftmost symbol of the final tape. The zero-point is the right-most non-blank symbol of the initial
+tape which is the same point as the right-most non-blank symbol of the final tape.
+The head never moves right of the zero point and it moves at most `leftmost` points left of the
+zero point. -/
+public structure HeadStatsList where
+  /-- The number of symbols on the initial tape. TODO isn't this redundant? -/
+  initialLength : ℕ
+  /-- The number of symbols on the tape after termination. TODO isn't this redundant? -/
+  finalLength : ℕ
+  /-- The left-most position of the head in number of symbols left of the zero point. -/
+  leftmost : ℕ
+
 /--
 Evaluate the Turing machine `tm` on the list-encoded tapes `tapes` and also return the head
 statistics of the computation.
@@ -127,6 +153,24 @@ public noncomputable def MultiTapeTM.evalWithStats_list
     (tapes : Fin k → List (List α)) :
     Part ((Fin k → List (List α)) × (Fin k → HeadStats)) :=
   ⟨∃ ts, tm.TransformsListsWithStats tapes ts, fun h => h.choose⟩
+
+-- TODO we could also use "tape cells moved over" or "added".
+-- the benefit is that we could say `0` if the head did not move at all or only deleted symbols.
+-- the problem is that the situation of adding symbols is more complicated.
+
+/-- The max number of tape cells the head traversed over or that contain non-blank symbols.
+Note that the head will always be left of or on the "zero" point which is the initial position
+for an empty initial tape or the rightmost non-blank cell. -/
+-- TODO we could even make this Part now.
+public noncomputable def MultiTapeTM.spaceUsed_list
+    (tm : MultiTapeTM k (WithSep α))
+    (tapes : Fin k → List (List α))
+    (h_halts : ∀ tapes, tm.haltsOn tapes := by simp) : Fin k → ℕ := sorry
+
+/-- The space initially used by a Turing machine that has the given tape configuration. -/
+@[simp] -- TODO do we need simp here?
+public def spaceUsed_init (tapes : Fin k → List (List α)) : Fin k → ℕ := fun i =>
+  (listToString (tapes i)).length
 
 -- TODO for machines running on lists, we can actually have more precise head stats:
 -- we know (and should enforce) that the head never moves to the right of the rightmost symbol
@@ -176,4 +220,13 @@ public lemma dya_inv_dya (n : ℕ) : dya_inv (dya n) = n := by sorry
 @[simp, grind =]
 public lemma dya_dya_inv (w : List OneTwo) : dya (dya_inv w) = w := by sorry
 
+@[simp, grind =]
+public theorem MultiTapeTM.with_tapes_spaceUsed
+  {α : Type} [Fintype α] [Inhabited α]
+  {k₁ k₂ : ℕ}
+  {tm : MultiTapeTM k₁ (WithSep α)} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
+  {tapes : Fin k₂ → List (List α)} :
+  (tm.with_tapes f h_inj).spaceUsed_list tapes (h_halts := sorry) =
+    apply_updates (spaceUsed_init tapes) (tm.spaceUsed_list (tapes ∘ f) (h_halts := sorry)) f := by
+  sorry
 end Turing

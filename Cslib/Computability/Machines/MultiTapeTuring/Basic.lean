@@ -371,6 +371,11 @@ def OutputsWithinTime (tm : MultiTapeTM k α) (l l' : List α) (m : ℕ) :=
 --   grind [hevals.apply_le_apply_add (Cfg.space_used tm)
 --       fun a b hstep ↦ Cfg.space_used_step a b (Option.mem_def.mp hstep)]
 
+structure MultiTapeTotalTM k α extends MultiTapeTM k α where
+  /-- The Turing machine halts on all inputs. -/
+  haltsOn : ∀ tapes, toMultiTapeTM.haltsOn tapes
+
+
 end MultiTapeTM
 
 end Turing

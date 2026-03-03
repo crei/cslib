@@ -53,6 +53,16 @@ lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
         [⟨-1, (dya n).length, -1, by omega⟩].get) := by
   sorry
 
+@[simp, grind =]
+lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
+  (succ i).spaceUsed_list tapes sorry = Function.update (spaceUsed_init tapes) i
+    1 + ((dya (dya_inv ((tapes i).headD [])).succ) :: (tapes i).tail).length := by
+  sorry
+  --   (if (dya (dya_inv ((tapes i).headD [])).succ).length = ((tapes i).headD []).length then
+  --     1 + (listToString (tapes i)).length -- We need to move at least one char to the left.
+  --   else
+  --     2 + (listToString (tapes i)).length) -- We need to move at least one char to the left
+  -- := by sorry
 
 end Routines
 

@@ -37,7 +37,7 @@ public def HeadStats.space (hs : HeadStats) : ℕ :=
 
 
 /-- Compute the head statistics for a turing machine starting with a certain tape configuration. -/
-public def headStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
+public def MultiTapeTM.headStats (tm : MultiTapeTM k α) (tapes : Fin k → BiTape α) :
   Part (Fin k → HeadStats) := sorry
 
 /-- Execute a Turing machine and also compute head statistics. -/
@@ -54,6 +54,12 @@ def seq_combine_stats (stats₁ stats₂ : Fin k → HeadStats) : Fin k → Head
     max max₁ (max₂ + final₁),
     final₁ + final₂,
     by omega⟩
+
+lemma seq_stats (tm₁ tm₂ : MultiTapeTM k α) (tapes : Fin k → BiTape α) (i : Fin k) :
+  (seq tm₁ tm₂).headStats tapes = do
+      let stats₁ ← tm₁.headStats tapes
+      let stats₂ ← tm₂.headStats tapes'
+      return seq_combine_stats stats₁ stats₂ := by sorry
 
 lemma seq_evalWithStats (tm₁ tm₂ : MultiTapeTM k α) (tapes : Fin k → BiTape α) (i : Fin k) :
   (seq tm₁ tm₂).evalWithStats tapes = do

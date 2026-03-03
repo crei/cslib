@@ -9,6 +9,7 @@ module
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.TapeExtension
 
+
 public import Mathlib.Logic.Equiv.Fintype
 public import Mathlib.Data.Finset.Sort
 
@@ -69,6 +70,13 @@ public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ}
   (tm.extend
     (by simpa using Fintype.card_le_of_injective f h_inj)).permute_tapes (inj_to_perm f h_inj)
 
+@[simp]
+public theorem MultiTapeTM.with_tapes_halts_of_halts {k₁ k₂ : ℕ}
+  (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective)
+  (h_halts : ∀ tapes, tm.haltsOn tapes) :
+  ∀ tapes, (tm.with_tapes f h_inj).haltsOn tapes := by
+  sorry
+
 -- TODO do not use `h.choose` here but rather assume that `f` is injective.
 
 /--
@@ -111,6 +119,21 @@ public lemma apply_updates_function_update
   funext i
   apply apply_updates_function_update_apply h_inj
 
+-- TODO tagging this @simp will use this instead of the two above,
+-- which can lead to a dead-end.
+public lemma apply_updates_function
+  {γ : Type}
+  {k₁ k₂ : ℕ}
+  {tapes : Fin k₂ → γ}
+  {tapes' : Fin k₁ → γ}
+  {f : Fin k₁ → Fin k₂}
+  (h_inj : f.Injective) :
+  apply_updates tapes tapes' f = fun i =>
+    if h : ∃ j, f j = i then tapes' h.choose else tapes i := by
+  unfold apply_updates
+  simp
+
+
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval
   {k₁ k₂ : ℕ}
@@ -121,6 +144,7 @@ public theorem MultiTapeTM.with_tapes_eval
       (fun tapes' => fun t => apply_updates tapes tapes' f t) := by
   simp [with_tapes]
   sorry
+
 
 
 end Turing

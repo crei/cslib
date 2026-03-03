@@ -26,6 +26,11 @@ lemma push₁_eval_list {w : List α} {tapes : Fin 1 → List (List α)} :
   (push₁ w).eval_list tapes = .some (Function.update tapes 0 (w :: (tapes 0))) := by
   sorry
 
+@[simp]
+lemma push₁_spaceUsed_list {w : List α} {tapes : Fin 1 → List (List α)} {i : Fin 1} :
+    (push₁ w).spaceUsed_list tapes sorry i = (listToString (w :: (tapes 0))).length := by
+  sorry
+
 /--
 A Turing machine that pushes the word `w` to tape `i`.
 -/
@@ -39,6 +44,21 @@ public theorem push_eval_list {k : ℕ}
     .some (Function.update tapes i (w :: (tapes i))) := by
   have h_inj : [i].get.Injective := by intro x y; grind
   simp_all [push]
+
+@[simp]
+public theorem push_halts_on {k : ℕ} {i : Fin k} {w : List α} :
+  ∀ tapes, (push i w).haltsOn tapes := by
+  sorry
+
+
+@[simp]
+public theorem push_spaceUsed_list {k : ℕ} {i : Fin k} {w : List α}
+  {tapes : Fin k → List (List α)} :
+    (push i w).spaceUsed_list tapes = Function.update (spaceUsed_init tapes)
+      i (listToString (w :: (tapes i))).length := by
+  simp [push]
+  sorry
+
 
 end Routines
 

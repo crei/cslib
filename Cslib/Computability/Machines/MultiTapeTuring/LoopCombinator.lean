@@ -9,6 +9,8 @@ module
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 
+public import Mathlib.Order.Monotone.Defs
+
 namespace Turing
 
 namespace Routines
@@ -46,6 +48,55 @@ public theorem loop_eval_list {i : ℕ} {h_i : i < k}
       (((Part.bind · tm.eval_list)^[dya_inv ((tapes ⟨i, by omega⟩).headD [])]
         (Part.some (tapes_take tapes k (by omega))))).map
           fun tapes' => tapes_extend_by tapes' tapes := by
+  sorry
+
+public theorem loop_halts_of_halts
+  {i : ℕ} {h_i : i < k}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  (h_halts : ∀ tapes, tm.haltsOn tapes) :
+  ∀ tapes, (loop i tm (h_i := h_i)).haltsOn tapes := by
+  sorry
+
+public noncomputable def space_at_iter {k : ℕ}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  (h_halts : ∀ tapes, tm.haltsOn tapes)
+  (iteration : ℕ)
+  (tapes : Fin k → List (List OneTwo)) : Fin k → ℕ :=
+  match iteration with
+  | 0 => spaceUsed_init tapes
+  | Nat.succ iter => fun i => max
+      (space_at_iter h_halts iter tapes i)
+      (tm.spaceUsed_list
+        ((fun tapes => (tm.eval_list tapes).get (by sorry))^[iter] tapes) h_halts i)
+
+-- TODO the following is probably not true for aux tapes. There we might need a bound.
+
+@[simp]
+public lemma space_at_iter_of_mono {k : ℕ}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  (h_halts : ∀ tapes, tm.haltsOn tapes)
+  (i : Fin k)
+  -- The machine does not delete anything on the tape.
+  (h_mono_output : ∀ tapes, (tapes i).length ≤ ((tm.eval_list tapes).get (by sorry) i).length)
+  -- The machine does not have any exess space usage
+  (h_mono_space : ∀ tapes, (spaceUsed_init tapes i) =
+      ((tm.eval_list tapes).get (by sorry) i).length)
+  (iteration : ℕ)
+  (tapes : Fin k → List (List OneTwo)) :
+  space_at_iter h_halts iteration tapes i = ((tm.eval_list tapes).get (by sorry) i).length := by
+  sorry
+
+@[simp]
+public theorem loop_space_list {i : ℕ} {h_i : i < k}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  {h_halts : ∀ tapes, tm.haltsOn tapes}
+  {tapes : Fin (k + 3) → List (List OneTwo)} :
+  (loop i tm (h_i := h_i)).spaceUsed_list tapes sorry = (fun j : Fin (k + 3) =>
+      (if h : j < k then
+        space_at_iter h_halts
+          (dya_inv ((tapes ⟨i, by omega⟩).headD [])) (fun i => tapes ⟨i, sorry⟩) ⟨j, h⟩
+      else
+        ((tapes ⟨i, by omega⟩).headD []).length + 1 + (spaceUsed_init tapes j))) := by
   sorry
 
 end Routines
