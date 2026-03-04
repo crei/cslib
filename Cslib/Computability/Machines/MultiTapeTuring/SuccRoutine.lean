@@ -12,6 +12,7 @@ import Cslib.Foundations.Data.RelatesInSteps
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
+public import Cslib.Computability.Machines.MultiTapeTuring.LoopCombinator
 
 import Mathlib.Data.Nat.Bits
 
@@ -35,6 +36,10 @@ A Turing machine that increments the head of tape `i` by one (in dyadic encoding
 Pushes zero if the tape is empty. -/
 public def succ {k : ℕ} (i : Fin k) : MultiTapeTM k (WithSep OneTwo) :=
   succ₀.with_tapes [i].get (by intro x y; grind)
+
+@[simp]
+public theorem succ_halts {k : ℕ} {i : Fin k} : ∀ tapes, (succ i).haltsOn tapes := by
+  sorry
 
 @[simp]
 public theorem succ_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
@@ -63,6 +68,27 @@ lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)
   --   else
   --     2 + (listToString (tapes i)).length) -- We need to move at least one char to the left
   -- := by sorry
+
+@[simp]
+lemma succ_output_length_mono {k : ℕ} {i j : Fin k} : output_length_mono (succ i) j := by
+  apply output_length_mono_iff.mpr
+  intro tapes
+  simp [output_length_value]
+  sorry
+
+@[simp]
+lemma succ_space_use_is_output_length {k : ℕ} {i j : Fin k} :
+    space_use_is_output_length (succ i) j := by
+  apply space_use_is_output_length_iff.mpr
+  intro tapes
+  simp [output_length_value]
+
+  -- TODO this is actually wrong!
+
+
+
+
+  sorry
 
 end Routines
 

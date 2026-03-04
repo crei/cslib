@@ -168,9 +168,11 @@ public noncomputable def MultiTapeTM.spaceUsed_list
     (h_halts : ∀ tapes, tm.haltsOn tapes := by simp) : Fin k → ℕ := sorry
 
 /-- The space initially used by a Turing machine that has the given tape configuration. -/
-@[simp] -- TODO do we need simp here?
 public def spaceUsed_init (tapes : Fin k → List (List α)) : Fin k → ℕ := fun i =>
   (listToString (tapes i)).length
+
+public def spaceUsed_init_simp (tapes : Fin k → List (List α)) (i : Fin k) :
+  spaceUsed_init tapes i = (listToString (tapes i)).length := by simp [spaceUsed_init]
 
 -- TODO for machines running on lists, we can actually have more precise head stats:
 -- we know (and should enforce) that the head never moves to the right of the rightmost symbol

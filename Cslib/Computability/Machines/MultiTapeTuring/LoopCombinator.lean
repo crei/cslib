@@ -69,21 +69,83 @@ public noncomputable def space_at_iter {k : ℕ}
       (tm.spaceUsed_list
         ((fun tapes => (tm.eval_list tapes).get (by sorry))^[iter] tapes) h_halts i)
 
+public theorem space_at_iter_of_mono {k : ℕ}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  (h_halts : ∀ tapes, tm.haltsOn tapes)
+  (h_mono : sorry)
+  (iteration : ℕ)
+  (tapes : Fin k → List (List OneTwo))
+  (i : Fin k) :
+  space_at_iter h_halts iteration.succ tapes = tm.spaceUsed_list
+      ((fun tapes => (tm.eval_list tapes).get (by sorry))^[iteration] tapes) h_halts i := by
+  sorry
+
 -- TODO the following is probably not true for aux tapes. There we might need a bound.
+
+public noncomputable def output_length {k : ℕ}
+  (tm : MultiTapeTM k (WithSep OneTwo))
+  (tapes : Fin k → List (List OneTwo))
+  (i : Fin k) : Part ℕ :=
+  (tm.eval_list tapes).map fun t => (listToString (t i)).length
+
+public lemma output_length_value {k : ℕ}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  (tapes : Fin k → List (List OneTwo))
+  (i : Fin k) :
+  output_length tm tapes i = (tm.eval_list tapes).map fun t => (listToString (t i)).length := by
+  simp [output_length]
+
+public def output_length_mono {k : ℕ}
+  (tm : MultiTapeTM k (WithSep OneTwo))
+  (i : Fin k) : Prop :=
+  ∀ tapes, ((output_length tm tapes i).map
+    fun len => len ≥ (listToString (tapes i)).length) = .some true
+
+public lemma output_length_mono_iff {k : ℕ}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  {i : Fin k} :
+  output_length_mono tm i ↔ ∀ tapes, (output_length tm tapes i).map
+    fun len => len ≥ (listToString (tapes i)).length = .some true := by
+  simp [output_length_mono]
+
+public def space_use_is_output_length {k : ℕ}
+  (tm : MultiTapeTM k (WithSep OneTwo))
+  (i : Fin k) : Prop :=
+  ∀ tapes, (.some (tm.spaceUsed_list tapes sorry i) = output_length tm tapes i)
+
+public lemma space_use_is_output_length_iff {k : ℕ}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  {i : Fin k} :
+  space_use_is_output_length tm i ↔
+    ∀ tapes, (.some (tm.spaceUsed_list tapes sorry i) = output_length tm tapes i) := by
+  simp [space_use_is_output_length]
+
+-- TODO this still does not work, it only works if it only depends on the length.
+public def space_use_mono {k : ℕ}
+  (tm : MultiTapeTM k (WithSep OneTwo))
+  (i : Fin k) : Prop :=
+  ∀ tapes, (listToString (tapes i)).length ≤ (tm.spaceUsed_list tapes sorry i)
+
+public lemma space_use_mono_iff {k : ℕ}
+  (tm : MultiTapeTM k (WithSep OneTwo))
+  (i : Fin k) :
+  space_use_mono tm i ↔
+    ∀ tapes, (listToString (tapes i)).length ≤ (tm.spaceUsed_list tapes sorry i) := by
+  simp [space_use_mono]
 
 @[simp]
 public lemma space_at_iter_of_mono {k : ℕ}
   {tm : MultiTapeTM k (WithSep OneTwo)}
   (h_halts : ∀ tapes, tm.haltsOn tapes)
   (i : Fin k)
-  -- The machine does not delete anything on the tape.
-  (h_mono_output : ∀ tapes, (tapes i).length ≤ ((tm.eval_list tapes).get (by sorry) i).length)
-  -- The machine does not have any exess space usage
-  (h_mono_space : ∀ tapes, (spaceUsed_init tapes i) =
-      ((tm.eval_list tapes).get (by sorry) i).length)
+  -- The machine's output on tape i is at least as large as the input.
+  (h_mono_output : output_length_mono tm i)
+  -- The machine's space use is the same as the output length.
+  (h_mono_space : space_use_is_output_length tm i)
   (iteration : ℕ)
   (tapes : Fin k → List (List OneTwo)) :
-  space_at_iter h_halts iteration tapes i = ((tm.eval_list tapes).get (by sorry) i).length := by
+  space_at_iter h_halts iteration tapes i =
+    (((Part.bind · tm.eval_list)^[iteration] tapes).get sorry i).length := by
   sorry
 
 @[simp]
