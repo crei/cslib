@@ -59,9 +59,9 @@ lemma succ₀_evalWithStats_list {n : ℕ} {ls : List (List OneTwo)} :
   sorry
 
 @[simp, grind =]
-lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
+public lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
   (succ i).spaceUsed_list tapes sorry = Function.update (spaceUsed_init tapes) i
-    1 + ((dya (dya_inv ((tapes i).headD [])).succ) :: (tapes i).tail).length := by
+    (1 + ((dya (dya_inv ((tapes i).headD [])).succ) :: (tapes i).tail).length) := by
   sorry
   --   (if (dya (dya_inv ((tapes i).headD [])).succ).length = ((tapes i).headD []).length then
   --     1 + (listToString (tapes i)).length -- We need to move at least one char to the left.
@@ -70,32 +70,11 @@ lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)
   -- := by sorry
 
 @[simp]
-lemma succ_spaceUsed_mono_iter {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
+public lemma succ_spaceUsed_mono_iter {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
   (succ i).spaceUsed_list tapes (by simp) i ≤
     (succ i).spaceUsed_list (((succ i).eval_list tapes).get (by simp)) succ_halts i := by
   simp
 
-
-@[simp]
-lemma succ_output_length_mono {k : ℕ} {i j : Fin k} : output_length_mono (succ i) j := by
-  apply output_length_mono_iff.mpr
-  intro tapes
-  simp [output_length_value]
-  sorry
-
-@[simp]
-lemma succ_space_use_is_output_length {k : ℕ} {i j : Fin k} :
-    space_use_is_output_length (succ i) j := by
-  apply space_use_is_output_length_iff.mpr
-  intro tapes
-  simp [output_length_value]
-
-  -- TODO this is actually wrong!
-
-
-
-
-  sorry
 
 end Routines
 

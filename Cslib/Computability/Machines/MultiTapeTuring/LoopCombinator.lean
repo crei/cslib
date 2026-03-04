@@ -50,6 +50,7 @@ public theorem loop_eval_list {i : ℕ} {h_i : i < k}
           fun tapes' => tapes_extend_by tapes' tapes := by
   sorry
 
+@[simp]
 public theorem loop_halts_of_halts
   {i : ℕ} {h_i : i < k}
   {tm : MultiTapeTM k (WithSep OneTwo)}
@@ -85,6 +86,25 @@ public theorem space_at_iter_of_mono {k : ℕ}
     unfold space_at_iter
     rw [ih]
     simp only [Function.iterate_succ', Function.comp_apply, sup_eq_right, h_mono_step]
+
+@[simp]
+public theorem space_at_iter_of_constant {k : ℕ}
+  {tm : MultiTapeTM k (WithSep OneTwo)}
+  {h_halts : ∀ tapes, tm.haltsOn tapes}
+  {i : Fin k}
+  (h_constant_space : ∀ tapes, tm.spaceUsed_list tapes h_halts i = spaceUsed_init tapes i)
+  (h_constant_semantics : ∀ tapes, ((tm.eval_list tapes).map fun t => t i) = .some (tapes i))
+  {iteration : ℕ}
+  {tapes : Fin k → List (List OneTwo)} :
+  space_at_iter h_halts iteration tapes i = spaceUsed_init tapes i := by
+  induction iteration generalizing tapes with
+  | zero => simp [space_at_iter]
+  | succ iter ih =>
+    unfold space_at_iter
+    have h_id : (fun tapes : Fin k → List (List OneTwo) => tapes) = id := rfl
+    rw [ih]
+    simp [h_constant_space, h_constant_semantics, h_id, Function.iterate_id]
+    sorry
 
 -- TODO the following is probably not true for aux tapes. There we might need a bound.
 

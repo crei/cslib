@@ -62,11 +62,20 @@ private lemma succ_eval_list_get_apply {k : ℕ} {i j : Fin k}
   sorry
 
 
-private lemma succ_space_at_iter {k : ℕ} (i j : Fin k)
+private lemma succ_space_at_iter {k : ℕ} (i : Fin k)
     (n : ℕ) (tapes : Fin k → List (List OneTwo)) :
-  space_at_iter (tm := succ i) succ_halts n tapes j = Function.update (spaceUsed_init tapes)
-      i (listToString (((succ i).eval_list tapes).get (by sorry) j)).length := by
-  sorry
+  space_at_iter (tm := succ i) succ_halts n.succ tapes = Function.update (spaceUsed_init tapes)
+      i 1 + (listToString (((succ i).eval_list tapes).get (by sorry) i)).length := by
+  funext j
+  by_cases h : j = i
+  · rw [h, space_at_iter_of_mono succ_halts]
+    · simp
+      sorry
+    · intro tapes
+      exact succ_spaceUsed_mono_iter
+  · simp [h]
+    sorry
+
 
 theorem add₀_spaceUsed {tapes : Fin 6 → List (List OneTwo)} :
   add₀.spaceUsed_list tapes (h_halts := by sorry) = fun j : Fin 6 =>
@@ -78,38 +87,53 @@ theorem add₀_spaceUsed {tapes : Fin 6 → List (List OneTwo)} :
     | 3 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 3
     | 4 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 4
     | 5 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 5 := by
-  -- Establish halting proofs for each component
-  have h_halts_copy : ∀ t : Fin 6 → BiTape (WithSep OneTwo),
-      (copy (k := 6) 1 2 (h_neq := by decide)).haltsOn t := by intro; sorry
-  have h_halts_loop : ∀ t : Fin 6 → BiTape (WithSep OneTwo),
-      (loop (h_i := by decide) (k := 3) 0 (succ (2 : Fin 3))).haltsOn t :=
-    loop_halts_of_halts succ_halts
-  -- Unfold add₀ = (copy 1 2) <;> loop 0 (succ 2), split space via seq
-  simp only [add₀, MultiTapeTM.seq_spaceUsed_list h_halts_copy h_halts_loop]
-  -- Compute the copy step's space usage and the intermediate tape state
-  simp only [copy_spaceUsed_list, copy_eval_list]
-  -- Expand the loop's space: aux tapes (≥3) get fixed formula, inner tapes (<3) use space_at_iter
-  simp only [loop_space_list (h_halts := succ_halts)]
-  -- Case analysis on tape index; apply succ_space_at_iter after j is concrete
-  funext ⟨j, hj⟩
-  match j, hj with
-  | 0, _ =>
-    simp only [succ_space_at_iter (2 : Fin 3) _ succ_halts]
-    simp [Function.update, Fin.ext_iff]
-  | 1, _ =>
-    simp only [succ_space_at_iter (2 : Fin 3) _ succ_halts]
-    simp [Function.update, Fin.ext_iff]
-  | 2, _ =>
-    simp only [succ_space_at_iter (2 : Fin 3) _ succ_halts]
-    simp only [succ_eval_list_get_apply, Part.get_some, Function.update,
-               Fin.ext_iff, listToString_length_cons]
-    simp (config := { decide := true }) only [if_true, dif_pos, List.headD_cons, List.tail_cons,
-               listToString_length_cons, spaceUsed_init_simp]
-    simp only [show (⟨1, (by omega : 1 < 6)⟩ : Fin 6) = 1 from rfl,
-               show (⟨2, (by omega : 2 < 6)⟩ : Fin 6) = 2 from rfl]
-  | 3, _ => simp [Function.update, Fin.ext_iff]
-  | 4, _ => simp [Function.update, Fin.ext_iff]
-  | 5, _ => simp [Function.update, Fin.ext_iff]
+  simp [add₀, copy_halts, succ_halts, loop_halts_of_halts]
+  funext j
+  match j with
+  | 0 => simp
+         rw [space_at_iter_of_constant]
+         · sorry
+         · simp
+           sorry
+         · simp
+  | 1 => sorry
+  | 2 => sorry
+  | 3 => sorry
+  | 4 => sorry
+  | 5 => sorry
+
+  -- -- Establish halting proofs for each component
+  -- have h_halts_copy : ∀ t : Fin 6 → BiTape (WithSep OneTwo),
+  --     (copy (k := 6) 1 2 (h_neq := by decide)).haltsOn t := by intro; sorry
+  -- have h_halts_loop : ∀ t : Fin 6 → BiTape (WithSep OneTwo),
+  --     (loop (h_i := by decide) (k := 3) 0 (succ (2 : Fin 3))).haltsOn t :=
+  --   loop_halts_of_halts succ_halts
+  -- -- Unfold add₀ = (copy 1 2) <;> loop 0 (succ 2), split space via seq
+  -- simp only [add₀, MultiTapeTM.seq_spaceUsed_list h_halts_copy h_halts_loop]
+  -- -- Compute the copy step's space usage and the intermediate tape state
+  -- simp only [copy_spaceUsed_list, copy_eval_list]
+  -- -- Expand the loop's space: aux tapes (≥3) get fixed formula, inner tapes (<3) use space_at_iter
+  -- simp only [loop_space_list (h_halts := succ_halts)]
+  -- -- Case analysis on tape index; apply succ_space_at_iter after j is concrete
+  -- funext ⟨j, hj⟩
+  -- match j, hj with
+  -- | 0, _ =>
+  --   simp only [succ_space_at_iter (2 : Fin 3) _ succ_halts]
+  --   simp [Function.update, Fin.ext_iff]
+  -- | 1, _ =>
+  --   simp only [succ_space_at_iter (2 : Fin 3) _ succ_halts]
+  --   simp [Function.update, Fin.ext_iff]
+  -- | 2, _ =>
+  --   simp only [succ_space_at_iter (2 : Fin 3) _ succ_halts]
+  --   simp only [succ_eval_list_get_apply, Part.get_some, Function.update,
+  --              Fin.ext_iff, listToString_length_cons]
+  --   simp (config := { decide := true }) only [if_true, dif_pos, List.headD_cons, List.tail_cons,
+  --              listToString_length_cons, spaceUsed_init_simp]
+  --   simp only [show (⟨1, (by omega : 1 < 6)⟩ : Fin 6) = 1 from rfl,
+  --              show (⟨2, (by omega : 2 < 6)⟩ : Fin 6) = 2 from rfl]
+  -- | 3, _ => simp [Function.update, Fin.ext_iff]
+  -- | 4, _ => simp [Function.update, Fin.ext_iff]
+  -- | 5, _ => simp [Function.update, Fin.ext_iff]
 
 /--
 A Turing machine that adds the heads of tapes i and j (in dyadic encoding) and pushes the result
