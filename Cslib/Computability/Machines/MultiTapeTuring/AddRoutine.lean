@@ -63,11 +63,9 @@ private lemma succ_eval_list_get_apply {k : ℕ} {i j : Fin k}
 
 
 private lemma succ_space_at_iter {k : ℕ} (i j : Fin k)
-    (h_halts : ∀ tapes, (succ i).haltsOn tapes)
     (n : ℕ) (tapes : Fin k → List (List OneTwo)) :
-    (space_at_iter h_halts n tapes) j =
-      if j = i then (listToString (((succ i).eval_list tapes).get (by sorry) j)).length
-      else spaceUsed_init tapes j := by
+  space_at_iter (tm := succ i) succ_halts n tapes j = Function.update (spaceUsed_init tapes)
+      i (listToString (((succ i).eval_list tapes).get (by sorry) j)).length := by
   sorry
 
 theorem add₀_spaceUsed {tapes : Fin 6 → List (List OneTwo)} :

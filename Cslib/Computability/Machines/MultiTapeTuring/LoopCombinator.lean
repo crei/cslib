@@ -72,13 +72,19 @@ public noncomputable def space_at_iter {k : ℕ}
 public theorem space_at_iter_of_mono {k : ℕ}
   {tm : MultiTapeTM k (WithSep OneTwo)}
   (h_halts : ∀ tapes, tm.haltsOn tapes)
-  (h_mono : sorry)
+  (i : Fin k)
+  (h_mono_step : ∀ tapes, tm.spaceUsed_list tapes h_halts i ≤
+     tm.spaceUsed_list ((tm.eval_list tapes).get sorry) h_halts i)
   (iteration : ℕ)
-  (tapes : Fin k → List (List OneTwo))
-  (i : Fin k) :
-  space_at_iter h_halts iteration.succ tapes = tm.spaceUsed_list
-      ((fun tapes => (tm.eval_list tapes).get (by sorry))^[iteration] tapes) h_halts i := by
-  sorry
+  (tapes : Fin k → List (List OneTwo)) :
+  space_at_iter h_halts iteration.succ tapes i = tm.spaceUsed_list
+      ((fun tapes => (tm.eval_list tapes).get sorry)^[iteration] tapes) h_halts i := by
+  induction iteration generalizing tapes with
+  | zero => simp [space_at_iter]
+  | succ iter ih =>
+    unfold space_at_iter
+    rw [ih]
+    simp only [Function.iterate_succ', Function.comp_apply, sup_eq_right, h_mono_step]
 
 -- TODO the following is probably not true for aux tapes. There we might need a bound.
 
@@ -134,7 +140,7 @@ public lemma space_use_mono_iff {k : ℕ}
   simp [space_use_mono]
 
 @[simp]
-public lemma space_at_iter_of_mono {k : ℕ}
+public lemma space_at_iter_of_mono' {k : ℕ}
   {tm : MultiTapeTM k (WithSep OneTwo)}
   (h_halts : ∀ tapes, tm.haltsOn tapes)
   (i : Fin k)

@@ -174,6 +174,14 @@ public def spaceUsed_init (tapes : Fin k → List (List α)) : Fin k → ℕ := 
 public def spaceUsed_init_simp (tapes : Fin k → List (List α)) (i : Fin k) :
   spaceUsed_init tapes i = (listToString (tapes i)).length := by simp [spaceUsed_init]
 
+@[simp]
+public lemma spaceUsed_init_le_spaceUsed {k : ℕ} {α : Type}
+  {tm : MultiTapeTM k (WithSep α)}
+  (tapes : Fin k → List (List α))
+  (i : Fin k) :
+  spaceUsed_init tapes i ≤ MultiTapeTM.spaceUsed_list tm tapes sorry i := by
+  sorry
+
 -- TODO for machines running on lists, we can actually have more precise head stats:
 -- we know (and should enforce) that the head never moves to the right of the rightmost symbol
 -- and always starts and ends on the leftmost symbol (and if the tape is empty, it never moves

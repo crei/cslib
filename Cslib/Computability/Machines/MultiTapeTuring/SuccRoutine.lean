@@ -70,6 +70,13 @@ lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)
   -- := by sorry
 
 @[simp]
+lemma succ_spaceUsed_mono_iter {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
+  (succ i).spaceUsed_list tapes (by simp) i ≤
+    (succ i).spaceUsed_list (((succ i).eval_list tapes).get (by simp)) succ_halts i := by
+  simp
+
+
+@[simp]
 lemma succ_output_length_mono {k : ℕ} {i j : Fin k} : output_length_mono (succ i) j := by
   apply output_length_mono_iff.mpr
   intro tapes
