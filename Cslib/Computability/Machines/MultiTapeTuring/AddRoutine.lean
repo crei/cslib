@@ -61,46 +61,38 @@ private lemma succ_eval_list_get_apply {k : ℕ} {i j : Fin k}
     (Function.update tapes i ((dya (dya_inv ((tapes i).headD [])).succ) :: (tapes i).tail)) j := by
   sorry
 
-
-private lemma succ_space_at_iter {k : ℕ} (i : Fin k)
-    (n : ℕ) (tapes : Fin k → List (List OneTwo)) :
-  space_at_iter (tm := succ i) succ_halts n.succ tapes = Function.update (spaceUsed_init tapes)
-      i 1 + (listToString (((succ i).eval_list tapes).get (by sorry) i)).length := by
-  funext j
-  by_cases h : j = i
-  · rw [h, space_at_iter_of_mono succ_halts]
-    · simp
-      sorry
-    · intro tapes
-      exact succ_spaceUsed_mono_iter
-  · simp [h]
-    sorry
+-- TODO we have to be much more radical.
 
 
-theorem add₀_spaceUsed {tapes : Fin 6 → List (List OneTwo)} :
-  add₀.spaceUsed_list tapes (h_halts := by sorry) = fun j : Fin 6 =>
-    match j with
-    | 0 => spaceUsed_init tapes 0
-    | 1 => 1 + spaceUsed_init tapes 1
-    | 2 => max (((tapes 1).headD []).length + 1 + spaceUsed_init tapes 2)
-               ((dya (dya_inv ((tapes 1).headD [])).succ).length + 1 + spaceUsed_init tapes 2)
-    | 3 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 3
-    | 4 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 4
-    | 5 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 5 := by
-  simp [add₀, copy_halts, succ_halts, loop_halts_of_halts]
-  funext j
-  match j with
-  | 0 => simp
-         rw [space_at_iter_of_constant]
-         · sorry
-         · simp
-           sorry
-         · simp
-  | 1 => sorry
-  | 2 => sorry
-  | 3 => sorry
-  | 4 => sorry
-  | 5 => sorry
+-- private lemma succ_space_at_iter {k : ℕ} (i : Fin k)
+--     (n : ℕ) (tapes : Fin k → List (List OneTwo)) :
+--   space_at_iter (tm := succ i) (by simp) n.succ tapes = Function.update (spaceUsed_init tapes)
+--       i
+--      -- TODO 1 + output size - some shortcut?
+--       i (1 + (spaceUsed_init ((succ i).eval_list_tot (by simp) tapes) i)) := by
+--   sorry
+
+
+-- theorem add₀_spaceUsed {tapes : Fin 6 → List (List OneTwo)} :
+--   add₀.spaceUsed_list tapes (h_halts := by sorry) = fun j : Fin 6 =>
+--     match j with
+--     | 0 => spaceUsed_init tapes 0
+--     | 1 => 1 + spaceUsed_init tapes 1
+--     | 2 => (dya (dya_inv ((tapes 0).headD []) +
+--              dya_inv ((tapes 1).headD [])) :: (tapes 2)).length + 1 + (spaceUsed_init tapes 2)
+--     | 3 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 3
+--     | 4 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 4
+--     | 5 => ((tapes 0).headD []).length + 1 + spaceUsed_init tapes 5 := by
+--   simp [add₀, spaceUsed_init_simp]
+--   funext j
+--   match j with
+--   | 0 => simp [spaceUsed_init_simp]
+--   | 1 => simp [spaceUsed_init_simp]
+--   | 2 => simp [spaceUsed_init_simp]
+--          sorry
+--   | 3 => sorry
+--   | 4 => sorry
+--   | 5 => sorry
 
   -- -- Establish halting proofs for each component
   -- have h_halts_copy : ∀ t : Fin 6 → BiTape (WithSep OneTwo),

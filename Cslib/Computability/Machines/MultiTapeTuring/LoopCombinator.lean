@@ -57,7 +57,7 @@ public theorem loop_halts_of_halts {i : Fin k}
   ∀ tapes, (loop i tm).HaltsOnLists tapes := by
   sorry
 
-public noncomputable def space_at_iter {k : ℕ}
+public def space_at_iter {k : ℕ}
   {tm : MultiTapeTM k (WithSep OneTwo)}
   (h_halts : ∀ tapes, tm.HaltsOnLists tapes)
   (iteration : ℕ)
@@ -68,6 +68,7 @@ public noncomputable def space_at_iter {k : ℕ}
       (space_at_iter h_halts iter tapes i)
       (tm.spaceUsed_list h_halts ((tm.eval_list_tot h_halts)^[iter] tapes) i)
 
+@[simp]
 public theorem space_at_iter_of_mono {k : ℕ}
   {tm : MultiTapeTM k (WithSep OneTwo)}
   (h_halts : ∀ tapes, tm.HaltsOnLists tapes)
