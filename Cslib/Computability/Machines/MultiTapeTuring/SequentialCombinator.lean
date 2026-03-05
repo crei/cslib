@@ -48,21 +48,21 @@ public theorem seq_associative
 
 @[simp]
 public theorem seq_halts_of_halts
-  {tm₁ tm₂ : MultiTapeTM k α}
-  (h_halts₁ : ∀ tapes, tm₁.haltsOn tapes)
-  (h_halts₂ : ∀ tapes, tm₂.haltsOn tapes) :
-  ∀ tapes, (seq tm₁ tm₂).haltsOn tapes := by
+  {tm₁ tm₂ : MultiTapeTM k (WithSep Symbol)}
+  (h_halts₁ : ∀ tapes, tm₁.HaltsOnLists tapes)
+  (h_halts₂ : ∀ tapes, tm₂.HaltsOnLists tapes) :
+  ∀ tapes, (seq tm₁ tm₂).HaltsOnLists tapes := by
   sorry
 
 @[simp]
 public theorem seq_spaceUsed_list
-  {tm₁ tm₂ : MultiTapeTM k (WithSep α)}
-  (h_halts₁ : ∀ tapes, tm₁.haltsOn tapes)
-  (h_halts₂ : ∀ tapes, tm₂.haltsOn tapes)
-  {tapes₀ : Fin k → List (List α)} :
-  (seq tm₁ tm₂).spaceUsed_list tapes₀ sorry = fun i =>
-    let tapes₁ := (tm₁.eval_list tapes₀).get sorry
-    max (tm₁.spaceUsed_list tapes₀ h_halts₁ i) (tm₂.spaceUsed_list tapes₁ h_halts₂ i)
+  {tm₁ tm₂ : MultiTapeTM k (WithSep Symbol)}
+  (h_halts₁ : ∀ tapes, tm₁.HaltsOnLists tapes)
+  (h_halts₂ : ∀ tapes, tm₂.HaltsOnLists tapes)
+  {tapes₀ : Fin k → List (List Symbol)} :
+  (seq tm₁ tm₂).spaceUsed_list (by simp [h_halts₁, h_halts₂]) tapes₀ = fun i =>
+    let tapes₁ := tm₁.eval_list_tot h_halts₁ tapes₀
+    max (tm₁.spaceUsed_list h_halts₁ tapes₀ i) (tm₂.spaceUsed_list h_halts₂ tapes₁ i)
   := by sorry
 
 /--

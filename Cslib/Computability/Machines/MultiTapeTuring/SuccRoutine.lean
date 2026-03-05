@@ -39,10 +39,6 @@ public def succ {k : ℕ} (i : Fin k) : MultiTapeTM k (WithSep OneTwo) :=
   succ₀.with_tapes [i].get (by intro x y; grind)
 
 @[simp]
-public theorem succ_halts {k : ℕ} {i : Fin k} : ∀ tapes, (succ i).haltsOn tapes := by
-  sorry
-
-@[simp]
 public theorem succ_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
   (succ i).eval_list tapes = .some (Function.update tapes i
     ((dya (dya_inv ((tapes i).headD [])).succ) :: (tapes i).tail)) := by
@@ -61,7 +57,7 @@ public theorem succ_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (Lis
 
 @[simp, grind =]
 public lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
-  (succ i).spaceUsed_list tapes sorry = Function.update (spaceUsed_init tapes) i
+  (succ i).spaceUsed_list (by simp) tapes = Function.update (spaceUsed_init tapes) i
     (1 + ((dya (dya_inv ((tapes i).headD [])).succ) :: (tapes i).tail).length) := by
   sorry
   --   (if (dya (dya_inv ((tapes i).headD [])).succ).length = ((tapes i).headD []).length then
@@ -72,8 +68,8 @@ public lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List 
 
 @[simp]
 public lemma succ_spaceUsed_mono_iter {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
-  (succ i).spaceUsed_list tapes (by simp) i ≤
-    (succ i).spaceUsed_list (((succ i).eval_list tapes).get (by simp)) succ_halts i := by
+  (succ i).spaceUsed_list (by simp) tapes i ≤
+    (succ i).spaceUsed_list (by simp) ((succ i).eval_list_tot (by simp) tapes) i := by
   simp
 
 

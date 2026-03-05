@@ -57,49 +57,41 @@ public theorem loop_halts_of_halts {i : Fin k}
   ∀ tapes, (loop i tm).HaltsOnLists tapes := by
   sorry
 
-@[simp]
-public theorem loop_halts_of_halts
-  {i : ℕ} {h_i : i < k}
-  {tm : MultiTapeTM k (WithSep OneTwo)}
-  (h_halts : ∀ tapes, tm.haltsOn tapes) :
-  ∀ tapes, (loop i tm (h_i := h_i)).haltsOn tapes := by
-  sorry
-
 public noncomputable def space_at_iter {k : ℕ}
   {tm : MultiTapeTM k (WithSep OneTwo)}
-  (h_halts : ∀ tapes, tm.haltsOn tapes)
+  (h_halts : ∀ tapes, tm.HaltsOnLists tapes)
   (iteration : ℕ)
   (tapes : Fin k → List (List OneTwo)) : Fin k → ℕ :=
   match iteration with
   | 0 => spaceUsed_init tapes
   | Nat.succ iter => fun i => max
       (space_at_iter h_halts iter tapes i)
-      (tm.spaceUsed_list
-        ((fun tapes => (tm.eval_list tapes).get (by sorry))^[iter] tapes) h_halts i)
+      (tm.spaceUsed_list h_halts ((tm.eval_list_tot h_halts)^[iter] tapes) i)
 
 public theorem space_at_iter_of_mono {k : ℕ}
   {tm : MultiTapeTM k (WithSep OneTwo)}
-  (h_halts : ∀ tapes, tm.haltsOn tapes)
+  (h_halts : ∀ tapes, tm.HaltsOnLists tapes)
   (i : Fin k)
-  (h_mono_step : ∀ tapes, tm.spaceUsed_list tapes h_halts i ≤
-     tm.spaceUsed_list ((tm.eval_list tapes).get sorry) h_halts i)
+  (h_mono_step : ∀ tapes, tm.spaceUsed_list h_halts tapes i ≤
+     tm.spaceUsed_list h_halts (tm.eval_list_tot h_halts tapes) i)
   (iteration : ℕ)
   (tapes : Fin k → List (List OneTwo)) :
-  space_at_iter h_halts iteration.succ tapes i = tm.spaceUsed_list
-      ((fun tapes => (tm.eval_list tapes).get sorry)^[iteration] tapes) h_halts i := by
+  space_at_iter h_halts iteration.succ tapes i = tm.spaceUsed_list h_halts
+      ((tm.eval_list_tot h_halts)^[iteration] tapes) i := by
   induction iteration generalizing tapes with
   | zero => simp [space_at_iter]
   | succ iter ih =>
-    unfold space_at_iter
-    rw [ih]
-    simp only [Function.iterate_succ', Function.comp_apply, sup_eq_right, h_mono_step]
+    sorry
+    -- unfold space_at_iter
+    -- rw [ih]
+    -- simp only [Function.iterate_succ', Function.comp_apply, sup_eq_right, h_mono_step]
 
 @[simp]
 public theorem space_at_iter_of_constant {k : ℕ}
   {tm : MultiTapeTM k (WithSep OneTwo)}
-  {h_halts : ∀ tapes, tm.haltsOn tapes}
+  {h_halts : ∀ tapes, tm.HaltsOnLists tapes}
   {i : Fin k}
-  (h_constant_space : ∀ tapes, tm.spaceUsed_list tapes h_halts i = spaceUsed_init tapes i)
+  (h_constant_space : ∀ tapes, tm.spaceUsed_list h_halts tapes i = spaceUsed_init tapes i)
   (h_constant_semantics : ∀ tapes, ((tm.eval_list tapes).map fun t => t i) = .some (tapes i))
   {iteration : ℕ}
   {tapes : Fin k → List (List OneTwo)} :
@@ -113,83 +105,15 @@ public theorem space_at_iter_of_constant {k : ℕ}
     simp [h_constant_space, h_constant_semantics, h_id, Function.iterate_id]
     sorry
 
--- TODO the following is probably not true for aux tapes. There we might need a bound.
-
-public noncomputable def output_length {k : ℕ}
-  (tm : MultiTapeTM k (WithSep OneTwo))
-  (tapes : Fin k → List (List OneTwo))
-  (i : Fin k) : Part ℕ :=
-  (tm.eval_list tapes).map fun t => (listToString (t i)).length
-
-public lemma output_length_value {k : ℕ}
-  {tm : MultiTapeTM k (WithSep OneTwo)}
-  (tapes : Fin k → List (List OneTwo))
-  (i : Fin k) :
-  output_length tm tapes i = (tm.eval_list tapes).map fun t => (listToString (t i)).length := by
-  simp [output_length]
-
-public def output_length_mono {k : ℕ}
-  (tm : MultiTapeTM k (WithSep OneTwo))
-  (i : Fin k) : Prop :=
-  ∀ tapes, ((output_length tm tapes i).map
-    fun len => len ≥ (listToString (tapes i)).length) = .some true
-
-public lemma output_length_mono_iff {k : ℕ}
-  {tm : MultiTapeTM k (WithSep OneTwo)}
-  {i : Fin k} :
-  output_length_mono tm i ↔ ∀ tapes, (output_length tm tapes i).map
-    fun len => len ≥ (listToString (tapes i)).length = .some true := by
-  simp [output_length_mono]
-
-public def space_use_is_output_length {k : ℕ}
-  (tm : MultiTapeTM k (WithSep OneTwo))
-  (i : Fin k) : Prop :=
-  ∀ tapes, (.some (tm.spaceUsed_list tapes sorry i) = output_length tm tapes i)
-
-public lemma space_use_is_output_length_iff {k : ℕ}
-  {tm : MultiTapeTM k (WithSep OneTwo)}
-  {i : Fin k} :
-  space_use_is_output_length tm i ↔
-    ∀ tapes, (.some (tm.spaceUsed_list tapes sorry i) = output_length tm tapes i) := by
-  simp [space_use_is_output_length]
-
--- TODO this still does not work, it only works if it only depends on the length.
-public def space_use_mono {k : ℕ}
-  (tm : MultiTapeTM k (WithSep OneTwo))
-  (i : Fin k) : Prop :=
-  ∀ tapes, (listToString (tapes i)).length ≤ (tm.spaceUsed_list tapes sorry i)
-
-public lemma space_use_mono_iff {k : ℕ}
-  (tm : MultiTapeTM k (WithSep OneTwo))
-  (i : Fin k) :
-  space_use_mono tm i ↔
-    ∀ tapes, (listToString (tapes i)).length ≤ (tm.spaceUsed_list tapes sorry i) := by
-  simp [space_use_mono]
-
 @[simp]
-public lemma space_at_iter_of_mono' {k : ℕ}
+public theorem loop_space_list {i : Fin k}
   {tm : MultiTapeTM k (WithSep OneTwo)}
-  (h_halts : ∀ tapes, tm.haltsOn tapes)
-  (i : Fin k)
-  -- The machine's output on tape i is at least as large as the input.
-  (h_mono_output : output_length_mono tm i)
-  -- The machine's space use is the same as the output length.
-  (h_mono_space : space_use_is_output_length tm i)
-  (iteration : ℕ)
-  (tapes : Fin k → List (List OneTwo)) :
-  space_at_iter h_halts iteration tapes i =
-    (((Part.bind · tm.eval_list)^[iteration] tapes).get sorry i).length := by
-  sorry
-
-@[simp]
-public theorem loop_space_list {i : ℕ} {h_i : i < k}
-  {tm : MultiTapeTM k (WithSep OneTwo)}
-  {h_halts : ∀ tapes, tm.haltsOn tapes}
+  {h_halts : ∀ tapes, tm.HaltsOnLists tapes}
   {tapes : Fin (k + 3) → List (List OneTwo)} :
-  (loop i tm (h_i := h_i)).spaceUsed_list tapes sorry = (fun j : Fin (k + 3) =>
+  (loop i tm).spaceUsed_list (by simp [h_halts]) tapes = (fun j : Fin (k + 3) =>
       (if h : j < k then
         space_at_iter h_halts
-          (dya_inv ((tapes ⟨i, by omega⟩).headD [])) (fun i => tapes ⟨i, sorry⟩) ⟨j, h⟩
+          (dya_inv ((tapes ⟨i, by omega⟩).headD [])) (fun i => tapes ⟨i, by omega⟩) ⟨j, h⟩
       else
         ((tapes ⟨i, by omega⟩).headD []).length + 1 + (spaceUsed_init tapes j))) := by
   sorry

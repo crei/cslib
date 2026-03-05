@@ -30,9 +30,9 @@ public def ite (i : Fin k) (tm₁ tm₂ : MultiTapeTM k (WithSep α)) :
 public theorem ite_halts
   {i : Fin k}
   {tm₁ tm₂ : MultiTapeTM k (WithSep α)}
-  (h_tm₁_halts : ∀ tapes, tm₁.haltsOn tapes)
-  (h_tm₂_halts : ∀ tapes, tm₂.haltsOn tapes) :
-  ∀ tapes, (ite i tm₁ tm₂).haltsOn tapes := by
+  (h_tm₁_halts : ∀ tapes, tm₁.HaltsOnLists tapes)
+  (h_tm₂_halts : ∀ tapes, tm₂.HaltsOnLists tapes) :
+  ∀ tapes, (ite i tm₁ tm₂).HaltsOnLists tapes := by
   sorry
 
 @[simp, grind =]
@@ -48,12 +48,14 @@ public theorem ite_eval_list
 public theorem ite_spaceUsed_list
   {i : Fin k}
   {tm₁ tm₂ : MultiTapeTM k (WithSep α)}
+  (h_tm₁_halts : ∀ tapes, tm₁.HaltsOnLists tapes)
+  (h_tm₂_halts : ∀ tapes, tm₂.HaltsOnLists tapes)
   {tapes : Fin k → List (List α)} :
-  (ite i tm₁ tm₂).spaceUsed_list tapes sorry =
+  (ite i tm₁ tm₂).spaceUsed_list (by simp [h_tm₁_halts, h_tm₂_halts]) tapes =
     if (tapes i).headD [] = [] then
-      tm₂.spaceUsed_list tapes sorry
+      tm₂.spaceUsed_list h_tm₂_halts tapes
     else
-      tm₁.spaceUsed_list tapes sorry := by
+      tm₁.spaceUsed_list h_tm₁_halts tapes := by
   sorry
 
 end Routines

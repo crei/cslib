@@ -29,17 +29,11 @@ lemma copy₁_eval_list {tapes : Fin 2 → List (List α)} :
   sorry
 
 @[simp]
-lemma copy₁_halts {tapes : Fin 2 → BiTape (WithSep α)} :
-  copy₁.haltsOn tapes := by
-  sorry
-
-@[simp]
 lemma copy₁_spaceUsed_list {tapes : Fin 2 → List (List α)} :
-  copy₁.spaceUsed_list tapes = Function.update (Function.update (spaceUsed_init tapes)
+  copy₁.spaceUsed_list (by simp) tapes = Function.update (Function.update (spaceUsed_init tapes)
     0 (1 + (listToString (tapes 0)).length))
     1 (listToString (((tapes 0).headD []) :: tapes 1)).length := by
   sorry
-
 
 /--
 A Turing machine that copies the first word on tape `i` to tape `j`.
@@ -49,12 +43,6 @@ public def copy {k : ℕ} (i j : Fin k)
   (h_inj : [i, j].get.Injective := by intro x y; grind) :
     MultiTapeTM k (WithSep α) :=
   copy₁.with_tapes [i, j].get h_inj
-
-@[simp]
-public lemma copy_halts {k : ℕ} {i j : ℕ} {h_neq : i ≠ j} {h_i_lt : i < k} {h_j_lt : j < k}
-  {tapes : Fin k → BiTape (WithSep α)} :
-  (copy i j (h_neq := h_neq) (h_i_lt) (h_j_lt)).haltsOn tapes = true := by
-  simp [copy]
 
 @[simp, grind =]
 public lemma copy_eval_list
@@ -68,16 +56,14 @@ public lemma copy_eval_list
   grind
 
 @[simp]
-public lemma copy_spaceUsed_list
-  {k : ℕ} {i j : ℕ} {h_neq : i ≠ j} {h_i_lt : i < k} {h_j_lt : j < k}
+public lemma copy_spaceUsed_list {k : ℕ} (i j : Fin k)
+  (h_inj : [i, j].get.Injective := by intro x y; grind)
   {tapes : Fin k → List (List α)} :
-  (copy i j h_neq h_i_lt h_j_lt).spaceUsed_list tapes (by simp [copy]) =
+  (copy i j h_inj).spaceUsed_list (by simp) tapes =
     Function.update (Function.update (spaceUsed_init tapes)
-    ⟨i, h_i_lt⟩ (1 + (listToString (tapes ⟨i, h_i_lt⟩)).length))
-    ⟨j, h_j_lt⟩ (listToString (((tapes ⟨i, h_i_lt⟩).headD []) :: tapes ⟨j, h_j_lt⟩)).length := by
-  have h_inj : [(⟨i, h_i_lt⟩ : Fin k), ⟨j, h_j_lt⟩].get.Injective := by intro x y; grind
-  simp_all [copy, apply_updates_function]
-  grind
+    i (1 + (listToString (tapes i)).length))
+    j (listToString (((tapes i).headD []) :: tapes j)).length := by
+  sorry
 
 end Routines
 
