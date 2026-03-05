@@ -21,16 +21,17 @@ namespace Turing
 namespace Routines
 
 def dec₀ : MultiTapeTM 6 (WithSep OneTwo) :=
-  push 1 [] <;> push 2 [] <;>
-  loop 0 (h_i := by decide) (pop 2 <;> copy 1 2 <;> succ 1) <;>
-  pop 0 <;>
-  copy 2 0 <;>
-  pop 2 <;>
+  push 1 [] ;ₜ push 2 [] ;ₜ
+  loop 0 (pop 2 ;ₜ copy 1 2 ;ₜ succ 1) ;ₜ
+  pop 0 ;ₜ
+  copy 2 0 ;ₜ
+  pop 2 ;ₜ
   pop 1
+
 
 @[simp]
 lemma inner_eval_iter {r : ℕ} {tapes : Fin 3 → List (List OneTwo)} :
-  (Part.bind · (pop 2 <;> copy 1 2 <;> succ 1).eval_list)^[r] (.some tapes) = Part.some (
+  (Part.bind · (pop 2 ;ₜ copy 1 2 ;ₜ succ 1).eval_list)^[r] (.some tapes) = Part.some (
     if r = 0 then
       tapes
     else
@@ -44,28 +45,12 @@ lemma inner_eval_iter {r : ℕ} {tapes : Fin 3 → List (List OneTwo)} :
     simp [ih]
     grind
 
-@[simp]
-lemma loop_eval_iter {tapes : Fin 6 → List (List OneTwo)} :
-  (loop 0 (h_i := by decide) (pop 2 <;> copy 1 2 <;> succ 1)).eval_list tapes = .some (
-    if dya_inv ((tapes 0).head?.getD []) = 0 then
-      tapes
-    else
-      Function.update (Function.update tapes
-        2 (dya (dya_inv ((tapes 1).head?.getD []) +
-               (dya_inv ((tapes 0).head?.getD []) - 1)) :: (tapes 2).tail))
-        1 (dya (dya_inv ((tapes 1).head?.getD []) +
-                dya_inv ((tapes 0).head?.getD [])) :: (tapes 1).tail)) := by
-  by_cases h : dya_inv ((tapes 0).head?.getD []) = 0
-  · simp [h]
-  · simp [h]; grind
-
 @[simp, grind =]
 lemma dec₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
   dec₀.eval_list tapes = .some (Function.update tapes 0
     ((dya ((dya_inv ((tapes 0).headD [])) - 1)) :: (tapes 0).tail)) := by
   by_cases h : dya_inv ((tapes 0).head?.getD []) = 0
-  · simp [dec₀, h]; grind
-  · simp [dec₀, h]; grind
+  <;> simp [dec₀, h] <;> grind
 
 /--
 A Turing machine that decrements the dyadic value at the head of tape `i`.

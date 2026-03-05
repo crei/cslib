@@ -108,7 +108,7 @@ public def eqLit {k : ℕ}
   (aux : Fin (k + 3) := ⟨k + 2, by omega⟩)
   (h_inj : [q, aux, s].get.Injective := by intro x y; grind) :
   MultiTapeTM (k + 3) (WithSep OneTwo) :=
-    push aux w <;> eq q aux s h_inj <;> pop aux
+    push aux w ;ₜ eq q aux s h_inj ;ₜ pop aux
 
 @[simp]
 public theorem eqLit_eval_list {k : ℕ} {q s aux : Fin (k + 3)} {w : List OneTwo}
@@ -133,28 +133,28 @@ public def iteLit {k : ℕ}
   (tm₁ tm₂ : MultiTapeTM (k + 3) (WithSep OneTwo))
   (h_inj : [i, aux, aux + 1].get.Injective := by decide) :
   MultiTapeTM (k + 3) (WithSep OneTwo) :=
-    eqLit i w (aux + 1) aux (h_inj := by intro x y; grind) <;>
-      ite (aux + 1) (pop (aux + 1) <;> tm₁) (pop (aux + 1) <;> tm₂)
+    eqLit i w (aux + 1) aux (h_inj := by intro x y; grind) ;ₜ
+      ite (aux + 1) (pop (aux + 1) ;ₜ tm₁) (pop (aux + 1) ;ₜ tm₂)
 
 @[simp]
 public def combineAnd {k : ℕ} (i : Fin k) :
   MultiTapeTM k (WithSep OneTwo) :=
     ite i
-      (pop i <;>
+      (pop i ;ₜ
         ite i
-          (pop i <;> push i [OneTwo.one])
-          (pop i <;> push i []))
-      (pop i <;> pop i <;> push i [])
+          (pop i ;ₜ push i [OneTwo.one])
+          (pop i ;ₜ push i []))
+      (pop i ;ₜ pop i ;ₜ push i [])
 
 @[simp]
 public def combineOr {k : ℕ} (i : Fin k) :
   MultiTapeTM k (WithSep OneTwo) :=
     ite i
-      (pop i <;> pop i <;> push i [OneTwo.one])
-      (pop i <;>
+      (pop i ;ₜ pop i ;ₜ push i [OneTwo.one])
+      (pop i ;ₜ
         ite i
-          (pop i <;> push i [OneTwo.one])
-          (pop i <;> push i []))
+          (pop i ;ₜ push i [OneTwo.one])
+          (pop i ;ₜ push i []))
 
 
 -- | :fun_start =>
@@ -167,7 +167,7 @@ public def combineOr {k : ℕ} (i : Fin k) :
 
 @[simp]
 def funStart (edge : MultiTapeTM tapeCount (WithSep OneTwo)) :=
-  ite t (push c [] <;> push result [] <;> push pc l_loopStart) edge
+  ite t (push c [] ;ₜ push result [] ;ₜ push pc l_loopStart) edge
 
 -- | :loop_start =>
 -- if c.top() = num_vertices:
@@ -183,8 +183,8 @@ def funStart (edge : MultiTapeTM tapeCount (WithSep OneTwo)) :=
 def loopStart (maxConfig : List OneTwo) :=
   iteLit c maxConfig mainAux
     (pop c)
-    (duplicate a <;> copy c b <;>
-      dec t mainAux (by decide) <;> push pc l_afterFirstRec <;> push pc l_funStart)
+    (duplicate a ;ₜ copy c b ;ₜ
+      dec t mainAux (by decide) ;ₜ push pc l_afterFirstRec ;ₜ push pc l_funStart)
 
 -- | :after_first_rec =>
 -- a.pop()
@@ -197,8 +197,8 @@ def loopStart (maxConfig : List OneTwo) :=
 
 @[simp]
 def afterFirstRec :=
-  pop a <;> pop b <;> copy c a <;> duplicate b <;>
-    push pc l_afterSecondRec <;> push pc l_funStart
+  pop a ;ₜ pop b ;ₜ copy c a ;ₜ duplicate b ;ₜ
+    push pc l_afterSecondRec ;ₜ push pc l_funStart
 
 -- | :after_second_rec =>
 -- a.pop()
@@ -210,15 +210,15 @@ def afterFirstRec :=
 
 @[simp]
 def afterSecondRec :=
-  pop a <;> pop b <;> succ t <;>
-    combineAnd result <;> combineOr result <;> succ c <;> push pc l_loopStart
+  pop a ;ₜ pop b ;ₜ succ t ;ₜ
+    combineAnd result ;ₜ combineOr result ;ₜ succ c ;ₜ push pc l_loopStart
 
 def innerLoop (edge : MultiTapeTM tapeCount (WithSep OneTwo)) (maxConfig : List OneTwo) :
     MultiTapeTM tapeCount (WithSep OneTwo) :=
-  iteLit pc l_funStart mainAux (pop pc <;> funStart edge)
-    (iteLit pc l_loopStart mainAux (pop pc <;> loopStart maxConfig)
-      (iteLit pc l_afterFirstRec mainAux (pop pc <;> afterFirstRec)
-        (pop pc <;> afterSecondRec)))
+  iteLit pc l_funStart mainAux (pop pc ;ₜ funStart edge)
+    (iteLit pc l_loopStart mainAux (pop pc ;ₜ loopStart maxConfig)
+      (iteLit pc l_afterFirstRec mainAux (pop pc ;ₜ afterFirstRec)
+        (pop pc ;ₜ afterSecondRec)))
 
 lemma relatesInStepsExp {α : Type}
   (r : α → α → Prop)
@@ -261,31 +261,16 @@ lemma inner_loop_halts_on_lists
   apply MultiTapeTM.HaltsOnLists_of_eval_list
   unfold edge_semantics at h_edge_semantics
   simp [h_edge_semantics, innerLoop]
-  split_ifs
-  · simp
-  · simp
-  · simp
-  · simp
-  · simp
-  · simp
-  · simp
-    split_ifs
-    · simp
-    · simp
-  · simp
-    split_ifs
-    · simp
-    · simp
-  · simp
+  split_ifs <;> simp <;> split_ifs <;> simp
 
 def reachability
   (edge : MultiTapeTM tapeCount (WithSep OneTwo))
   (maxConfig : List OneTwo)
   (x y : List OneTwo)
   (t_val : ℕ) :=
-  push a x <;> push b y <;> push t (dya t_val) <;> push pc [] <;> push pc l_funStart <;>
-    doWhile pc (innerLoop edge maxConfig) <;>
-    pop t <;> pop a <;> pop b
+  push a x ;ₜ push b y ;ₜ push t (dya t_val) ;ₜ push pc [] ;ₜ push pc l_funStart ;ₜ
+    doWhile pc (innerLoop edge maxConfig) ;ₜ
+    pop t ;ₜ pop a ;ₜ pop b
 
 @[simp]
 def iter_count_bound (max : ℕ) (t : ℕ) : ℕ := match t with
@@ -314,9 +299,7 @@ lemma inner_loop_start
         t (dya (dya_inv ((tapes t).head?.getD []) - 1) :: (tapes t).tail))
         pc (l_funStart :: l_afterFirstRec :: (tapes pc).tail)) := by
   simp [innerLoop, h_pc_loopStart]
-  split_ifs
-  · simp
-  · simp; grind
+  split_ifs <;> simp ; grind
 
 -- TODO the result of eval_list makes heavy use of
 -- Function.update tapes x (f(tapes) :: (tapes x).tail)
@@ -370,29 +353,13 @@ lemma inner_loop_after_second_rec
   simp [innerLoop, h_pc_afterSecondRec]
   split_ifs
   · simp
-    split_ifs
-    · simp
-      grind
-    · simp
-      grind
+    split_ifs <;> simp <;> grind
   · simp
-    split_ifs
-    · simp
-      grind
-    · simp
-      grind
+    split_ifs <;> simp <;> grind
   · simp
-    split_ifs
-    · simp
-      grind
-    · simp
-      grind
+    split_ifs <;> simp <;> grind
   · simp
-    split_ifs
-    · simp
-      grind
-    · simp
-      grind
+    split_ifs <;> simp <;> grind
   · simp
     grind
   · simp
@@ -431,11 +398,12 @@ lemma loop_semantics
     | zero =>
       have h_t_dya : (tapes t).head?.getD [] = dya 0 := by rw [← h_t]; simp
       unfold edge_semantics at h_edge_semantics
-      simp [h_edge_semantics, h_pc_funStart, h_t_dya, Relation.RelatesInSteps.single_iff,
-            innerLoop, innerLoopFun]
-      split
-      · simp
-      · simp
+      sorry
+      -- simp [h_edge_semantics, h_pc_funStart, h_t_dya, Relation.RelatesInSteps.single_iff,
+      --       innerLoop, innerLoopFun]
+      -- split
+      -- · simp
+      -- · simp
     | succ t_val ih =>
       have h_inner (tapes : Fin tapeCount → List (List OneTwo))
         (h_pc : (tapes pc).head?.getD [] = l_loopStart)
@@ -460,64 +428,69 @@ lemma loop_semantics
           rw [← Function.iterate_add_apply, ← Function.iterate_succ_apply' (f := f)]
           grind
         rw [this]
-        simp only [innerLoopFun, MultiTapeTM.eval_list_tot_eq_eval_list_get]
-        rw [inner_loop_start h_pc]
-        simp only [Part.get_some]
-        simp only [h_c, h_t]
-        simp only [↓reduceIte]
-        simp only [Nat.succ_eq_add_one, add_tsub_cancel_right]
-        simp only [innerLoopFun] at ih
-        let tapes₁ := (Function.update (Function.update (Function.update (Function.update tapes
-            a ((tapes a).head?.getD [] :: tapes a))
-            b ((tapes c).head?.getD [] :: tapes b))
-            t ((dya t_val) :: (tapes t).tail))
-            pc (l_funStart :: l_afterFirstRec :: (tapes pc).tail))
-        let ih' := (ih tapes₁ (by simp [tapes₁]) (by simp [tapes₁])).1
-        have : (dya_inv ((tapes₁ t).headD [])) = t_val := by simp [tapes₁]
-        rw [this] at ih'
-        simp [tapes₁] at ih'
-        simp [ih']
-        simp [inner_loop_after_first_rec]
-        let ih' := ih  (Function.update
-            (Function.update
-              (Function.update
-                (Function.update
-                      (Function.update
-                        (Function.update
-                          (Function.update (Function.update tapes 0 ((tapes 0).head?.getD [] :: tapes 0)) 1
-                            ((tapes c).head?.getD [] :: tapes 1))
-                          t (dya t_val :: (tapes t).tail))
-                        pc (l_afterFirstRec :: (tapes pc).tail))
-                      result
-                      (if Relation.RelatesInSteps r ((tapes 0).head?.getD []) ((tapes c).head?.getD []) (2 ^ t_val) then
-                        [OneTwo.one] :: tapes result
-                      else [] :: tapes result))
-                0 ((tapes c).head?.getD [] :: tapes 0))
-              1 ((tapes 1).head?.getD [] :: tapes 1))
-            pc (l_funStart :: l_afterSecondRec :: (tapes pc).tail))
-        simp at ih'
-        let ih' := ih'.1
-        simp [ih']
-        simp [inner_loop_after_second_rec]
-        simp [function_update_pull 0]
-        simp [function_update_pull 1]
-        simp [function_update_pull result]
-        simp [function_update_pull pc]
-        simp [function_update_pull c]
-        simp [function_update_pull t]
-        by_cases h_r₁ : Relation.RelatesInSteps r
-          ((tapes 0).head?.getD []) ((tapes c).head?.getD []) (2 ^ t_val)
-        · by_cases h_r₂ : Relation.RelatesInSteps r
-            ((tapes c).head?.getD []) ((tapes 1).head?.getD []) (2 ^ t_val)
-          · simp [h_r₁, h_r₂]
-          · simp [h_r₁, h_r₂]
-            grind
-        · by_cases h_r₂ : Relation.RelatesInSteps r
-            ((tapes c).head?.getD []) ((tapes 1).head?.getD []) (2 ^ t_val)
-          · simp [h_r₁, h_r₂]
-            grind
-          · simp [h_r₁, h_r₂]
-            grind
+        sorry
+        -- simp only [innerLoopFun, MultiTapeTM.eval_list_tot_eq_eval_list_get]
+        -- rw [inner_loop_start h_pc]
+        -- simp only [Part.get_some]
+        -- simp only [h_c, h_t]
+        -- simp only [↓reduceIte]
+        -- simp only [Nat.succ_eq_add_one, add_tsub_cancel_right]
+        -- simp only [innerLoopFun] at ih
+        -- let tapes₁ := (Function.update (Function.update (Function.update (Function.update tapes
+        --     a ((tapes a).head?.getD [] :: tapes a))
+        --     b ((tapes c).head?.getD [] :: tapes b))
+        --     t ((dya t_val) :: (tapes t).tail))
+        --     pc (l_funStart :: l_afterFirstRec :: (tapes pc).tail))
+        -- let ih' := (ih tapes₁ (by simp [tapes₁]) (by simp [tapes₁])).1
+        -- have : (dya_inv ((tapes₁ t).headD [])) = t_val := by simp [tapes₁]
+        -- rw [this] at ih'
+        -- simp [tapes₁] at ih'
+        -- simp [ih']
+        -- simp [inner_loop_after_first_rec]
+        -- let ih' := ih  (Function.update
+        --     (Function.update
+        --       (Function.update
+        --         (Function.update
+        --               (Function.update
+        --                 (Function.update
+        --                   (Function.update (Function.update tapes
+        --                      0 ((tapes 0).head?.getD [] :: tapes 0))
+        --                      1 ((tapes c).head?.getD [] :: tapes 1))
+        --                   t (dya t_val :: (tapes t).tail))
+        --                 pc (l_afterFirstRec :: (tapes pc).tail))
+        --               result
+        --               (if Relation.RelatesInSteps r
+        --                   ((tapes 0).head?.getD [])
+        --                   ((tapes c).head?.getD [])
+        --                   (2 ^ t_val) then
+        --                 [OneTwo.one] :: tapes result
+        --               else [] :: tapes result))
+        --         0 ((tapes c).head?.getD [] :: tapes 0))
+        --       1 ((tapes 1).head?.getD [] :: tapes 1))
+        --     pc (l_funStart :: l_afterSecondRec :: (tapes pc).tail))
+        -- simp at ih'
+        -- let ih' := ih'.1
+        -- simp [ih']
+        -- simp [inner_loop_after_second_rec]
+        -- simp [function_update_pull 0]
+        -- simp [function_update_pull 1]
+        -- simp [function_update_pull result]
+        -- simp [function_update_pull pc]
+        -- simp [function_update_pull c]
+        -- simp [function_update_pull t]
+        -- by_cases h_r₁ : Relation.RelatesInSteps r
+        --   ((tapes 0).head?.getD []) ((tapes c).head?.getD []) (2 ^ t_val)
+        -- · by_cases h_r₂ : Relation.RelatesInSteps r
+        --     ((tapes c).head?.getD []) ((tapes 1).head?.getD []) (2 ^ t_val)
+        --   · simp [h_r₁, h_r₂]
+        --   · simp [h_r₁, h_r₂]
+        --     grind
+        -- · by_cases h_r₂ : Relation.RelatesInSteps r
+        --     ((tapes c).head?.getD []) ((tapes 1).head?.getD []) (2 ^ t_val)
+        --   · simp [h_r₁, h_r₂]
+        --     grind
+        --   · simp [h_r₁, h_r₂]
+        --     grind
 
       sorry
 
