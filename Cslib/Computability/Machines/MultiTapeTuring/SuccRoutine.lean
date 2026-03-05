@@ -12,6 +12,7 @@ import Cslib.Foundations.Data.RelatesInSteps
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.ListEncoding
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
+public import Cslib.Computability.Machines.MultiTapeTuring.LoopCombinator
 
 import Mathlib.Data.Nat.Bits
 
@@ -53,6 +54,23 @@ public theorem succ_eval_list {k : ℕ} {i : Fin k} {tapes : Fin k → List (Lis
 --       else
 --         [⟨-1, (dya n).length, -1, by omega⟩].get) := by
 --   sorry
+
+@[simp, grind =]
+public lemma succ_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
+  (succ i).spaceUsed_list (by simp) tapes = Function.update (spaceUsed_init tapes) i
+    (1 + ((dya (dya_inv ((tapes i).headD [])).succ) :: (tapes i).tail).length) := by
+  sorry
+  --   (if (dya (dya_inv ((tapes i).headD [])).succ).length = ((tapes i).headD []).length then
+  --     1 + (listToString (tapes i)).length -- We need to move at least one char to the left.
+  --   else
+  --     2 + (listToString (tapes i)).length) -- We need to move at least one char to the left
+  -- := by sorry
+
+@[simp]
+public lemma succ_spaceUsed_mono_iter {k : ℕ} {i : Fin k} {tapes : Fin k → List (List OneTwo)} :
+  (succ i).spaceUsed_list (by simp) tapes i ≤
+    (succ i).spaceUsed_list (by simp) ((succ i).eval_list_tot (by simp) tapes) i := by
+  simp
 
 
 end Routines

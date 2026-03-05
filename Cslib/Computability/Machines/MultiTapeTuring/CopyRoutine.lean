@@ -28,6 +28,13 @@ lemma copy₁_eval_list {tapes : Fin 2 → List (List α)} :
     Part.some (Function.update tapes 1 (((tapes 0).headD []) :: tapes 1)) := by
   sorry
 
+@[simp]
+lemma copy₁_spaceUsed_list {tapes : Fin 2 → List (List α)} :
+  copy₁.spaceUsed_list (by simp) tapes = Function.update (Function.update (spaceUsed_init tapes)
+    0 (1 + (listToString (tapes 0)).length))
+    1 (listToString (((tapes 0).headD []) :: tapes 1)).length := by
+  sorry
+
 /--
 A Turing machine that copies the first word on tape `i` to tape `j`.
 If Tape `i` is empty, pushes the empty word to tape `j`.
@@ -47,6 +54,16 @@ public lemma copy_eval_list
     (Function.update tapes j (((tapes i).headD []) :: (tapes j))) := by
   simp_all [copy]
   grind
+
+@[simp]
+public lemma copy_spaceUsed_list {k : ℕ} (i j : Fin k)
+  (h_inj : [i, j].get.Injective := by intro x y; grind)
+  {tapes : Fin k → List (List α)} :
+  (copy i j h_inj).spaceUsed_list (by simp) tapes =
+    Function.update (Function.update (spaceUsed_init tapes)
+    i (1 + (listToString (tapes i)).length))
+    j (listToString (((tapes i).headD []) :: tapes j)).length := by
+  sorry
 
 end Routines
 

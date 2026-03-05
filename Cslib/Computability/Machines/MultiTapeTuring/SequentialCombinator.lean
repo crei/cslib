@@ -46,6 +46,25 @@ public theorem seq_associative
   (seq (seq tm₁ tm₂) tm₃).eval = (seq tm₁ (seq tm₂ tm₃)).eval := by
   sorry
 
+@[simp]
+public theorem seq_halts_of_halts
+  {tm₁ tm₂ : MultiTapeTM k (WithSep Symbol)}
+  (h_halts₁ : ∀ tapes, tm₁.HaltsOnLists tapes)
+  (h_halts₂ : ∀ tapes, tm₂.HaltsOnLists tapes) :
+  ∀ tapes, (seq tm₁ tm₂).HaltsOnLists tapes := by
+  sorry
+
+@[simp]
+public theorem seq_spaceUsed_list
+  {tm₁ tm₂ : MultiTapeTM k (WithSep Symbol)}
+  (h_halts₁ : ∀ tapes, tm₁.HaltsOnLists tapes)
+  (h_halts₂ : ∀ tapes, tm₂.HaltsOnLists tapes)
+  {tapes₀ : Fin k → List (List Symbol)} :
+  (seq tm₁ tm₂).spaceUsed_list (by simp [h_halts₁, h_halts₂]) tapes₀ = fun i =>
+    let tapes₁ := tm₁.eval_list_tot h_halts₁ tapes₀
+    max (tm₁.spaceUsed_list h_halts₁ tapes₀ i) (tm₂.spaceUsed_list h_halts₂ tapes₁ i)
+  := by sorry
+
 /--
 Sequential combination of Turing machines.
 -/

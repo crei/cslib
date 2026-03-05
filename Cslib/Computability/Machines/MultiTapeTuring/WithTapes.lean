@@ -9,12 +9,13 @@ module
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.TapeExtension
 
+
 public import Mathlib.Logic.Equiv.Fintype
 public import Mathlib.Data.Finset.Sort
 
 namespace Turing
 
-variable [Inhabited α] [Fintype α]
+variable [Inhabited Symbol] [Fintype Symbol]
 
 variable {k : ℕ}
 
@@ -22,7 +23,7 @@ variable {k : ℕ}
 Permute tapes according to a bijection.
 -/
 public def MultiTapeTM.permute_tapes
-  (tm : MultiTapeTM k α) (σ : Equiv.Perm (Fin k)) : MultiTapeTM k α where
+  (tm : MultiTapeTM k Symbol) (σ : Equiv.Perm (Fin k)) : MultiTapeTM k Symbol where
   State := tm.State
   stateFintype := tm.stateFintype
   q₀ := tm.q₀
@@ -32,7 +33,7 @@ public def MultiTapeTM.permute_tapes
 --- General theorem: permuting tapes commutes with evaluation
 @[simp, grind =]
 public theorem MultiTapeTM.permute_tapes_eval
-  (tm : MultiTapeTM k α) (σ : Equiv.Perm (Fin k)) (tapes : Fin k → BiTape α) :
+  (tm : MultiTapeTM k Symbol) (σ : Equiv.Perm (Fin k)) (tapes : Fin k → BiTape Symbol) :
   (tm.permute_tapes σ).eval tapes =
     (tm.eval (tapes ∘ σ)).map (fun tapes' => tapes' ∘ σ.symm) := by
   sorry
@@ -66,9 +67,18 @@ has the right amount of tapes.
 -/
 public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ}
 -- TODO use embedding instead?
-  (tm : MultiTapeTM k₁ α) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) : MultiTapeTM k₂ α :=
+  (tm : MultiTapeTM k₁ Symbol)
+  (f : Fin k₁ → Fin k₂)
+  (h_inj : f.Injective) : MultiTapeTM k₂ Symbol :=
   (tm.extend
     (by simpa using Fintype.card_le_of_injective f h_inj)).permute_tapes (inj_to_perm f h_inj)
+
+@[simp]
+public theorem MultiTapeTM.with_tapes_halts_of_halts {k₁ k₂ : ℕ}
+  (tm : MultiTapeTM k₁ Symbol) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective)
+  (h_halts : ∀ tapes, tm.HaltsOn tapes) :
+  ∀ tapes, (tm.with_tapes f h_inj).HaltsOn tapes := by
+  sorry
 
 -- TODO do not use `h.choose` here but rather assume that `f` is injective.
 
@@ -112,16 +122,32 @@ public lemma apply_updates_function_update
   funext i
   apply apply_updates_function_update_apply h_inj
 
+-- TODO tagging this @simp will use this instead of the two above,
+-- which can lead to a dead-end.
+public lemma apply_updates_function
+  {γ : Type}
+  {k₁ k₂ : ℕ}
+  {tapes : Fin k₂ → γ}
+  {tapes' : Fin k₁ → γ}
+  {f : Fin k₁ → Fin k₂}
+  (h_inj : f.Injective) :
+  apply_updates tapes tapes' f = fun i =>
+    if h : ∃ j, f j = i then tapes' h.choose else tapes i := by
+  unfold apply_updates
+  simp
+
+
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_eval
   {k₁ k₂ : ℕ}
-  {tm : MultiTapeTM k₁ α} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
-  {tapes : Fin k₂ → BiTape α} :
+  {tm : MultiTapeTM k₁ Symbol} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
+  {tapes : Fin k₂ → BiTape Symbol} :
   (tm.with_tapes f h_inj).eval tapes =
     (tm.eval (tapes ∘ f)).map
       (fun tapes' => fun t => apply_updates tapes tapes' f t) := by
   simp [with_tapes]
   sorry
+
 
 
 end Turing

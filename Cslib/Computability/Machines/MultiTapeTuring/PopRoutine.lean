@@ -27,6 +27,11 @@ lemma pop₁_eval_list {tapes : Fin 1 → List (List α)} :
   pop₁.eval_list tapes = .some (Function.update tapes 0 (tapes 0).tail) := by
   sorry
 
+@[simp]
+lemma pop₁_spaceUsed_list {tapes : Fin 1 → List (List α)} :
+    (pop₁ (α := α)).spaceUsed_list (by simp) tapes = spaceUsed_init tapes := by
+  sorry
+
 /--
 A Turing machine that removes the first word on tape `i`. If the tape is empty, does nothing.
 -/
@@ -39,6 +44,13 @@ public theorem pop_eval_list {k : ℕ} {i : Fin k}
   (pop i).eval_list tapes = .some (Function.update tapes i (tapes i).tail) := by
   have h_inj : [i].get.Injective := by intro x y; grind
   simp_all [pop]
+
+@[simp]
+public theorem pop_spaceUsed {k : ℕ} {i : Fin k} {tapes : Fin k → List (List α)} :
+  (pop i).spaceUsed_list (by simp) tapes = spaceUsed_init tapes := by
+  have h_inj : [i].get.Injective := by intro x y; grind
+  sorry
+
 
 end Routines
 

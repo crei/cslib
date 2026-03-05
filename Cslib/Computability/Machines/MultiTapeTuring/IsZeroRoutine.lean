@@ -31,5 +31,16 @@ public theorem isZero_eval_list {i : Fin k} {tapes : Fin k → List (List OneTwo
   simp [isZero]
   grind
 
+@[simp]
+public theorem isZero_spaceUsed_list {i j : Fin k} {tapes : Fin k → List (List OneTwo)} :
+  (isZero i).spaceUsed_list (by simp [isZero]) tapes = Function.update (spaceUsed_init tapes) i
+    (if (tapes i).headD [] = [] then
+      (listToString ([OneTwo.one] :: (tapes i).tail)).length
+    else
+      (listToString (tapes i)).length) := by
+  simp [isZero, spaceUsed_init_simp]
+  sorry
+
+
 end Routines
 end Turing

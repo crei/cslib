@@ -373,6 +373,7 @@ public def eval_tot
   Fin k → BiTape Symbol :=
 (tm.eval tapes).get (h_alwaysHalts tapes)
 
+
 end MultiTapeTM
 
 end Turing
