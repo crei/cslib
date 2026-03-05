@@ -43,6 +43,8 @@ of the resulting string (if the list is non-empty). -/
 public def listToString (ls : List (List Symbol)) : List (WithSep Symbol) :=
   (ls.map (fun w : List Symbol => (w.map .ofChar) ++ [.comma])).flatten
 
+/--- Turn an encoded list back to a string, if possible. This is the inverse of
+`listToString`. -/
 public def stringToList (s : List (Option (WithSep Symbol))) : Option (List (List Symbol)) :=
   s.foldr (fun c acc =>
     match c with
@@ -56,24 +58,12 @@ public def stringToList (s : List (Option (WithSep Symbol))) : Option (List (Lis
 
 @[simp, grind =]
 public theorem listToString_length_nil :
-    (listToString ([] : List (List α))).length = 0 := by
+    (listToString ([] : List (List Symbol))).length = 0 := by
   simp [listToString]
 
 @[simp, grind =]
 public theorem listToString_length_cons
-    (w : List α) (ls : List (List α)) :
-    (listToString (w :: ls)).length = w.length + 1 + (listToString ls).length := by
-  simp [listToString]
-  grind
-
-@[simp, grind =]
-public theorem listToString_length_nil :
-    (listToString ([] : List (List α))).length = 0 := by
-  simp [listToString]
-
-@[simp, grind =]
-public theorem listToString_length_cons
-    (w : List α) (ls : List (List α)) :
+    (w : List Symbol) (ls : List (List Symbol)) :
     (listToString (w :: ls)).length = w.length + 1 + (listToString ls).length := by
   simp [listToString]
   grind
@@ -88,6 +78,7 @@ public def tapeToList (tape : BiTape (WithSep Symbol)) : Option (List (List Symb
   | ([], c) => stringToList (c :: tape.right.toList)
   | _ => none
 
+/-- Turn a tuple of tapes created by `listToTape` back to a tuple of lists, if possible. -/
 public def tapesToLists (tapes : Fin k → BiTape (WithSep Symbol)) :
     Option (Fin k → List (List Symbol)) :=
   if h : ∀ i, (tapeToList (tapes i)).isSome then
@@ -208,22 +199,22 @@ public structure HeadStatsList where
 Note that the head will always be left of or on the "zero" point which is the initial position
 for an empty initial tape or the rightmost non-blank cell. -/
 -- TODO we could even make this Part now.
-public noncomputable def MultiTapeTM.spaceUsed_list
-    (tm : MultiTapeTM k (WithSep α))
-    (tapes : Fin k → List (List α))
-    (h_halts : ∀ tapes, tm.haltsOn tapes := by simp) : Fin k → ℕ := sorry
+public def MultiTapeTM.spaceUsed_list
+    (tm : MultiTapeTM k (WithSep Symbol))
+    (tapes : Fin k → List (List Symbol))
+    (h_halts : ∀ tapes, tm.HaltsOn tapes := by simp) : Fin k → ℕ := sorry
 
 /-- The space initially used by a Turing machine that has the given tape configuration. -/
-public def spaceUsed_init (tapes : Fin k → List (List α)) : Fin k → ℕ := fun i =>
+public def spaceUsed_init (tapes : Fin k → List (List Symbol)) : Fin k → ℕ := fun i =>
   (listToString (tapes i)).length
 
-public def spaceUsed_init_simp (tapes : Fin k → List (List α)) (i : Fin k) :
+public def spaceUsed_init_simp (tapes : Fin k → List (List Symbol)) (i : Fin k) :
   spaceUsed_init tapes i = (listToString (tapes i)).length := by simp [spaceUsed_init]
 
 @[simp]
-public lemma spaceUsed_init_le_spaceUsed {k : ℕ} {α : Type}
-  {tm : MultiTapeTM k (WithSep α)}
-  (tapes : Fin k → List (List α))
+public lemma spaceUsed_init_le_spaceUsed {k : ℕ} {Symbol : Type}
+  {tm : MultiTapeTM k (WithSep Symbol)}
+  (tapes : Fin k → List (List Symbol))
   (i : Fin k) :
   spaceUsed_init tapes i ≤ MultiTapeTM.spaceUsed_list tm tapes sorry i := by
   sorry
@@ -280,10 +271,10 @@ public lemma dya_dya_inv (w : List OneTwo) : dya (dya_inv w) = w := by sorry
 
 @[simp, grind =]
 public theorem MultiTapeTM.with_tapes_spaceUsed
-  {α : Type} [Fintype α] [Inhabited α]
+  {Symbol : Type} [Fintype Symbol] [Inhabited Symbol]
   {k₁ k₂ : ℕ}
-  {tm : MultiTapeTM k₁ (WithSep α)} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
-  {tapes : Fin k₂ → List (List α)} :
+  {tm : MultiTapeTM k₁ (WithSep Symbol)} {f : Fin k₁ → Fin k₂} {h_inj : f.Injective}
+  {tapes : Fin k₂ → List (List Symbol)} :
   (tm.with_tapes f h_inj).spaceUsed_list tapes (h_halts := sorry) =
     apply_updates (spaceUsed_init tapes) (tm.spaceUsed_list (tapes ∘ f) (h_halts := sorry)) f := by
   sorry

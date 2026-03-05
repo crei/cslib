@@ -67,7 +67,9 @@ has the right amount of tapes.
 -/
 public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ}
 -- TODO use embedding instead?
-  (tm : MultiTapeTM k₁ Symbol) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective) : MultiTapeTM k₂ Symbol :=
+  (tm : MultiTapeTM k₁ Symbol)
+  (f : Fin k₁ → Fin k₂)
+  (h_inj : f.Injective) : MultiTapeTM k₂ Symbol :=
   (tm.extend
     (by simpa using Fintype.card_le_of_injective f h_inj)).permute_tapes (inj_to_perm f h_inj)
 
@@ -75,7 +77,7 @@ public def MultiTapeTM.with_tapes {k₁ k₂ : ℕ}
 public theorem MultiTapeTM.with_tapes_halts_of_halts {k₁ k₂ : ℕ}
   (tm : MultiTapeTM k₁ Symbol) (f : Fin k₁ → Fin k₂) (h_inj : f.Injective)
   (h_halts : ∀ tapes, tm.HaltsOn tapes) :
-  ∀ tapes, (tm.with_tapes f h_inj).haltsOn tapes := by
+  ∀ tapes, (tm.with_tapes f h_inj).HaltsOn tapes := by
   sorry
 
 -- TODO do not use `h.choose` here but rather assume that `f` is injective.
