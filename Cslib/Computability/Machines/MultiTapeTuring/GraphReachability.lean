@@ -277,7 +277,7 @@ def iter_count_bound (max : ℕ) (t : ℕ) : ℕ := match t with
   | .zero => 1
   | .succ t' => 2 + max * (3 + 2 * iter_count_bound max t')
 
-noncomputable def innerLoopFun
+def innerLoopFun
   {r : (List OneTwo) → (List OneTwo) → Prop}
   {h_r_dec : ∀ x y, Decidable (r x y)}
   (max : ℕ)
