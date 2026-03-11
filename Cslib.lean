@@ -32,6 +32,8 @@ public import Cslib.Computability.Languages.RegularLanguage
 public import Cslib.Computability.Machines.MultiTapeTuring.AddRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.Basic
 public import Cslib.Computability.Machines.MultiTapeTuring.CopyRoutine
+public import Cslib.Computability.Machines.MultiTapeTuring.DecRoutine
+public import Cslib.Computability.Machines.MultiTapeTuring.DuplicateRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.EqualRoutine
 public import Cslib.Computability.Machines.MultiTapeTuring.GraphReachability
 public import Cslib.Computability.Machines.MultiTapeTuring.HeadStats

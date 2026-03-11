@@ -48,7 +48,7 @@ theorem add₀_eval_list {tapes : Fin 6 → List (List OneTwo)} :
       dya_inv ((tapes 1).headD [])) :: (tapes 2)))) := by
   simp [add₀]
   by_cases h : dya_inv ((tapes 0).head?.getD []) = 0
-  · simp [h]; grind
+  · simp [h]
   · grind
 
 /--

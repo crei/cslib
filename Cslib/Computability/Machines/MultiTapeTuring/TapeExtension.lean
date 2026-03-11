@@ -61,6 +61,16 @@ public abbrev tapes_extend_by
   (i : Fin k₂) : γ :=
   if h : i < k₁ then tapes ⟨i, h⟩ else extend_by i
 
+@[simp]
+public lemma tapes_extend_by_tapes_take
+  {γ : Type}
+  {k₁ k₂ : ℕ}
+  {h_le : k₁ ≤ k₂}
+  (tapes : Fin k₂ → γ) :
+  tapes_extend_by (tapes_take tapes k₁ h_le) tapes = tapes := by
+  unfold tapes_extend_by tapes_take
+  simp
+
 @[simp, grind =]
 public lemma MultiTapeTM.extend_eval {k₁ k₂ : ℕ} (h_le : k₁ ≤ k₂)
   (tm : MultiTapeTM k₁ Symbol)

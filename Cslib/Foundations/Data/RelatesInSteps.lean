@@ -47,6 +47,9 @@ theorem ReflTransGen.relatesInSteps (h : ReflTransGen r a b) : ∃ n, RelatesInS
 lemma RelatesInSteps.single {a b : α} (h : r a b) : RelatesInSteps r a b 1 :=
   tail a a b 0 (refl a) h
 
+lemma RelatesInSteps.single_iff {a b : α} : RelatesInSteps r a b 1 ↔ r a b := by
+  sorry
+
 theorem RelatesInSteps.head (t t' t'' : α) (n : ℕ) (h₁ : r t t')
     (h₂ : RelatesInSteps r t' t'' n) : RelatesInSteps r t t'' (n+1) := by
   induction h₂ with
