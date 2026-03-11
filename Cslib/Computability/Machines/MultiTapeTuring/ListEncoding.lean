@@ -121,6 +121,15 @@ public def MultiTapeTM.eval_list_tot
   Fin k → List (List Symbol) :=
     (tm.eval_list tapes).get (tm.eval_list_dom_of_halts_on_lists (h_alwaysHalts tapes))
 
+/-- If `eval_list` returns `Part.some result'`, then `eval_list_tot` returns `result'`. -/
+public theorem MultiTapeTM.eval_list_tot_eq_of_eval_list
+    (tm : MultiTapeTM k (WithSep Symbol))
+    (h_alwaysHalts : ∀ tapes, tm.HaltsOnLists tapes)
+    (tapes result' : Fin k → List (List Symbol))
+    (h : tm.eval_list tapes = Part.some result') :
+    tm.eval_list_tot h_alwaysHalts tapes = result' := by
+  simp [eval_list_tot, Part.get_eq_iff_eq_some, h]
+
 @[simp, grind =]
 public theorem MultiTapeTM.extend_eval_list
     {k₁ k₂ : ℕ} {h_le : k₁ ≤ k₂}
