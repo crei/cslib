@@ -22,24 +22,12 @@ namespace UniversalTM
 
 open Routines
 
-/-- TODO document -/
-public abbrev Var := ℕ
-
 /-- The cell of a single Turing tape. -/
 public structure TapeCell where
   /-- TODO document -/
-  c : Option Char
+  c : Option Data
   /-- TODO document -/
   containsHead : Bool
-
-/-- Cells from `k` Turing tapes combined into one cell. -/
-public structure MultiCell (k : ℕ) where
-  /-- One cell from each tape. -/
-  cells : Vector TapeCell k
-  /-- Is this the left-most cell (across all tapes)? -/
-  isLeftEnd : Bool
-  /-- Is this the right-most cell (across all tapes)? -/
-  isRightEnd : Bool
 
 public instance : StrEnc TapeCell where
   toData cell := StrEnc.toData (cell.c, cell.containsHead)
@@ -50,26 +38,18 @@ public instance : StrEnc TapeCell where
     intro c
     simp
 
-public instance (α : Type) [StrEnc α] (k : ℕ) : StrEnc (Vector α k) where
-  toData v := StrEnc.toData v.toList
-  fromData d := do
-      let ls : List α ← StrEnc.fromData d
-      if h : ls.length = k then
-        pure ⟨ls.toArray, h⟩
-      else
-        none
-  fromData_toData := by
-    intro v
-    simp [Vector.toList]
+-- public instance (α : Type) [StrEnc α] (k : ℕ) : StrEnc (Vector α k) where
+--   toData v := StrEnc.toData v.toList
+--   fromData d := do
+--       let ls : List α ← StrEnc.fromData d
+--       if h : ls.length = k then
+--         pure ⟨ls.toArray, h⟩
+--       else
+--         none
+--   fromData_toData := by
+--     intro v
+--     simp [Vector.toList]
 
-public instance : StrEnc (MultiCell (k : ℕ)) where
-  toData mc := StrEnc.toData (mc.cells, mc.isLeftEnd, mc.isRightEnd)
-  fromData d := do
-    let (cells, isLeftEnd, isRightEnd) <- StrEnc.fromData d
-    pure { cells, isLeftEnd, isRightEnd }
-  fromData_toData := by
-    intro v
-    simp
 
 /-
 Outline of UTM:
@@ -98,9 +78,38 @@ while the current state is not None:
 - extend a list to the right
 -/
 
-/-- The encoding of the given tapes as a list of `MultiCell`s. -/
-def encodeTapes (k : ℕ) (tapes : Fin k → BiTape Char) (shifts : Fin k → ℤ) : List (MultiCell k) :=
-  sorry
+variable [Inhabited Symbol] [Fintype Symbol] [StrEnc Symbol]
+
+public structure EncodingParams (k : ℕ) where
+  start : Fin k → ℤ
+  length : ℕ
+
+/-- The encoding of the given tapes as a list of `MultiCell`s.
+The parameter `shifts` specifies where relative to the current head position we start encoding.
+Note that the encoding can only be decoded for some values of `shifts` and `length`. -/
+public def encodeTapes {k : ℕ} (tapes : Fin k → BiTape Symbol) (params : EncodingParams k) :
+    List (Fin k → TapeCell) :=
+  let rec encodeTapes' (start : Fin k → ℤ) (length : ℕ) :=
+    match length with
+    | .zero => []
+    | l + 1 =>
+      (fun i => {
+          c := ((tapes i).atPos (start i)).map StrEnc.toData,
+          containsHead := start i == 0 }) ::
+        encodeTapes' (fun i => start i + 1) l
+  encodeTapes' params.start params.length
+
+public def updateEncodingParams {k : ℕ} (tm : MultiTapeTM k Symbol)
+  (params : EncodingParams k)
+  (cfg : tm.Cfg) : EncodingParams k := sorry
+  -- match cfg with
+  -- | ⟨none, _⟩ => (fun _ => 0)
+  -- | ⟨some q, tapes⟩ =>
+  --   match tm.tr q (fun i => (tapes i).head) with
+  --   | ⟨stmts, _⟩ => fun i => shifts i + (match (stmts i).movement with
+  --     | none => 0
+  --     | .some .right => 1
+  --     | .some .left => -1)
 
 def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (mt out aux : Fin k) : MultiTapeTM k Char :=
   -- Find the cell where the tapeIdx-th tape has the head
@@ -110,7 +119,22 @@ def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (mt out aux : Fin k) : MultiTapeTM k
     -- otherwise do nothing (because we know there is a head marker)
     (noop)
 
+public def utm_step : MultiTapeTM 10 Char := sorry
 
+/-- Main theorem -/
+public theorem utm_step_semantics
+  {k : ℕ} (tm : MultiTapeTM k Symbol)
+  [StrEnc tm.State] -- it is a fintype, so easy to satsify
+  (cfg : tm.Cfg)
+  (views : Fin 10 → TapeView)
+  (params : EncodingParams k)
+  (h_tapes : views 1 = .ofEnc (encodeTapes cfg.tapes params))
+  (h_state : views 2 = .ofEnc cfg.state) :
+  utm_step.eval_struct views = .some (match tm.step cfg with
+    | none => views
+    | some cfg' => Function.update (Function.update views
+      1 (.ofEnc (encodeTapes cfg'.tapes (updateEncodingParams tm params cfg))))
+      2 (.ofEnc cfg'.state)) := by sorry
 
 end UniversalTM
 

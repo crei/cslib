@@ -22,7 +22,6 @@ public inductive HeadPos where
   | rightEnd
   deriving DecidableEq
 
-@[simp]
 public lemma HeadPos.eq_rightEnd_of_ne_leftEnd {hp : HeadPos}
     (h : ¬hp = .leftEnd) : hp = .rightEnd := by
   cases hp <;> simp_all
