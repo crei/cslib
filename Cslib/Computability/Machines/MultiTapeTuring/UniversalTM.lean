@@ -15,6 +15,7 @@ public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Eq
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Put
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.ListIteration
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Typed
+import Mathlib.Order.Interval.Finset.Defs
 
 namespace Turing
 
@@ -98,6 +99,31 @@ public def encodeTapes {k : ℕ} (tapes : Fin k → BiTape Symbol) (params : Enc
           containsHead := start i == 0 }) ::
         encodeTapes' (fun i => start i + 1) l
   encodeTapes' params.start params.length
+
+/-- The minimal head positions over all tapes at step `t` starting from initial zero positions. -/
+public def minHeadPos
+  {k : ℕ} (tm : MultiTapeTM k Symbol) (initialTapes : Fin k → BiTape Symbol) (t : ℕ) : ℤ :=
+  if h : k = 0 then
+    0
+  else
+    (List.ofFn (tm.headPosition initialTapes t)).min (by simp [h])
+
+/-- The maximal head positions over all tapes at step `t` starting from initial zero positions. -/
+public def maxHeadPos
+  -- TODO this looks needlessly complicated.
+  {k : ℕ} (tm : MultiTapeTM k Symbol) (initialTapes : Fin k → BiTape Symbol) (t : ℕ) : ℤ :=
+  if h : k = 0 then
+    0
+  else
+    (List.ofFn (tm.headPosition initialTapes t)).max (by simp [h])
+
+-- TODO use this sequence of encoding parameters.
+
+public def encodingParamSequence  {k : ℕ} (tm : MultiTapeTM k Symbol)
+    (initialTapes : Fin k → BiTape Symbol) (t : ℕ) : EncodingParams k :=
+  let length : ℕ := (maxHeadPos tm initialTapes t) - (minHeadPos tm initialTapes)
+  let shift : ℕ  := fun i => sorry
+  ⟨ shift, length ⟩
 
 public def updateEncodingParams {k : ℕ} (tm : MultiTapeTM k Symbol)
   (params : EncodingParams k)
