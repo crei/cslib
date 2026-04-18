@@ -132,18 +132,23 @@ structure Cfg : Type where
   BiTape : BiTape Symbol
 deriving Inhabited
 
+/-- The value of the transition function (i.e. the statement and the successor state, if any)
+applied to a configuration of the Turing machine.
+If the configuration is in the halting state, returns `none`. -/
+abbrev transitionValue : tm.Cfg → Option (Stmt Symbol × Option tm.State)
+    -- If in the halting state, there is nothing to do any more.
+  | ⟨none, _⟩ => none
+    -- If in state q, perform look up in the transition function
+  | ⟨some q, t⟩ => some (tm.tr q t.head)
+
 /-- The step function corresponding to a `SingleTapeTM`. -/
 @[simp]
-def step : tm.Cfg → Option tm.Cfg
-  | ⟨none, _⟩ =>
-    -- If in the halting state, there is no next configuration
-    none
-  | ⟨some q', t⟩ =>
-    -- If in state q', perform look up in the transition function
-    match tm.tr q' t.head with
-    -- and enter a new configuration with state q'' (or none for halting)
-    -- and tape updated according to the Stmt
-    | ⟨⟨wr, dir⟩, q''⟩ => some ⟨q'', (t.write wr).optionMove dir⟩
+def step (cfg : tm.Cfg) : Option tm.Cfg := do
+  -- If the transition function has a value on the current configuration
+  let ⟨⟨wr, dir⟩, q'⟩ ← tm.transitionValue cfg
+  -- enter a new configuration with state q'' (or none for halting)
+  -- and tape updated according to the Stmt
+  return ⟨q', (cfg.BiTape.write wr).optionMove dir⟩
 
 /--
 The initial configuration corresponding to a list in the input alphabet.
@@ -187,6 +192,56 @@ end Cfg
 open Cfg
 
 variable [Inhabited Symbol] [Fintype Symbol]
+
+/-- The sequence of configurations of the Turing machine `tm` starting from configuration `c`.
+After the sequence has reached a configuration in the halting state, it turns
+`none` and stays `none`. -/
+def configs (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : (Option tm.Cfg) :=
+  (Option.bind · tm.step)^[t] (some c)
+
+def optionDirToInt : Option Dir → ℤ
+  | none => 0
+  | some .left => -1
+  | some .right => 1
+
+/-- The next movement of the tape head when in configuration `c`, as an integer. -/
+def headMovement (tm : SingleTapeTM Symbol) (c : tm.Cfg) : ℤ :=
+  match tm.transitionValue c with
+  | none => 0
+  | some ⟨⟨_, dir⟩, _⟩ => optionDirToInt dir
+
+/-- The sequence of positions of the tape head starting from configuration `c`,
+relative to the initial position of zero, at the beginning of step `t`. -/
+def headPosition (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : ℤ :=
+  ∑ t' : Fin t, ((tm.configs c t').map fun c => tm.headMovement c).getD 0
+
+/-- The tape of machine `tm` at the start of step `t` as a function `ℤ → Option Symbol`
+that does not "move" with the head. I.e. regardless of `t`, the symbol at zero is always
+the symbol in the same tape cell. -/
+def fixedTape (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : Option (ℤ → Option Symbol) :=
+  (tm.configs c t).map fun cfg p => cfg.BiTape.get (p + tm.headPosition c t)
+
+/-- The space used by machine `tm` when starting in configuration `c` and executing for `t` steps,
+defined as the number of cells visited by the tape head. -/
+def spaceUsed (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : ℤ :=
+  1 + (List.ofFn (n := t.succ) (tm.headPosition c ·)).max (by simp) -
+    (List.ofFn (n := t.succ) (tm.headPosition c ·)).min (by simp)
+
+lemma only_modification_at_headPosition (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) (i : ℤ)
+  (h_next : (tm.fixedTape c (t + 1)).isSome = true)
+  -- the next one should not be needed
+  (h_next_next : (tm.fixedTape c t).isSome = true)
+  (h_noHead : i ≠ tm.headPosition c t) :
+  (tm.fixedTape c (t + 1)).get h_next i = (tm.fixedTape c t).get h_next_next i := by
+  unfold fixedTape
+  simp
+  have h_c : tm.configs c (t + 1) = (tm.configs c t).bind tm.step := by
+    simp [configs, Function.iterate_succ_apply']
+  rw [h_c]
+
+  -- rw [h_c]
+
+  sorry
 
 /--
 The `TransitionRelation` corresponding to a `SingleTapeTM Symbol`
@@ -318,7 +373,7 @@ private theorem map_toCompCfg_right_step :
   | mk state BiTape =>
     cases state with
     | none =>
-      simp only [step, toCompCfg_right, Option.map_none, compComputer]
+      simp [step, toCompCfg_right, compComputer]
     | some q =>
       generalize hM : tm2.tr q BiTape.head = result
       obtain ⟨⟨wr, dir⟩, nextState⟩ := result
