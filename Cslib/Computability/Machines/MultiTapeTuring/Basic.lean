@@ -217,7 +217,6 @@ public def headPosition (tapes : Fin k → BiTape Symbol) (t : ℕ) (i : Fin k) 
   | t + 1 => (headPosition tapes t i) +
     movement_to_int ((tm.configs tapes t).bind fun cfg => tm.headMovement cfg i)
 
-
 -- TODO shouldn't this be spaceUsed? (If yes, also change it in SingleTapeTM)
 
 /--

@@ -81,49 +81,48 @@ while the current state is not None:
 
 variable [Inhabited Symbol] [Fintype Symbol] [StrEnc Symbol]
 
+/-- Parameters for encoding a tuple of tapes as a single tape with multiple tracks. -/
 public structure EncodingParams (k : ℕ) where
+  /-- The encoding start for each tape, relative to the tape head. -/
   start : Fin k → ℤ
+  /-- The number of cells to encode. -/
   length : ℕ
 
-/-- The encoding of the given tapes as a list of `MultiCell`s.
-The parameter `shifts` specifies where relative to the current head position we start encoding.
-Note that the encoding can only be decoded for some values of `shifts` and `length`. -/
+/-- The encoding of a tuple of tapes as a list of tuples of `TapeCell`s.
+Note that the encoding can only be decoded for some values of `params`. -/
 public def encodeTapes {k : ℕ} (tapes : Fin k → BiTape Symbol) (params : EncodingParams k) :
     List (Fin k → TapeCell) :=
-  let rec encodeTapes' (start : Fin k → ℤ) (length : ℕ) :=
-    match length with
-    | .zero => []
-    | l + 1 =>
-      (fun i => {
-          c := ((tapes i).atPos (start i)).map StrEnc.toData,
-          containsHead := start i == 0 }) ::
-        encodeTapes' (fun i => start i + 1) l
-  encodeTapes' params.start params.length
+  List.ofFn (n := params.length) fun p i =>
+    {
+      c := (tapes i).atPos ((params.start i) + p) |> Option.map StrEnc.toData
+      containsHead := (params.start i) + p == 0
+    }
 
 /-- The minimal head positions over all tapes at step `t` starting from initial zero positions. -/
 public def minHeadPos
   {k : ℕ} (tm : MultiTapeTM k Symbol) (initialTapes : Fin k → BiTape Symbol) (t : ℕ) : ℤ :=
-  if h : k = 0 then
-    0
-  else
-    (List.ofFn (tm.headPosition initialTapes t)).min (by simp [h])
+  (List.ofFn (tm.headPosition initialTapes t)).min?.getD 0
 
 /-- The maximal head positions over all tapes at step `t` starting from initial zero positions. -/
 public def maxHeadPos
-  -- TODO this looks needlessly complicated.
   {k : ℕ} (tm : MultiTapeTM k Symbol) (initialTapes : Fin k → BiTape Symbol) (t : ℕ) : ℤ :=
-  if h : k = 0 then
-    0
-  else
-    (List.ofFn (tm.headPosition initialTapes t)).max (by simp [h])
+  (List.ofFn (tm.headPosition initialTapes t)).max?.getD 0
 
 -- TODO use this sequence of encoding parameters.
 
-public def encodingParamSequence  {k : ℕ} (tm : MultiTapeTM k Symbol)
+public def encodingParamSequence {k : ℕ} (tm : MultiTapeTM k Symbol)
     (initialTapes : Fin k → BiTape Symbol) (t : ℕ) : EncodingParams k :=
-  let length : ℕ := (maxHeadPos tm initialTapes t) - (minHeadPos tm initialTapes)
-  let shift : ℕ  := fun i => sorry
-  ⟨ shift, length ⟩
+  let headPositions := tm.headPosition initialTapes
+  -- The min head position over all tapes at a specific step
+  let minHeadPosAtStep := fun t' => (List.ofFn (headPositions t')).min?.getD 0
+  let maxHeadPosAtStep := fun t' => (List.ofFn (headPositions t')).max?.getD 0
+  -- The min head position over all tapes and all steps until step t
+  -- TODO check for off-by-one errors here
+  let minHeadPosUntil := (List.ofFn (n := t + 1) (fun t' => minHeadPosAtStep t')).min?.getD 0
+  let maxHeadPosUntil := (List.ofFn (n := t + 1) (fun t' => maxHeadPosAtStep t')).max?.getD 0
+  let length := 1 + (maxHeadPosUntil - minHeadPosUntil).toNat
+  let start := fun i => (headPositions t i) - minHeadPosUntil
+  ⟨ start, length ⟩
 
 public def updateEncodingParams {k : ℕ} (tm : MultiTapeTM k Symbol)
   (params : EncodingParams k)
