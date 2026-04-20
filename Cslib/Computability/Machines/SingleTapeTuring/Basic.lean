@@ -199,6 +199,25 @@ After the sequence has reached a configuration in the halting state, it turns
 def configs (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : (Option tm.Cfg) :=
   (Option.bind · tm.step)^[t] (some c)
 
+@[simp, grind =]
+lemma configs_isSome_of_succ_isSome (tm : SingleTapeTM Symbol) (init : tm.Cfg)
+    (t : ℕ) (h_some : (tm.configs init (t + 1)).isSome) :
+    (tm.configs init t).isSome := by
+  unfold configs
+  sorry
+
+/-- Once the sequence of configurations reaches `none`, it stays `none`. -/
+lemma configs_isNone_mono (tm : SingleTapeTM Symbol) (init : tm.Cfg)
+    (t₁ t₂ : ℕ) (h_le : t₁ ≤ t₂) (h_some : (tm.configs init t₂).isSome) :
+    Monotone (fun t => (tm.configs init t).isNone) := by
+  unfold configs
+  intro t₁ t₂ h_le
+  induction t₂ with
+  | zero => grind [Function.iterate_zero]
+  | succ t₁' ih =>
+    simp only [Function.iterate_succ_apply']
+    sorry
+
 def optionDirToInt : Option Dir → ℤ
   | none => 0
   | some .left => -1
@@ -213,13 +232,24 @@ def headMovement (tm : SingleTapeTM Symbol) (c : tm.Cfg) : ℤ :=
 /-- The sequence of positions of the tape head starting from configuration `c`,
 relative to the initial position of zero, at the beginning of step `t`. -/
 def headPosition (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : ℤ :=
-  ∑ t' : Fin t, ((tm.configs c t').map fun c => tm.headMovement c).getD 0
+  ∑ t' : Fin t, ((tm.configs c t').map tm.headMovement).getD 0
+
+@[simp, scoped grind =]
+lemma headPosition_succ (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) :
+    tm.headPosition c (t + 1) =
+      tm.headPosition c t + (((tm.configs c t).map tm.headMovement).getD 0) := by
+  sorry
 
 /-- The tape of machine `tm` at the start of step `t` as a function `ℤ → Option Symbol`
 that does not "move" with the head. I.e. regardless of `t`, the symbol at zero is always
 the symbol in the same tape cell. -/
 def fixedTape (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : Option (ℤ → Option Symbol) :=
-  (tm.configs c t).map fun cfg p => cfg.BiTape.get (p + tm.headPosition c t)
+  (tm.configs c t).map fun cfg p => cfg.BiTape.get (p - tm.headPosition c t)
+
+@[simp, scoped grind =]
+lemma fixedTape_isSome_of_succ_isSome (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ)
+    (h_isSome : (tm.fixedTape c (t + 1)).isSome) :
+    (tm.fixedTape c t).isSome := by sorry
 
 /-- The space used by machine `tm` when starting in configuration `c` and executing for `t` steps,
 defined as the number of cells visited by the tape head. -/
@@ -227,21 +257,22 @@ def spaceUsed (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : ℤ :=
   1 + (List.ofFn (n := t.succ) (tm.headPosition c ·)).max (by simp) -
     (List.ofFn (n := t.succ) (tm.headPosition c ·)).min (by simp)
 
-lemma only_modification_at_headPosition (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) (i : ℤ)
-  (h_next : (tm.fixedTape c (t + 1)).isSome = true)
-  -- the next one should not be needed
-  (h_next_next : (tm.fixedTape c t).isSome = true)
-  (h_noHead : i ≠ tm.headPosition c t) :
-  (tm.fixedTape c (t + 1)).get h_next i = (tm.fixedTape c t).get h_next_next i := by
+lemma only_modification_at_headPosition (tm : SingleTapeTM Symbol) (init : tm.Cfg) (t : ℕ) (i : ℤ)
+    (h_next : (tm.fixedTape init (t + 1)).isSome)
+    (h_noHead : i ≠ tm.headPosition init t) :
+    (tm.fixedTape init (t + 1)).get h_next i = (tm.fixedTape init t).get (by grind) i := by
   unfold fixedTape
   simp
-  have h_c : tm.configs c (t + 1) = (tm.configs c t).bind tm.step := by
+  have h_configs_some : (tm.configs init t).isSome := by sorry
+  have h_c : tm.configs init (t + 1) = (tm.configs init t).bind tm.step := by
     simp [configs, Function.iterate_succ_apply']
-  rw [h_c]
-
-  -- rw [h_c]
-
-  sorry
+  simp [h_c, Option.get_bind]
+  simp [Function.update]
+  split_ifs
+  · simp [transitionValue]
+    sorry
+  · simp [transitionValue]
+    sorry
 
 /--
 The `TransitionRelation` corresponding to a `SingleTapeTM Symbol`
