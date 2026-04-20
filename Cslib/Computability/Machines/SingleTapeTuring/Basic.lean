@@ -9,6 +9,7 @@ module
 public import Cslib.Foundations.Data.BiTape
 public import Cslib.Foundations.Data.RelatesInSteps
 public import Mathlib.Algebra.Polynomial.Eval.Defs
+public import Mathlib.Algebra.BigOperators.Fin
 
 @[expose] public section
 
@@ -193,41 +194,67 @@ open Cfg
 
 variable [Inhabited Symbol] [Fintype Symbol]
 
+/-- If the transition value is known, the step function produces the expected configuration. -/
+lemma step_of_transitionValue {tm : SingleTapeTM Symbol} {cfg : tm.Cfg}
+    {wr : Option Symbol} {dir : Option Dir} {q' : Option tm.State}
+    (h : tm.transitionValue cfg = some ⟨⟨wr, dir⟩, q'⟩) :
+    tm.step cfg = some ⟨q', (cfg.BiTape.write wr).optionMove dir⟩ := by
+  simp only [step, h]; rfl
+
+/-- If the transition value is `none`, the step function returns `none`. -/
+@[scoped grind =]
+lemma step_none_of_transitionValue_none {tm : SingleTapeTM Symbol} {cfg : tm.Cfg}
+    (h : tm.transitionValue cfg = none) : tm.step cfg = none := by
+  simp only [step, h]; rfl
+
+/-- If `step` returns `some`, then the transition value is `some`. -/
+lemma transitionValue_isSome_of_step {tm : SingleTapeTM Symbol} {cfg cfg' : tm.Cfg}
+    (h : tm.step cfg = some cfg') :
+    (tm.transitionValue cfg).isSome := by
+  grind
+
 /-- The sequence of configurations of the Turing machine `tm` starting from configuration `c`.
 After the sequence has reached a configuration in the halting state, it turns
 `none` and stays `none`. -/
 def configs (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : (Option tm.Cfg) :=
   (Option.bind · tm.step)^[t] (some c)
 
-@[simp, grind =]
+/-- Unrolling the last iteration of `configs`: one more step applied to the previous config. -/
+lemma configs_succ (tm : SingleTapeTM Symbol) (init : tm.Cfg) (t : ℕ) :
+    tm.configs init (t + 1) = (tm.configs init t).bind tm.step := by
+  simp [configs, Function.iterate_succ_apply']
+
+/-- Unrolling the first iteration of `configs`: take the first step, then continue for `t` steps. -/
+lemma configs_succ' (tm : SingleTapeTM Symbol) (init : tm.Cfg) (t : ℕ) :
+    tm.configs init (t + 1) = (tm.step init).bind (tm.configs · t) := by
+  unfold configs
+  change (Option.bind · tm.step)^[t] (tm.step init) =
+    (tm.step init).bind (fun c => (Option.bind · tm.step)^[t] (some c))
+  cases tm.step init with
+  | none => exact Function.iterate_fixed rfl t
+  | some _ => rfl
+
+@[simp, scoped grind →]
 lemma configs_isSome_of_succ_isSome (tm : SingleTapeTM Symbol) (init : tm.Cfg)
     (t : ℕ) (h_some : (tm.configs init (t + 1)).isSome) :
     (tm.configs init t).isSome := by
-  unfold configs
-  sorry
-
-/-- Once the sequence of configurations reaches `none`, it stays `none`. -/
-lemma configs_isNone_mono (tm : SingleTapeTM Symbol) (init : tm.Cfg)
-    (t₁ t₂ : ℕ) (h_le : t₁ ≤ t₂) (h_some : (tm.configs init t₂).isSome) :
-    Monotone (fun t => (tm.configs init t).isNone) := by
-  unfold configs
-  intro t₁ t₂ h_le
-  induction t₂ with
-  | zero => grind [Function.iterate_zero]
-  | succ t₁' ih =>
-    simp only [Function.iterate_succ_apply']
-    sorry
-
-def optionDirToInt : Option Dir → ℤ
-  | none => 0
-  | some .left => -1
-  | some .right => 1
+  rw [configs_succ] at h_some
+  cases h : tm.configs init t with
+  | some _ => rfl
+  | none => simp [h] at h_some
 
 /-- The next movement of the tape head when in configuration `c`, as an integer. -/
 def headMovement (tm : SingleTapeTM Symbol) (c : tm.Cfg) : ℤ :=
   match tm.transitionValue c with
   | none => 0
-  | some ⟨⟨_, dir⟩, _⟩ => optionDirToInt dir
+  | some ⟨⟨_, dir⟩, _⟩ => BiTape.optionDirToInt dir
+
+/-- The head movement equals `BiTape.optionDirToInt dir` when the transition value is known. -/
+lemma headMovement_of_transitionValue {tm : SingleTapeTM Symbol} {cfg : tm.Cfg}
+    {wr : Option Symbol} {dir : Option Dir} {q' : Option tm.State}
+    (h : tm.transitionValue cfg = some ⟨⟨wr, dir⟩, q'⟩) :
+    tm.headMovement cfg = BiTape.optionDirToInt dir := by
+  simp only [headMovement, h]
 
 /-- The sequence of positions of the tape head starting from configuration `c`,
 relative to the initial position of zero, at the beginning of step `t`. -/
@@ -238,7 +265,7 @@ def headPosition (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : ℤ :=
 lemma headPosition_succ (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) :
     tm.headPosition c (t + 1) =
       tm.headPosition c t + (((tm.configs c t).map tm.headMovement).getD 0) := by
-  sorry
+  exact Fin.sum_univ_castSucc _
 
 /-- The tape of machine `tm` at the start of step `t` as a function `ℤ → Option Symbol`
 that does not "move" with the head. I.e. regardless of `t`, the symbol at zero is always
@@ -249,7 +276,8 @@ def fixedTape (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ) : Option (ℤ �
 @[simp, scoped grind =]
 lemma fixedTape_isSome_of_succ_isSome (tm : SingleTapeTM Symbol) (c : tm.Cfg) (t : ℕ)
     (h_isSome : (tm.fixedTape c (t + 1)).isSome) :
-    (tm.fixedTape c t).isSome := by sorry
+    (tm.fixedTape c t).isSome := by
+  grind [fixedTape]
 
 /-- The space used by machine `tm` when starting in configuration `c` and executing for `t` steps,
 defined as the number of cells visited by the tape head. -/
@@ -261,18 +289,21 @@ lemma only_modification_at_headPosition (tm : SingleTapeTM Symbol) (init : tm.Cf
     (h_next : (tm.fixedTape init (t + 1)).isSome)
     (h_noHead : i ≠ tm.headPosition init t) :
     (tm.fixedTape init (t + 1)).get h_next i = (tm.fixedTape init t).get (by grind) i := by
+  have h_cs : (tm.configs init (t + 1)).isSome := by grind [fixedTape]
   unfold fixedTape
+  set cfg := (tm.configs init t).get (by grind)
+  have h_cfg : tm.configs init t = some cfg := by grind
+  have h_step : (tm.step cfg).isSome := by grind [configs_succ]
+  let stmt := ((tm.transitionValue cfg).get (by grind)).1
+  simp only [Option.get_map, configs_succ, Option.get_bind]
+  have : ((tm.step cfg).get (by grind)).BiTape =
+      (cfg.BiTape.write stmt.symbol).optionMove stmt.movement := by
+    grind [step]
+  rw [this]
+  have h_hm : ((tm.configs init t).map tm.headMovement).getD 0 =
+      BiTape.optionDirToInt stmt.movement := by grind [headMovement]
   simp
-  have h_configs_some : (tm.configs init t).isSome := by sorry
-  have h_c : tm.configs init (t + 1) = (tm.configs init t).bind tm.step := by
-    simp [configs, Function.iterate_succ_apply']
-  simp [h_c, Option.get_bind]
-  simp [Function.update]
-  split_ifs
-  · simp [transitionValue]
-    sorry
-  · simp [transitionValue]
-    sorry
+  grind [Fin.sum_univ_castSucc]
 
 /--
 The `TransitionRelation` corresponding to a `SingleTapeTM Symbol`
