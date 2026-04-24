@@ -112,6 +112,12 @@ public def parent (tv : TapeView) : TapeView := ⟨tv.data, tv.path.dropLast, tv
 --   unfold parent
 --   split <;> grind
 
+@[expose]
+public def parent_n (tv : TapeView) : ℕ → TapeView
+  | 0 => tv
+  | n + 1 => (tv.parent_n n).parent
+
+
 /-- TODO don't use, I think it is unnatural to keep the headPos -/
 @[expose, simp]
 public def appendPath (tv : TapeView) (idx : ℕ)

@@ -23,14 +23,16 @@ namespace UniversalTM
 
 open Routines
 
+variable [Inhabited Symbol] [Fintype Symbol] [StrEnc Symbol]
+
 /-- The cell of a single Turing tape. -/
-public structure TapeCell where
-  /-- TODO document -/
-  c : Option Data
-  /-- TODO document -/
+public structure TapeCell Symbol where
+  /-- The symbol in the cell. -/
+  c : Option Symbol
+  /-- If the head is at this cell currently. -/
   containsHead : Bool
 
-public instance : StrEnc TapeCell where
+public instance : StrEnc (TapeCell Symbol) where
   toData cell := StrEnc.toData (cell.c, cell.containsHead)
   fromData d := do
     let (c, containsHead) ← StrEnc.fromData d
@@ -38,19 +40,6 @@ public instance : StrEnc TapeCell where
   fromData_toData := by
     intro c
     simp
-
--- public instance (α : Type) [StrEnc α] (k : ℕ) : StrEnc (Vector α k) where
---   toData v := StrEnc.toData v.toList
---   fromData d := do
---       let ls : List α ← StrEnc.fromData d
---       if h : ls.length = k then
---         pure ⟨ls.toArray, h⟩
---       else
---         none
---   fromData_toData := by
---     intro v
---     simp [Vector.toList]
-
 
 /-
 Outline of UTM:
@@ -79,7 +68,6 @@ while the current state is not None:
 - extend a list to the right
 -/
 
-variable [Inhabited Symbol] [Fintype Symbol] [StrEnc Symbol]
 
 /-- Parameters for encoding a tuple of tapes as a single tape with multiple tracks. -/
 public structure EncodingParams (k : ℕ) where
@@ -91,10 +79,10 @@ public structure EncodingParams (k : ℕ) where
 /-- The encoding of a tuple of tapes as a list of tuples of `TapeCell`s.
 Note that the encoding can only be decoded for some values of `params`. -/
 public def encodeTapes {k : ℕ} (tapes : Fin k → BiTape Symbol) (params : EncodingParams k) :
-    List (Fin k → TapeCell) :=
+    List (Fin k → TapeCell Symbol) :=
   List.ofFn (n := params.length) fun p i =>
     {
-      c := (tapes i).atPos ((params.start i) + p) |> Option.map StrEnc.toData
+      c := (tapes i).atPos ((params.start i) + p)
       containsHead := (params.start i) + p == 0
     }
 
@@ -136,13 +124,40 @@ public def updateEncodingParams {k : ℕ} (tm : MultiTapeTM k Symbol)
   --     | .some .right => 1
   --     | .some .left => -1)
 
-def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (mt out aux : Fin k) : MultiTapeTM k Char :=
-  -- Find the cell where the tapeIdx-th tape has the head
-  find_list mt aux (atPath [0, tapeIdx, 1] mt (copyEnc mt aux))
+def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (tapes out aux : Fin k) : MultiTapeTM k Char :=
+  find_list tapes aux
+    -- Find the cell where the tapeIdx-th tape has the head
+    (atPath [0, tapeIdx, 1] tapes (copyEnc tapes aux))
     -- copy the symbol to out
-    (atPath [0, tapeIdx, 0] mt (copy_to_list mt out))
+    (atPath [0, tapeIdx, 0] tapes (copy_to_list tapes out))
     -- otherwise do nothing (because we know there is a head marker)
     (noop)
+
+lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : ℕ) (tapes out aux : Fin k)
+  (h_tapes_aux : tapes ≠ aux)
+  {t : Fin k' → BiTape Symbol}
+  {views : Fin k → TapeView}
+  {params : EncodingParams k'}
+  (h_tapes : views tapes = .ofEnc (encodeTapes t params))
+   :
+  (getHeadSymbol k tapeIdx tapes out aux).eval_struct views = sorry := by
+  unfold getHeadSymbol
+  have h_check : computes_function_read_replace
+      (atPath [0, tapeIdx, 1] tapes (copyEnc tapes aux))
+      (fun tc : TapeCell Symbol => tc.containsHead)
+      tapes
+      aux := by
+    sorry
+  rw [find_list.computes_fun (h_tapes_aux) h_check views sorry sorry sorry]
+  simp
+  sorry
+
+-- /-- Copies the symbol the head of tape `i` currently points to, to tape 3. -/
+-- def copyReadSymbol (i : Fin k) : MultiTapeTM 10 Char :=
+--   find_list 1 4 (atPath [0, i, 1] 1 (copyEnc 1 4))
+--     (atPath [0, i, 0] 1 (copy_to_list 1 4))
+--     (noop)
+
 
 public def utm_step : MultiTapeTM 10 Char := sorry
 

@@ -46,6 +46,105 @@ end
 
 public instance : DecidableEq Data := Data.decEq
 
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Data.atPath
+-- ═══════════════════════════════════════════════════════════════════════════
+
+/-- Navigate into a `Data` value at the given path.
+    Returns the sub-`Data` element at the path, or `none` if the path is invalid
+    (e.g., through out-of-bounds on a `list`). -/
+@[expose]
+public def Data.atPath : Data → List ℕ → Option Data
+  | d, [] => some d
+  | Data.list ds, k :: rest =>
+    if h : k < ds.length then (ds[k]).atPath rest else none
+
+@[simp]
+public lemma Data.atPath_nil (d : Data) : d.atPath [] = some d := by
+  unfold Data.atPath; rfl
+
+@[simp]
+public lemma Data.atPath_list_cons (ds : List Data) (k : ℕ) (rest : List ℕ)
+    (h : k < ds.length) :
+    (Data.list ds).atPath (k :: rest) = (ds[k]).atPath rest := by
+  simp [Data.atPath, h]
+
+@[simp]
+public lemma Data.atPath_zero_isSome_of_nonempty {d : Data} :
+    (d.atPath [0]).isSome ↔ (d ≠ .list []) := by
+  cases d with
+  | list ds =>
+    simp only [Data.atPath, ne_eq, Data.list.injEq]
+    cases ds with
+    | nil => simp
+    | cons d ds => simp
+
+
+@[simp]
+public lemma Data.atPath_append {d : Data} {path₁ path₂ : List ℕ} :
+    d.atPath (path₁ ++ path₂) = d.atPath path₁ >>= fun d => d.atPath path₂ := by
+  induction path₁ generalizing d with
+  | nil => simp [Data.atPath]
+  | cons k rest ih =>
+    cases d with
+    | list ds => grind [Data.atPath]
+
+@[simp]
+public lemma Data.atPath_get_atPath {d : Data} {path₁ path₂ : List ℕ}
+    (h_valid : (d.atPath path₁).isSome) :
+    ((d.atPath path₁).get h_valid).atPath path₂ =
+      d.atPath (path₁ ++ path₂) := by
+  rw [Data.atPath_append]
+  obtain ⟨d', hd'⟩ := Option.isSome_iff_exists.mp h_valid
+  simp [hd']
+
+@[simp]
+public lemma Data.atPath_dropLast_isSome_of_isSome {d : Data} {path : List ℕ}
+    (h_is_some : (d.atPath path).isSome) :
+  (d.atPath path.dropLast).isSome := by
+  induction path using List.reverseRecOn with
+  | nil => exact h_is_some
+  | append_singleton l a _ =>
+    rw [List.dropLast_concat]
+    rw [Data.atPath_append] at h_is_some
+    cases hd : d.atPath l with
+    | none => simp [hd, Option.bind] at h_is_some
+    | some d' => simp
+
+@[simp]
+public lemma Data.atPath_dropLast_bind_getLast {d : Data} {path : List ℕ}
+    (h_path : path.getLast?.isSome) :
+    ((d.atPath path.dropLast).bind fun d => d.atPath [path.getLast?.get h_path]) =
+      d.atPath path := by
+  conv_rhs => rw [show path = path.dropLast ++ [path.getLast?.get h_path] from by
+    simp [List.dropLast_append_getLast?]]
+  simp [Data.atPath_append]
+
+public lemma Data.atPath_isSome_of_le_isSome {d : Data} {i₁ i₂ : ℕ}
+    (h_le : i₁ ≤ i₂)
+    (h_is_some : (d.atPath [i₂]).isSome) :
+  (d.atPath [i₁]).isSome := by
+  cases d with
+  | list ds =>
+    unfold Data.atPath at h_is_some ⊢
+    split at h_is_some
+    · split
+      · rfl
+      · rename_i h₂ h₁; exact absurd (by omega : i₁ < ds.length) h₁
+    · simp at h_is_some
+
+-- TODO redundant?
+@[simp]
+public lemma Data.atPath_isSome_of_succ_isSome {d : Data} {idx : ℕ}
+    (h_succ_is_some : (d.atPath [idx + 1]).isSome) :
+  (d.atPath [idx]).isSome :=
+  Data.atPath_isSome_of_le_isSome (by omega) h_succ_is_some
+
+-- ═══════════════════════════════════════════════════════════════════════════
+-- Data.enc
+-- ═══════════════════════════════════════════════════════════════════════════
+
 /-- Encoding of `Data` into a list of characters. -/
 @[expose]
 public def Data.enc : Data → List Char
@@ -273,6 +372,16 @@ public lemma StrEnc.toData_injective (α : Type*) [StrEnc α] :
     Function.Injective (StrEnc.toData (α := α)) := fun a b h =>
   Option.some_injective _ (by rw [← StrEnc.fromData_toData a, h, StrEnc.fromData_toData])
 
+@[expose]
+public def StrEnc.atPath? {α β : Type*} [StrEnc α] [StrEnc β]
+    (x : α) (path : List ℕ) : Option β :=
+  ((StrEnc.toData x).atPath path).bind StrEnc.fromData
+
+@[simp]
+public lemma StrEnc.atPath?_nil {α : Type*} [StrEnc α] (x : α) :
+    StrEnc.atPath? x [] = some x := by
+  simp [StrEnc.atPath?]
+
 public instance : StrEnc Data where
   toData := id
   fromData := some
@@ -305,6 +414,11 @@ public instance (α : Type*) [StrEnc α] : StrEnc (List α) where
     induction l with
     | nil => rfl
     | cons a as ih => simp [List.mapM_cons, StrEnc.fromData_toData a, ih]
+
+@[simp]
+public lemma StrEnc.list_atPath? {α : Type*} [StrEnc α] (x : List α) (i : ℕ) (h_lt : i < x.length) :
+    StrEnc.atPath? x [i] = some x[i] := by
+  simp [StrEnc.atPath?, toData, h_lt]
 
 /-- Encode `Option α` using the empty list for `none` and a singleton list otherwise. -/
 public instance (α : Type) [StrEnc α] : StrEnc (Option α) where
@@ -397,7 +511,7 @@ public instance (k : ℕ) (α : Type*) [StrEnc α] : StrEnc (Fin k → α) where
     ext i
     simp [List.getElem_ofFn]
 
-public instance (α : Type*) (β : Type*) [StrEnc α] [StrEnc β] : StrEnc (α × β) where
+public instance (α β : Type*) [StrEnc α] [StrEnc β] : StrEnc (α × β) where
   toData p := Data.list [StrEnc.toData p.1, StrEnc.toData p.2]
   fromData
     | Data.list [a, b] =>
@@ -406,6 +520,17 @@ public instance (α : Type*) (β : Type*) [StrEnc α] [StrEnc β] : StrEnc (α �
       | _, _ => none
     | _ => none
   fromData_toData p := by simp
+
+@[simp]
+public lemma StrEnc.tuple_atPath?_zero {α β : Type*} [StrEnc α] [StrEnc β] (x : α × β) :
+    StrEnc.atPath? x [0] = some x.fst := by
+  simp [StrEnc.atPath?, toData]
+
+@[simp]
+public lemma StrEnc.tuple_atPath?_one {α β : Type*} [StrEnc α] [StrEnc β] (x : α × β) :
+    StrEnc.atPath? x [1] = some x.snd := by
+  simp [StrEnc.atPath?, toData]
+
 
 /-- `StrEnc` for functions `α → β` where `α` is finite, encoded as the function's
     graph: a list of `(a, f a)` pairs.
@@ -450,99 +575,5 @@ public def StrEnc.ofEncodable (α : Type) [Encodable α] : StrEnc α where
     let n ← StrEnc.fromData (α := ℕ) d
     Encodable.decode n
   fromData_toData a := by simp [Encodable.encodek]
-
--- ═══════════════════════════════════════════════════════════════════════════
--- Data.atPath
--- ═══════════════════════════════════════════════════════════════════════════
-
-/-- Navigate into a `Data` value at the given path.
-    Returns the sub-`Data` element at the path, or `none` if the path is invalid
-    (e.g., through out-of-bounds on a `list`). -/
-@[expose]
-public def Data.atPath : Data → List ℕ → Option Data
-  | d, [] => some d
-  | Data.list ds, k :: rest =>
-    if h : k < ds.length then (ds[k]).atPath rest else none
-
-@[simp]
-public lemma Data.atPath_nil (d : Data) : d.atPath [] = some d := by
-  unfold Data.atPath; rfl
-
-@[simp]
-public lemma Data.atPath_list_cons (ds : List Data) (k : ℕ) (rest : List ℕ)
-    (h : k < ds.length) :
-    (Data.list ds).atPath (k :: rest) = (ds[k]).atPath rest := by
-  simp [Data.atPath, h]
-
-@[simp]
-public lemma Data.atPath_zero_isSome_of_nonempty {d : Data} :
-    (d.atPath [0]).isSome ↔ (d ≠ .list []) := by
-  cases d with
-  | list ds =>
-    simp only [Data.atPath, ne_eq, Data.list.injEq]
-    cases ds with
-    | nil => simp
-    | cons d ds => simp
-
-
-@[simp]
-public lemma Data.atPath_append {d : Data} {path₁ path₂ : List ℕ} :
-    d.atPath (path₁ ++ path₂) = d.atPath path₁ >>= fun d => d.atPath path₂ := by
-  induction path₁ generalizing d with
-  | nil => simp [Data.atPath]
-  | cons k rest ih =>
-    cases d with
-    | list ds => grind [Data.atPath]
-
-@[simp]
-public lemma Data.atPath_get_atPath {d : Data} {path₁ path₂ : List ℕ}
-    (h_valid : (d.atPath path₁).isSome) :
-    ((d.atPath path₁).get h_valid).atPath path₂ =
-      d.atPath (path₁ ++ path₂) := by
-  rw [Data.atPath_append]
-  obtain ⟨d', hd'⟩ := Option.isSome_iff_exists.mp h_valid
-  simp [hd']
-
-@[simp]
-public lemma Data.atPath_dropLast_isSome_of_isSome {d : Data} {path : List ℕ}
-    (h_is_some : (d.atPath path).isSome) :
-  (d.atPath path.dropLast).isSome := by
-  induction path using List.reverseRecOn with
-  | nil => exact h_is_some
-  | append_singleton l a _ =>
-    rw [List.dropLast_concat]
-    rw [Data.atPath_append] at h_is_some
-    cases hd : d.atPath l with
-    | none => simp [hd, Option.bind] at h_is_some
-    | some d' => simp
-
-@[simp]
-public lemma Data.atPath_dropLast_bind_getLast {d : Data} {path : List ℕ}
-    (h_path : path.getLast?.isSome) :
-    ((d.atPath path.dropLast).bind fun d => d.atPath [path.getLast?.get h_path]) =
-      d.atPath path := by
-  conv_rhs => rw [show path = path.dropLast ++ [path.getLast?.get h_path] from by
-    simp [List.dropLast_append_getLast?]]
-  simp [Data.atPath_append]
-
-public lemma Data.atPath_isSome_of_le_isSome {d : Data} {i₁ i₂ : ℕ}
-    (h_le : i₁ ≤ i₂)
-    (h_is_some : (d.atPath [i₂]).isSome) :
-  (d.atPath [i₁]).isSome := by
-  cases d with
-  | list ds =>
-    unfold Data.atPath at h_is_some ⊢
-    split at h_is_some
-    · split
-      · rfl
-      · rename_i h₂ h₁; exact absurd (by omega : i₁ < ds.length) h₁
-    · simp at h_is_some
-
--- TODO redundant?
-@[simp]
-public lemma Data.atPath_isSome_of_succ_isSome {d : Data} {idx : ℕ}
-    (h_succ_is_some : (d.atPath [idx + 1]).isSome) :
-  (d.atPath [idx]).isSome :=
-  Data.atPath_isSome_of_le_isSome (by omega) h_succ_is_some
 
 end Turing

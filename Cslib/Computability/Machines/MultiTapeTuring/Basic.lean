@@ -212,10 +212,7 @@ public def movement_to_int : Option Dir → ℤ
 
 /-- The position of a head relative to the initial position of zero. -/
 public def headPosition (tapes : Fin k → BiTape Symbol) (t : ℕ) (i : Fin k) : ℤ :=
-  match t with
-  | 0 => 0
-  | t + 1 => (headPosition tapes t i) +
-    movement_to_int ((tm.configs tapes t).bind fun cfg => tm.headMovement cfg i)
+  ∑ t' : Fin (t + 1), movement_to_int ((tm.configs tapes t').bind fun cfg => tm.headMovement cfg i)
 
 -- TODO shouldn't this be spaceUsed? (If yes, also change it in SingleTapeTM)
 

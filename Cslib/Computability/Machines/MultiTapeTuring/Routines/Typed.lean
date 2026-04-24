@@ -44,6 +44,9 @@ public def computes_function_read_update' {k : ℕ}
     views j = TapeView.ofEnc y →
     tm.eval_struct views = .some (Function.update views j (TapeView.ofEnc (f x y)))
 
+-- TODO how can we make the next compatible with currying? Maybe we have to take one tape
+-- index out of the index set?
+
 /-- TODO document -/
 @[expose]
 public def computes_function_read_read_update {k : ℕ}

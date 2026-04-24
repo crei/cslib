@@ -9,6 +9,7 @@ module
 public import Cslib.Computability.Machines.MultiTapeTuring.StructuralMachines
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Iterate
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Skip
+public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Typed
 
 
 namespace Turing
@@ -141,9 +142,41 @@ public lemma atElem_eval_struct {k : ℕ} {idx : ℕ} {i : Fin k} {tm : MultiTap
 /-- Move into the given path, then execute `tm` and then move out again. -/
 public def atPath {k : ℕ} (path : List ℕ) (i : Fin k) (tm : MultiTapeTM k Char) :
     MultiTapeTM k Char :=
-  match path with
-  | [] => tm
-  | n :: path' => toElem n i;ₜ atPath path' i tm;ₜ outOfList i
+  atLeft i (go path)
+  where
+    go : List ℕ → MultiTapeTM k Char
+      | [] => tm
+      | n :: path' => toElem n i;ₜ go path';ₜ outOfList i
+
+@[simp]
+public lemma atPath_eval_struct {k : ℕ} {path : List ℕ} {i : Fin k} {tm : MultiTapeTM k Char}
+    {views : Fin k → TapeView}
+    (h_valid : ((views i).current.atPath path).isSome) :
+    (atPath path i tm).eval_struct views = (tm.eval_struct
+      (Function.update views i
+        ⟨(views i).data, (views i).path ++ path, .leftEnd, by simpa using h_valid⟩)).map
+          fun views' => Function.update views' i
+            (((views' i).parent_n (path.length)).setHeadPosOf (views i)) := by
+  sorry
+
+-- TODO can we do the next one typed?
+
+@[simp]
+public lemma atPath_eval_struct_of_constant {k : ℕ} {path : List ℕ} {i j : Fin k}
+    {α β γ : Type} [StrEnc α] [StrEnc β] [StrEnc γ]
+    {tm : MultiTapeTM k Char}
+    (h_ne : i ≠ j)
+    (f : β → γ)
+    -- At path `path` from any `α` we reach a `β`.
+    (h_path : ∀ x : α, ((StrEnc.atPath? x path) : Option β).isSome)
+    (h_tm : computes_function_read_replace tm f i j) :
+    computes_function_read_replace (atPath path i tm)
+      (fun x => (StrEnc.atPath? x path).get (h_path _)) i j := by
+  sorry
+
+
+  -- XXX continue here: I started defining the list_atPath? lemmas in order to
+  -- be able to better use the atPath machine to formulate the atPath_eval_struct_of_constant lemma
 
 end Routines
 end Turing

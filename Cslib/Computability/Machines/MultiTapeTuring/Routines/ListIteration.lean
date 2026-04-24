@@ -232,8 +232,9 @@ public theorem find_list.computes_fun {k : ℕ} {i j : Fin k}
     (views : Fin k → TapeView) :
     ∀ ls : List α, (views i).current = StrEnc.toData ls →
     views j = TapeView.empty →
-    (find_list i j tm₁ tm₂ tm₃).eval_struct views = match ls.findIdx? f with
-      | some idx => tm₂.eval_struct (Function.update views i ((views i).appendPath idx (by sorry)))
+    (find_list i j tm₁ tm₂ tm₃).eval_struct views = match h_find : ls.findIdx? f with
+      | some idx => tm₂.eval_struct
+          (Function.update views i ((views i).appendPath idx (by sorry)))
       | none => tm₃.eval_struct views := by
   sorry
 
