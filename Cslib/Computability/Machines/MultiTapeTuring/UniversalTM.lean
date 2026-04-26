@@ -40,6 +40,17 @@ public instance : StrEnc (TapeCell Symbol) where
   fromData_toData := by
     intro c
     simp
+  toData_fromData := by
+    intro d cell h
+    simp only at h
+    match hpair : StrEnc.fromData (α := Option Symbol × Bool) d, h with
+    | some (c, ch), h =>
+      simp only [Option.pure_def] at h
+      cases h
+      have := StrEnc.toData_fromData _ _ hpair
+      rw [show ({ c := c, containsHead := ch } : TapeCell Symbol).c = c from rfl,
+          show ({ c := c, containsHead := ch } : TapeCell Symbol).containsHead = ch from rfl]
+      exact this
 
 /-
 Outline of UTM:

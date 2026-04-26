@@ -39,6 +39,18 @@ public instance : StrEnc Literal where
   fromData_toData
     | Literal.pos _ => by simp
     | Literal.neg _ => by simp
+  toData_fromData := by
+    intro d lit h
+    split at h
+    · rename_i hd
+      cases h
+      have := StrEnc.toData_fromData _ _ hd
+      simpa using this
+    · rename_i hd
+      cases h
+      have := StrEnc.toData_fromData _ _ hd
+      simpa using this
+    · exact absurd h (by simp)
 
 /-- TODO document -/
 public abbrev Clause := List Literal
@@ -64,6 +76,23 @@ public instance : StrEnc SATInput where
     | _ => none
   fromData_toData
     | SATInput.mk f a => by simp [StrEnc.fromData_toData f, StrEnc.fromData_toData a]
+  toData_fromData := by
+    intro d s h
+    split at h
+    · rename_i fd ad
+      match hf : StrEnc.fromData (α := Formula) fd, h with
+      | some f, h =>
+        match ha : StrEnc.fromData (α := Assignments) ad, h with
+        | some a, h =>
+          have hf' := StrEnc.toData_fromData _ _ hf
+          have ha' := StrEnc.toData_fromData _ _ ha
+          have hs : s = SATInput.mk f a := by
+            change (some (SATInput.mk f a) : Option SATInput) = some s at h
+            cases h; rfl
+          subst hs
+          show Data.list [StrEnc.toData f, StrEnc.toData a] = _
+          rw [hf', ha']
+    · exact absurd h (by simp)
 
 @[simp]
 lemma SatInput_toData (formula : Formula) (assignments : Assignments) :

@@ -43,6 +43,48 @@ public def dyadic_inv (l : List Char) : Option ℕ :=
 public lemma dyadic_inv_zero : dyadic_inv [] = .some 0 := by
   unfold dyadic_inv; rfl
 
+private lemma dyadic_inv_append_singleton (init : List Char) (c : Char) :
+    dyadic_inv (init ++ [c]) =
+      (dyadic_inv init).bind (fun acc =>
+        if c = '1' then some (2 * acc + 1)
+        else if c = '2' then some (2 * acc + 2) else none) := by
+  simp [dyadic_inv, List.foldlM_append]
+
+/-- `dyadic` is a right-inverse to `dyadic_inv` on lists of `'1'` and `'2'`. -/
+public lemma dyadic_dyadic_inv (l : List Char) (n : ℕ)
+    (h_chars : ∀ c ∈ l, c = '1' ∨ c = '2')
+    (h : dyadic_inv l = some n) : dyadic n = l := by
+  induction l using List.reverseRecOn generalizing n with
+  | nil =>
+    simp [dyadic_inv] at h; subst h
+    simp [dyadic]
+  | append_singleton init c ih =>
+    have h_c : c = '1' ∨ c = '2' := h_chars c (by simp)
+    have h_init_chars : ∀ d ∈ init, d = '1' ∨ d = '2' := fun d hd =>
+      h_chars d (List.mem_append.mpr (Or.inl hd))
+    rw [dyadic_inv_append_singleton] at h
+    obtain ⟨m, hm, hstep⟩ := Option.bind_eq_some_iff.mp h
+    have hd_init : dyadic m = init := ih m h_init_chars hm
+    rcases h_c with rfl | rfl
+    · -- c = '1' case: n = 2 * m + 1
+      simp only [if_true, Option.some.injEq] at hstep
+      subst hstep
+      have h_odd : ¬ Even (2 * m + 1) := by
+        rw [Nat.not_even_iff_odd]; exact ⟨m, by omega⟩
+      have h_nz : 2 * m + 1 ≠ 0 := by omega
+      conv_lhs => rw [dyadic]
+      simp only [if_neg h_nz, if_neg h_odd]
+      rw [show (2 * m + 1 - 1) / 2 = m by omega, hd_init]
+    · -- c = '2' case: n = 2 * m + 2
+      have h21 : ('2' : Char) ≠ '1' := by decide
+      simp only [if_neg h21, if_true, Option.some.injEq] at hstep
+      subst hstep
+      have h_even : Even (2 * m + 2) := ⟨m + 1, by omega⟩
+      have h_nz : 2 * m + 2 ≠ 0 := by omega
+      conv_lhs => rw [dyadic]
+      simp only [if_neg h_nz, if_pos h_even]
+      rw [show (2 * m + 2) / 2 - 1 = m by omega, hd_init]
+
 @[simp, grind =]
 public lemma dyadic_inv_dyadic (n : ℕ) : dyadic_inv (dyadic n) = n := by
   induction n using Nat.strongRecOn with

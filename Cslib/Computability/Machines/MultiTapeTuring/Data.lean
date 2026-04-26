@@ -357,6 +357,7 @@ public class StrEnc (α : Type*) where
   fromData : Data → Option α
   /-- Decoding after encoding always succeeds and returns the original value. -/
   fromData_toData : ∀ x : α, fromData (toData x) = some x
+  toData_fromData : ∀ d x, fromData d = some x → toData x = d
 
 @[simp]
 public lemma StrEnc.fromData_toData_apply (α : Type*) [StrEnc α] (x : α) :
@@ -372,7 +373,7 @@ public lemma StrEnc.toData_injective (α : Type*) [StrEnc α] :
     Function.Injective (StrEnc.toData (α := α)) := fun a b h =>
   Option.some_injective _ (by rw [← StrEnc.fromData_toData a, h, StrEnc.fromData_toData])
 
-@[expose]
+@[expose, grind =]
 public def StrEnc.atPath? {α β : Type*} [StrEnc α] [StrEnc β]
     (x : α) (path : List ℕ) : Option β :=
   ((StrEnc.toData x).atPath path).bind StrEnc.fromData
@@ -386,6 +387,7 @@ public instance : StrEnc Data where
   toData := id
   fromData := some
   fromData_toData _ := rfl
+  toData_fromData _ _ h := (Option.some_injective _ h).symm
 
 public instance : StrEnc Bool where
   toData
@@ -400,6 +402,7 @@ public instance : StrEnc Bool where
   fromData_toData
     | false => rfl
     | true => rfl
+  toData_fromData _ _ := by grind
 
 @[simp]
 public lemma Bool.toData (d : Bool) :
@@ -414,6 +417,25 @@ public instance (α : Type*) [StrEnc α] : StrEnc (List α) where
     induction l with
     | nil => rfl
     | cons a as ih => simp [List.mapM_cons, StrEnc.fromData_toData a, ih]
+  toData_fromData d xs h := by
+    cases d with
+    | list ds =>
+      induction ds generalizing xs with
+      | nil =>
+        simp only [List.mapM_nil, Option.pure_def, Option.some.injEq] at h
+        subst h
+        rfl
+      | cons d ds ih =>
+        simp only [List.mapM_cons, Option.pure_def, Option.bind_eq_bind] at h
+        obtain ⟨a, ha, rest⟩ := Option.bind_eq_some_iff.mp h
+        obtain ⟨as, has, hxs⟩ := Option.bind_eq_some_iff.mp rest
+        simp only [Option.some.injEq] at hxs
+        subst hxs
+        simp only [List.map_cons, Data.list.injEq, List.cons.injEq]
+        refine ⟨StrEnc.toData_fromData _ _ ha, ?_⟩
+        have := ih as has
+        simp only [Data.list.injEq] at this
+        exact this
 
 @[simp]
 public lemma StrEnc.list_atPath? {α : Type*} [StrEnc α] (x : List α) (i : ℕ) (h_lt : i < x.length) :
@@ -424,12 +446,26 @@ public lemma StrEnc.list_atPath? {α : Type*} [StrEnc α] (x : List α) (i : ℕ
 public instance (α : Type) [StrEnc α] : StrEnc (Option α) where
   toData o := StrEnc.toData o.toList
   fromData
-    | Data.list [x] => some (StrEnc.fromData x)
+    | Data.list [x] => (StrEnc.fromData x).map some
     | Data.list [] => some none
     | _ => none
   fromData_toData := by
     intro o
-    cases o with | some _ | none <;> simp [StrEnc.toData]
+    cases o with
+    | none => simp [StrEnc.toData]
+    | some _ => simp [StrEnc.toData]
+  toData_fromData := by
+    intro d x h
+    match d, h with
+    | Data.list [], h =>
+      simp only [Option.some.injEq] at h; subst h; rfl
+    | Data.list [y], h =>
+      simp only [Option.map_eq_some_iff] at h
+      obtain ⟨a, ha, hxa⟩ := h
+      subst hxa
+      simp only [Option.toList, StrEnc.toData, List.map_cons, List.map_nil,
+        Data.list.injEq, List.cons.injEq, and_true]
+      exact StrEnc.toData_fromData _ _ ha
 
 /-- Encode `ℕ` in dyadic, using `true` for `2` and `false` for `1`. -/
 public instance : StrEnc ℕ where
@@ -449,6 +485,29 @@ public instance : StrEnc ℕ where
         exact ⟨by rcases hl c (.head _) with rfl | rfl <;> decide,
                ih (fun c hc => hl c (.tail _ hc))⟩
     simp [hroundtrip _ (fun c hc => dyadic_mem_chars hc), dyadic_inv_dyadic]
+  toData_fromData d n h := by
+    simp only [bind_pure_comp, Option.bind_eq_bind] at h
+    obtain ⟨bits, hbits, hdyadic⟩ := Option.bind_eq_some_iff.mp h
+    -- By List Bool, `toData bits = d`.
+    have h_d : StrEnc.toData bits = d := StrEnc.toData_fromData _ _ hbits
+    -- The chars from `bits` only contain '1' and '2'.
+    have h_chars : ∀ c ∈ bits.map (if · then '2' else '1'), c = '1' ∨ c = '2' := by
+      intro c hc
+      simp only [List.mem_map] at hc
+      obtain ⟨b, _, rfl⟩ := hc
+      cases b <;> simp
+    -- By `dyadic_dyadic_inv`, `dyadic n = bits.map ...`.
+    have h_dy : dyadic n = bits.map (if · then '2' else '1') :=
+      dyadic_dyadic_inv _ _ h_chars hdyadic
+    -- Now show `toData n = d`.
+    show StrEnc.toData ((dyadic n).map (· == '2')) = d
+    rw [h_dy, ← h_d]
+    -- Reduce `(bits.map (if · then '2' else '1')).map (· == '2') = bits`.
+    congr 1
+    rw [List.map_map]
+    conv_rhs => rw [← List.map_id bits]
+    apply List.map_congr_left
+    intro b _; cases b <;> simp
 
 @[simp]
 public lemma Nat.toData_zero :
@@ -486,8 +545,32 @@ public lemma Nat.fromData_three :
 /-- Encode `Char` through `ℕ` -/
 public instance : StrEnc Char where
   toData o := StrEnc.toData o.toNat
-  fromData d := StrEnc.fromData d >>= fun n : ℕ => Char.ofNat n
-  fromData_toData := by simp
+  fromData d := do
+    let n ← StrEnc.fromData (α := ℕ) d
+    if h : n.isValidChar then some (Char.ofNatAux n h) else none
+  fromData_toData c := by
+    show (StrEnc.fromData (α := ℕ) (StrEnc.toData c.toNat)) >>=
+        (fun n => if h : n.isValidChar then some (Char.ofNatAux n h) else none) = some c
+    rw [StrEnc.fromData_toData]
+    show (if h : c.toNat.isValidChar then some (Char.ofNatAux c.toNat h) else none) = some c
+    have hv : c.toNat.isValidChar := c.valid
+    rw [dif_pos hv]
+    show some ⟨c.val, _⟩ = some c
+    cases c; rfl
+  toData_fromData d c h := by
+    have h' : (StrEnc.fromData (α := ℕ) d) >>=
+        (fun n => if h : n.isValidChar then some (Char.ofNatAux n h) else none) = some c := h
+    obtain ⟨n, hn, hc⟩ := Option.bind_eq_some_iff.mp h'
+    by_cases hvalid : n.isValidChar
+    · rw [dif_pos hvalid] at hc
+      have hc' : Char.ofNatAux n hvalid = c := Option.some_injective _ hc
+      have hnat : (Char.ofNatAux n hvalid).toNat = n := by
+        rw [Char.toNat]; rfl
+      show StrEnc.toData c.toNat = d
+      rw [← hc', hnat]
+      exact StrEnc.toData_fromData _ _ hn
+    · rw [dif_neg hvalid] at hc
+      cases hc
 
 /-- Encode `Fin k` through `ℕ`.
 TODO: We might want to use padded encoding if `k` is a power of two. -/
@@ -497,6 +580,17 @@ public instance (k : ℕ) : StrEnc (Fin k) where
     let n ← StrEnc.fromData (α := ℕ) d
     if h : n < k then some ⟨n, h⟩ else none
   fromData_toData i := by simp [i.isLt]
+  toData_fromData d i h := by
+    have h' : (StrEnc.fromData (α := ℕ) d) >>=
+        (fun n => if h : n < k then some (⟨n, h⟩ : Fin k) else none) = some i := h
+    obtain ⟨n, hn, hi⟩ := Option.bind_eq_some_iff.mp h'
+    by_cases hlt : n < k
+    · rw [dif_pos hlt] at hi
+      have : (⟨n, hlt⟩ : Fin k) = i := Option.some_injective _ hi
+      show StrEnc.toData i.val = d
+      rw [← this]
+      exact StrEnc.toData_fromData _ _ hn
+    · rw [dif_neg hlt] at hi; cases hi
 
 public instance (k : ℕ) (α : Type*) [StrEnc α] : StrEnc (Fin k → α) where
   toData f := StrEnc.toData (List.ofFn f)
@@ -510,6 +604,25 @@ public instance (k : ℕ) (α : Type*) [StrEnc α] : StrEnc (Fin k → α) where
     simp only [StrEnc.fromData_toData_apply]
     ext i
     simp [List.getElem_ofFn]
+  toData_fromData d f h := by
+    have h' : (StrEnc.fromData (α := List α) d) >>=
+        (fun l => if h : l.length = k then
+          some (fun i : Fin k => l[i.val]'(h ▸ i.isLt)) else none) = some f := h
+    obtain ⟨l, hl, hf⟩ := Option.bind_eq_some_iff.mp h'
+    by_cases hlen : l.length = k
+    · rw [dif_pos hlen] at hf
+      have hf' : (fun i : Fin k => l[i.val]'(hlen ▸ i.isLt)) = f :=
+        Option.some_injective _ hf
+      show StrEnc.toData (List.ofFn f) = d
+      have : List.ofFn f = l := by
+        rw [← hf']
+        apply List.ext_getElem
+        · simp [hlen]
+        · intro n h1 h2
+          simp [List.getElem_ofFn]
+      rw [this]
+      exact StrEnc.toData_fromData _ _ hl
+    · rw [dif_neg hlen] at hf; cases hf
 
 public instance (α β : Type*) [StrEnc α] [StrEnc β] : StrEnc (α × β) where
   toData p := Data.list [StrEnc.toData p.1, StrEnc.toData p.2]
@@ -520,6 +633,23 @@ public instance (α β : Type*) [StrEnc α] [StrEnc β] : StrEnc (α × β) wher
       | _, _ => none
     | _ => none
   fromData_toData p := by simp
+  toData_fromData d p h := by
+    rcases d with ⟨xs⟩
+    rcases xs with _ | ⟨a, _ | ⟨b, _ | _⟩⟩
+    · change none = some p at h; cases h
+    · change none = some p at h; cases h
+    pick_goal 2
+    · change none = some p at h; cases h
+    show Data.list [StrEnc.toData p.1, StrEnc.toData p.2] = Data.list [a, b]
+    have h' : (match StrEnc.fromData a, StrEnc.fromData b with
+      | some a', some b' => some (a', b')
+      | _, _ => none) = some p := h
+    rcases ha : StrEnc.fromData (α := α) a with _ | a' <;> rw [ha] at h'
+    · cases h'
+    rcases hb : StrEnc.fromData (α := β) b with _ | b' <;> rw [hb] at h'
+    · cases h'
+    cases h'
+    rw [StrEnc.toData_fromData _ _ ha, StrEnc.toData_fromData _ _ hb]
 
 @[simp]
 public lemma StrEnc.tuple_atPath?_zero {α β : Type*} [StrEnc α] [StrEnc β] (x : α × β) :
@@ -546,7 +676,10 @@ public noncomputable def StrEnc.ofFunction (α : Type) (β : Type*)
     | some pairs =>
       let f := fun a => pairs.lookup a
       if h : ∀ a, (f a).isSome then
-        some (fun a => (f a).get (h a))
+        let g := fun a => (f a).get (h a)
+        haveI := Classical.propDecidable
+          (Finset.univ.val.toList.map (fun a => (a, g a)) = pairs)
+        if Finset.univ.val.toList.map (fun a => (a, g a)) = pairs then some g else none
       else
         none
   fromData_toData f := by
@@ -560,9 +693,43 @@ public noncomputable def StrEnc.ofFunction (α : Type) (β : Type*)
         ((Finset.univ.val.toList.map (fun a => (a, f a))).lookup a).isSome := by
       intro a; simp [h_lookup a]
     rw [dif_pos h_forall]
-    congr 1; ext a
-    have := h_lookup a
-    simp_all
+    have hg : (fun a => ((Finset.univ.val.toList.map (fun a => (a, f a))).lookup a).get
+        (h_forall a)) = f := by
+      ext a; have := h_lookup a; simp_all
+    have hcond : Finset.univ.val.toList.map
+        (fun a => (a, ((Finset.univ.val.toList.map (fun a => (a, f a))).lookup a).get
+          (h_forall a))) = Finset.univ.val.toList.map (fun a => (a, f a)) := by
+      apply List.map_congr_left
+      intro a _; rw [show (((Finset.univ.val.toList.map (fun a => (a, f a))).lookup a).get
+          (h_forall a)) = f a from congrFun hg a]
+    rw [if_pos hcond]
+    rw [hg]
+  toData_fromData d g h := by
+    rcases hpairs : StrEnc.fromData (α := List (α × β)) d with _ | pairs
+    · rw [hpairs] at h
+      change none = some g at h
+      cases h
+    rw [hpairs] at h
+    change (let f := fun a => pairs.lookup a
+      if hsome : ∀ a, (f a).isSome then
+        let g' := fun a => (f a).get (hsome a)
+        haveI := Classical.propDecidable
+          (Finset.univ.val.toList.map (fun a => (a, g' a)) = pairs)
+        if Finset.univ.val.toList.map (fun a => (a, g' a)) = pairs then some g' else none
+      else none) = some g at h
+    simp only at h
+    by_cases hsome : ∀ a, (pairs.lookup a).isSome
+    · rw [dif_pos hsome] at h
+      by_cases heq : Finset.univ.val.toList.map
+          (fun a => (a, (pairs.lookup a).get (hsome a))) = pairs
+      · rw [if_pos heq] at h
+        cases h
+        show StrEnc.toData (Finset.univ.val.toList.map
+            (fun a => (a, (pairs.lookup a).get (hsome a)))) = d
+        rw [heq]
+        exact StrEnc.toData_fromData _ _ hpairs
+      · rw [if_neg heq] at h; cases h
+    · rw [dif_neg hsome] at h; cases h
 
 /-- `StrEnc` instance for any `Encodable` type via its encoding to `ℕ`.
     Not registered as an instance to avoid overlap with specific encodings
@@ -573,7 +740,30 @@ public def StrEnc.ofEncodable (α : Type) [Encodable α] : StrEnc α where
   toData a := StrEnc.toData (Encodable.encode a)
   fromData d := do
     let n ← StrEnc.fromData (α := ℕ) d
-    Encodable.decode n
-  fromData_toData a := by simp [Encodable.encodek]
+    let a ← Encodable.decode n
+    if Encodable.encode a = n then some a else none
+  fromData_toData a := by
+    show (StrEnc.fromData (α := ℕ) (StrEnc.toData (Encodable.encode a))) >>=
+        (fun n => (Encodable.decode (α := α) n) >>=
+          fun a' => if Encodable.encode a' = n then some a' else none) = some a
+    rw [StrEnc.fromData_toData]
+    show ((Encodable.decode (Encodable.encode a)) >>=
+      fun a' => if Encodable.encode a' = Encodable.encode a then some a' else none) = some a
+    rw [Encodable.encodek]
+    show (if Encodable.encode a = Encodable.encode a then some a else none) = some a
+    rw [if_pos rfl]
+  toData_fromData d a h := by
+    have h' : (StrEnc.fromData (α := ℕ) d) >>=
+        (fun n => (Encodable.decode (α := α) n) >>=
+          fun a' => if Encodable.encode a' = n then some a' else none) = some a := h
+    obtain ⟨n, hn, h2⟩ := Option.bind_eq_some_iff.mp h'
+    obtain ⟨a', ha', h3⟩ := Option.bind_eq_some_iff.mp h2
+    by_cases heq : Encodable.encode a' = n
+    · rw [if_pos heq] at h3
+      cases h3
+      show StrEnc.toData (Encodable.encode a) = d
+      rw [heq]
+      exact StrEnc.toData_fromData _ _ hn
+    · rw [if_neg heq] at h3; cases h3
 
 end Turing

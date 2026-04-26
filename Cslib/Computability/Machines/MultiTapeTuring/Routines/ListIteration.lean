@@ -205,6 +205,13 @@ instance : StrEnc FindMapState where
   fromData_toData := by
     intro s
     cases s <;> simp [StrEnc.toData, dyadic]
+  toData_fromData := by
+    intro d s h
+    simp only at h
+    split_ifs at h with h0 h1 h2
+    · cases h; exact (beq_iff_eq.mp h0).symm
+    · cases h; exact (beq_iff_eq.mp h1).symm
+    · cases h; exact (beq_iff_eq.mp h2).symm
 
 /-- Execute `tm₁` on every item in the list on tape `i`. For the first item where it
 writes `true` to tape `j`, execute `tm₂`. If it never writes `true`, execute `tm₃` after
