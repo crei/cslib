@@ -104,7 +104,7 @@ public theorem any_list.computes_fun' {k : ℕ} {i j : Fin k}
   simp only [any_list, Bool.toData, seq_eval_struct, pushList_eval_struct, Part.coe_some,
     Part.bind_some]
   rw [(run_list_fold h_neq _ h_inner ls (false :: out_ls) _ (by simp [h_neq, h_ls])
-      (by simp [StrEnc.toData, h_out_ls, TapeView.pushList]))]
+      (by simp [TapeView.ofEnc, TapeView.ofData, h_out_ls, TapeView.pushList, List.toData]))]
   have h_any_fold : ∀ ls : List α, ∀ first,
     ls.foldl (fun acc d => ((f d) || acc.head? == some true) :: acc.tail) (first :: out_ls) =
       (first || ls.any f) :: out_ls := by
@@ -191,27 +191,23 @@ inductive FindMapState where
   | found
   | notFound
 
-instance : StrEnc FindMapState where
-  toData
+instance : StrEnc FindMapState := StrEnc.mk'
+  (fun
     | FindMapState.searching => StrEnc.toData 0
     | FindMapState.found => StrEnc.toData 1
-    | FindMapState.notFound => StrEnc.toData 2
-  fromData
-    | d =>
-      if d == StrEnc.toData 0 then some FindMapState.searching
-      else if d == StrEnc.toData 1 then some FindMapState.found
-      else if d == StrEnc.toData 2 then some FindMapState.notFound
-      else none
-  fromData_toData := by
-    intro s
-    cases s <;> simp [StrEnc.toData, dyadic]
-  toData_fromData := by
-    intro d s h
+    | FindMapState.notFound => StrEnc.toData 2)
+  (fun d =>
+    if d == StrEnc.toData 0 then some FindMapState.searching
+    else if d == StrEnc.toData 1 then some FindMapState.found
+    else if d == StrEnc.toData 2 then some FindMapState.notFound
+    else none)
+  (fun s => by cases s <;> simp [List.toData])
+  (fun d s h => by
     simp only at h
     split_ifs at h with h0 h1 h2
     · cases h; exact (beq_iff_eq.mp h0).symm
     · cases h; exact (beq_iff_eq.mp h1).symm
-    · cases h; exact (beq_iff_eq.mp h2).symm
+    · cases h; exact (beq_iff_eq.mp h2).symm)
 
 /-- Execute `tm₁` on every item in the list on tape `i`. For the first item where it
 writes `true` to tape `j`, execute `tm₂`. If it never writes `true`, execute `tm₃` after

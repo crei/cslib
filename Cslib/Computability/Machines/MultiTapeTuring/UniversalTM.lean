@@ -32,25 +32,23 @@ public structure TapeCell Symbol where
   /-- If the head is at this cell currently. -/
   containsHead : Bool
 
-public instance : StrEnc (TapeCell Symbol) where
-  toData cell := StrEnc.toData (cell.c, cell.containsHead)
-  fromData d := do
+public instance : StrEnc (TapeCell Symbol) := StrEnc.mk'
+  (fun cell => StrEnc.toData (cell.c, cell.containsHead))
+  (fun d => do
     let (c, containsHead) ← StrEnc.fromData d
-    pure { c, containsHead }
-  fromData_toData := by
-    intro c
-    simp
-  toData_fromData := by
-    intro d cell h
-    simp only at h
+    pure { c, containsHead })
+  (fun c => by simp)
+  (fun d cell h => by
+    dsimp only at h
     match hpair : StrEnc.fromData (α := Option Symbol × Bool) d, h with
     | some (c, ch), h =>
       simp only [Option.pure_def] at h
       cases h
       have := StrEnc.toData_fromData _ _ hpair
-      rw [show ({ c := c, containsHead := ch } : TapeCell Symbol).c = c from rfl,
-          show ({ c := c, containsHead := ch } : TapeCell Symbol).containsHead = ch from rfl]
-      exact this
+      show StrEnc.toData
+        (({ c := (c, ch).1, containsHead := (c, ch).2 } : TapeCell Symbol).c,
+         ({ c := (c, ch).1, containsHead := (c, ch).2 } : TapeCell Symbol).containsHead) = d
+      exact this)
 
 /-
 Outline of UTM:
@@ -138,11 +136,20 @@ public def updateEncodingParams {k : ℕ} (tm : MultiTapeTM k Symbol)
 def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (tapes out aux : Fin k) : MultiTapeTM k Char :=
   find_list tapes aux
     -- Find the cell where the tapeIdx-th tape has the head
-    (atPath [0, tapeIdx, 1] tapes (copyEnc tapes aux))
+    (atPath [tapeIdx, 1] tapes (copyEnc tapes aux))
     -- copy the symbol to out
-    (atPath [0, tapeIdx, 0] tapes (copy_to_list tapes out))
+    (atPath [tapeIdx, 0] tapes (copy_to_list tapes out))
     -- otherwise do nothing (because we know there is a head marker)
     (noop)
+
+section
+omit [Fintype Symbol] [Inhabited Symbol] in
+lemma tapeCell_at_path {k : ℕ} (tapeIdx : Fin k) (tcs : Fin k → TapeCell Symbol) :
+    StrEnc.atPath? tcs [tapeIdx, 1] = some (tcs tapeIdx).containsHead := by
+  simp [StrEnc.atPath?, StrEnc.toData, StrEnc.fromData]
+  grind
+end
+
 
 lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : ℕ) (tapes out aux : Fin k)
   (h_tapes_aux : tapes ≠ aux)
@@ -152,15 +159,6 @@ lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : ℕ) (tapes out aux : Fin
   (h_tapes : views tapes = .ofEnc (encodeTapes t params))
    :
   (getHeadSymbol k tapeIdx tapes out aux).eval_struct views = sorry := by
-  unfold getHeadSymbol
-  have h_check : computes_function_read_replace
-      (atPath [0, tapeIdx, 1] tapes (copyEnc tapes aux))
-      (fun tc : TapeCell Symbol => tc.containsHead)
-      tapes
-      aux := by
-    sorry
-  rw [find_list.computes_fun (h_tapes_aux) h_check views sorry sorry sorry]
-  simp
   sorry
 
 -- /-- Copies the symbol the head of tape `i` currently points to, to tape 3. -/
