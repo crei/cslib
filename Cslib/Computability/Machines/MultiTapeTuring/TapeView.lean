@@ -71,7 +71,7 @@ public abbrev ofEnc {α : Type*} [StrEnc α] (x : α) : TapeView :=
 public def current (tv : TapeView) : Data :=
   (tv.data.atPath tv.path).get tv.h_path
 
-@[simp]
+@[simp, grind =]
 public lemma current_append {data : Data} {path : List ℕ} {pos : HeadPos}
     {h : (data.atPath path).isSome} :
   (TapeView.mk data path pos h).current =
@@ -83,7 +83,7 @@ public lemma mk_data_path (tv : TapeView) (h : (tv.data.atPath tv.path).isSome) 
   cases tv; rfl
 
 -- TODO it looks weird to make that a simp. is it OK?
-@[simp]
+@[simp, grind =]
 public lemma current_rev (tv : TapeView) :
   tv.data.atPath tv.path = tv.current := by simp [current]
 

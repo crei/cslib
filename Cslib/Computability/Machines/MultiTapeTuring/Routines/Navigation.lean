@@ -139,6 +139,28 @@ public lemma atElem_eval_struct {k : ℕ} {idx : ℕ} {i : Fin k} {tm : MultiTap
         fun views' => Function.update views' i ((views' i).parent.setHeadPosOf (views i)) := by
   simp [atElem, h_valid, Part.bind_some_eq_map]
 
+/-- The semantics of `atElem` when applied to a static index. This is not really useful
+when applied to a `List` because `fElem` needs to compute the elem for any valid `x` of the type. -/
+@[simp]
+public lemma atElem_computes_function {k : ℕ} {idx : ℕ} {i j : Fin k}
+    {α β γ : Type} [StrEnc α] [StrEnc β] [StrEnc γ]
+    {tm : MultiTapeTM k Char}
+    (h_ne : i ≠ j)
+    (fElem : α → β)
+    (h_elem : ∀ x, ((StrEnc.toData x).atPath [idx]) = some (StrEnc.toData (fElem x)))
+    (f : β → γ → γ)
+    (h_tm : computes_function_read_update' tm f i j) :
+    computes_function_read_update' (atElem idx i tm) (fun a => f (fElem a)) i j := by
+  intro x y views h_views_i h_views_j
+  rw [atElem_eval_struct (by simp [h_views_i, h_elem])]
+  rw [h_tm (fElem x) y _ (by simp; grind) (by grind)]
+  simp only [Part.map_some, Part.some_inj]
+  funext r
+  by_cases hri : r = i
+  · subst hri
+    simp [h_ne]
+  · grind
+
 -- TODO this has a double toLeftEnd which is not needed.
 
 /-- Move into the given path, then execute `tm` and then move out again. -/
@@ -156,9 +178,9 @@ public lemma atPath_computes_function {k : ℕ} {path : List ℕ} {i j : Fin k}
     (h_ne : i ≠ j)
     (fPath : α → β)
     (h_path : ∀ x, ((StrEnc.toData x).atPath path) = some (StrEnc.toData (fPath x)))
-    (f : β → γ)
-    (h_tm : computes_function_read_replace tm f i j) :
-    computes_function_read_replace (atPath path i tm) (f ∘ fPath) i j := by
+    (f : β → γ → γ)
+    (h_tm : computes_function_read_update' tm f i j) :
+    computes_function_read_update' (atPath path i tm) (fun a => f (fPath a)) i j := by
   induction path with
   | nil =>
     simp [atPath, atPath.go, h_tm]
@@ -166,7 +188,8 @@ public lemma atPath_computes_function {k : ℕ} {path : List ℕ} {i j : Fin k}
     sorry
   | cons n path ih =>
     simp [atPath, h_path, Part.bind_some_eq_map]
-    rw [ih (by simp [h_ne]) (by simp [h_path])]
+    sorry
+
 
 end Routines
 end Turing
