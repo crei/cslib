@@ -134,13 +134,6 @@ public lemma setHeadPosOf_of_eq (tv tv' : TapeView) (h_eq : tv'.headPos = tv.hea
     tv.setHeadPosOf tv' = tv := by
   simp [setHeadPosOf, h_eq]
 
-@[simp]
-public lemma appendPath'_parent_setHeadPosOf (tv : TapeView) (n : ℕ)
-    (h : (tv.current.atPath [n]).isSome) :
-    ((tv.appendPath' n h).parent).setHeadPosOf tv = tv := by
-  obtain ⟨data, path, headPos, h_path⟩ := tv
-  simp [TapeView.appendPath', TapeView.parent, TapeView.setHeadPosOf]
-
 /-- Return a copy of the `TapeView` with the head positioned at the left end. -/
 @[expose]
 public abbrev toLeftEnd (tv : TapeView) : TapeView :=

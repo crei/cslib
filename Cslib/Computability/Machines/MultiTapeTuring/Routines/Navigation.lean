@@ -175,28 +175,25 @@ public lemma atPath_computes_function {k : ℕ} {path : List ℕ} {i j : Fin k}
     (f : β → γ → γ)
     (h_tm : computes_function_read_update' tm f i j) :
     computes_function_read_update' (atPath path i tm) (fun a => f (fPath a)) i j := by
-  intro x y
-  suffices h : ∀ {path : List ℕ} {d : Data} {b : β},
-      d.atPath path = some (StrEnc.toData b) →
-      ∀ (views : Fin k → TapeView),
-        (views i).current = d → views j = TapeView.ofEnc y →
-        (atPath path i tm).eval_struct views =
-          .some (Function.update views j (TapeView.ofEnc (f b y))) from
-    h (h_path x)
-  intro path
-  induction path with
+  intro x y views h_views_i h_views_j
+  have h_d := h_path x
+  clear h_path
+  change (atPath path i tm).eval_struct views =
+    Part.some (Function.update views j (TapeView.ofEnc (f (fPath x) y)))
+  generalize StrEnc.toData x = d at h_d h_views_i
+  generalize fPath x = b at h_d ⊢
+  induction path generalizing d views with
   | nil =>
-    intro d b h_d views h_i h_j
     simp only [Data.atPath_nil, Option.some.injEq] at h_d
-    exact h_tm b y views (by simp [h_i, h_d]) h_j
+    exact h_tm b y views (by simp [h_views_i, h_d]) h_views_j
   | cons n path' ih =>
-    intro d b h_d views h_i h_j
     rw [show n :: path' = [n] ++ path' from rfl, Data.atPath_append] at h_d
     obtain ⟨d₁, hd₁, h_tail⟩ := Option.bind_eq_some_iff.mp h_d
-    have h_valid : ((views i).current.atPath [n]).isSome := by simp [h_i, hd₁]
+    have h_valid : ((views i).current.atPath [n]).isSome := by simp [h_views_i, hd₁]
     unfold atPath
-    rw [atElem_eval_struct h_valid,
-      ih h_tail _ (by simp [h_i, hd₁]) (by simp [h_ne.symm, h_j])]
+    rw [atElem_eval_struct h_valid]
+    rw [ih (Function.update views i ((views i).appendPath' n h_valid))
+        (by simp [h_ne.symm, h_views_j]) d₁ (by simp; grind) h_tail]
     simp [h_ne]
 
 
