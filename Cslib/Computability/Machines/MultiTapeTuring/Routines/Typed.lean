@@ -12,6 +12,42 @@ public import Cslib.Computability.Machines.MultiTapeTuring.StructuralMachines
 namespace Turing
 namespace Routines
 
+@[expose]
+public def computes_function_view_update {k : ℕ}
+    (tm : MultiTapeTM k Char)
+    (f : (Fin k → TapeView) → (Fin k → TapeView))
+    (views : Fin k → TapeView) :=
+  tm.eval_struct views = .some (f views)
+
+public structure Update (k : ℕ) where
+  tape : Fin k
+  α : Type
+  f : α → α
+
+@[expose]
+public def computes_function_view_update_t {k : ℕ}
+  (tm : MultiTapeTM k Char)
+  (update : Update k) [StrEnc update.α] :=
+  ∀ (x : update.α) (views : Fin k → TapeView),
+    (views update.tape = TapeView.ofEnc x) →
+    tm.eval_struct views = .some (Function.update views update.tape (TapeView.ofEnc (update.f x)))
+
+public structure Input (k : ℕ) where
+  tape : Fin k
+  up : Update k
+  h_neq : tape ≠ up.tape
+  α : Type
+  f : α → up.α → up.α
+
+-- @[expose]
+-- public def computes_function_input_update_t {k : ℕ}
+--   (tm : MultiTapeTM k Char)
+--   (input : Input k) [StrEnc input.α] [StrEnc input.up.α] :=
+--   ∀ (x : update.α) (views : Fin k → TapeView),
+--     (views update.tape = TapeView.ofEnc x) →
+--     tm.eval_struct views = .some (Function.update views update.tape (TapeView.ofEnc (update.f x)))
+
+
 /-- Turing machine `tm` computes a function on data from tape `i` and updates tape `j`. -/
 -- TODO move this somewhere else
 @[expose]

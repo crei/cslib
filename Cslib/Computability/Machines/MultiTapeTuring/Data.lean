@@ -638,6 +638,12 @@ public instance (k : ℕ) (α : Type*) [StrEnc α] : StrEnc (Fin k → α) := St
       exact StrEnc.toData_fromData _ _ hl
     · rw [dif_neg hlen] at hf; cases hf)
 
+@[simp]
+public lemma StrEnc.fun_fink_atPath_i {k : ℕ} {α : Type*} [StrEnc α] (x : Fin k → α)
+    (i : ℕ) (h_lt : i < k) (path : List ℕ) :
+    (StrEnc.toData x).atPath (i :: path) = (StrEnc.toData (x ⟨i, h_lt⟩)).atPath path := by
+  simp [Data.atPath, h_lt]
+
 public instance (α β : Type*) [StrEnc α] [StrEnc β] : StrEnc (α × β) := StrEnc.mk'
   (fun p => Data.list [StrEnc.toData p.1, StrEnc.toData p.2])
   (fun
@@ -664,6 +670,11 @@ public instance (α β : Type*) [StrEnc α] [StrEnc β] : StrEnc (α × β) := S
     · cases h'
     cases h'
     rw [StrEnc.toData_fromData _ _ ha, StrEnc.toData_fromData _ _ hb])
+
+@[simp]
+public lemma StrEnc.tuple_atPath_zero {α β : Type*} [StrEnc α] [StrEnc β] (x : α × β) :
+    (StrEnc.toData x).atPath [0] = some (StrEnc.toData x.fst) := by
+  simp [StrEnc.toData]
 
 @[simp]
 public lemma StrEnc.tuple_atPath?_zero {α β : Type*} [StrEnc α] [StrEnc β] (x : α × β) :

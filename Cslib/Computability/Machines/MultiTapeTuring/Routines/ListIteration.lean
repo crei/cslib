@@ -241,5 +241,7 @@ public theorem find_list.computes_fun {k : ℕ} {i j : Fin k}
       | none => tm₃.eval_struct views := by
   sorry
 
+-- TODO use _update' for tm₂?
+
 end Routines
 end Turing

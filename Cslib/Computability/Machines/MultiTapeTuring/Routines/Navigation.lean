@@ -195,85 +195,89 @@ public lemma atPath_eval_struct_of_constant {k : ℕ} {path : List ℕ} {i j : F
     {tm : MultiTapeTM k Char}
     (h_ne : i ≠ j)
     (fPath : α → β)
-    (h_path : ∀ x, (StrEnc.atPath? x path) = some (fPath x))
+    -- (h_path : ∀ x, (StrEnc.atPath? x path) = some (fPath x))
+    -- TODO maybe h_path' is better because it does not need fromData?
+    (h_path : ∀ x, ((StrEnc.toData x).atPath path) = some (StrEnc.toData (fPath x)))
     (f : β → γ)
     (h_tm : computes_function_read_replace tm f i j) :
     computes_function_read_replace (atPath path i tm)
-      (fun x => f (fPath x)) i j := by
-  intro x y views h_views_i h_views_j
-  -- Step 1: the path is valid in `views i`'s current data.
-  have h_atSome : ((views i).current.atPath path).isSome := by
-    have hp := h_path x
-    unfold StrEnc.atPath? Option.bind at hp
-    grind
-  -- Step 2: unfold `atPath`'s evaluation.
-  rw [atPath_eval_struct h_atSome]
-  -- let h_tm' :=
-  --   h_tm
-  --     ((StrEnc.atPath? x path).get (h_path _))
-  --     y
-  --     _
-  --     ((views i).appendPath'' path h_atSome)
+      (f ∘ fPath) i j := by
+  sorry
 
-  -- Inline the deep view (without `set`, so structural reductions stay computable).
-  let deepView : TapeView := (views i).appendPath'' path h_atSome
+  -- intro x y views h_views_i h_views_j
+  -- -- Step 1: the path is valid in `views i`'s current data.
+  -- have h_atSome : ((views i).current.atPath path).isSome := by
+  --   have hp := h_path x
+  --   unfold StrEnc.atPath? Option.bind at hp
+  --   grind
+  -- -- Step 2: unfold `atPath`'s evaluation.
+  -- rw [atPath_eval_struct h_atSome]
+  -- -- let h_tm' :=
+  -- --   h_tm
+  -- --     ((StrEnc.atPath? x path).get (h_path _))
+  -- --     y
+  -- --     _
+  -- --     ((views i).appendPath'' path h_atSome)
 
-  -- Step 3: the deep view's `current` is `toData ((atPath? x path).get _)`.
-  have hDeepCurrent : deepView.current = StrEnc.toData (fPath x) := by
-    unfold deepView
-    unfold StrEnc.atPath? at h_path
-    -- Reduce deepView.current to `((views i).current.atPath path).get _`.
-    have h_atSome' : ((StrEnc.toData x).atPath path).isSome := by
-      rw [← h_views_i]; exact h_atSome
-    have hcurrent' : deepView.current =
-        ((StrEnc.toData x).atPath path).get h_atSome' := by
-      have hcurrent_eq : (views i).current = ((views i).data.atPath (views i).path).get
-          (views i).h_path := rfl
-      have h_eq : (views i).data.atPath ((views i).path ++ path) =
-          (StrEnc.toData x).atPath path := by
-        rw [hcurrent_eq] at h_views_i
-        rw [← h_views_i]; exact (Data.atPath_get_atPath _).symm
-      change ((views i).data.atPath ((views i).path ++ path)).get _ =
-        ((StrEnc.toData x).atPath path).get h_atSome'
-      grind
-    rw [hcurrent']
-    -- Now show: ((toData x).atPath path).get _ = toData ((atPath? x path).get _).
-    have hp := h_path x
-    simp only [StrEnc.atPath?] at hp
-    -- We extract the underlying data value at the path.
-    obtain ⟨d, hd⟩ : ∃ d, (StrEnc.toData x).atPath path = some d :=
-      Option.isSome_iff_exists.mp h_atSome'
-    -- And the corresponding decoded β value.
-    rw [hd] at hp
-    simp only [Option.bind_some] at hp
-    have hd_get : ((StrEnc.toData x).atPath path).get h_atSome' = d :=
-      Option.get_of_eq_some _ hd
-    rw [hd_get]
-    grind [StrEnc.toData_fromData]
-  have hNewI :
-      (Function.update views i deepView i).current =
-      StrEnc.toData (fPath x) := by
-    rw [Function.update_self]; exact hDeepCurrent
-  have hNewJ : Function.update views i deepView j = TapeView.ofEnc y := by
-    rw [Function.update_of_ne (Ne.symm h_ne)]; exact h_views_j
-  -- Step 4: apply `h_tm` on the deep view.
-  change Part.map (fun views' => Function.update views' i
-    (((views' i).parent_n path.length).setHeadPosOf (views i)))
-    (tm.eval_struct (Function.update views i deepView)) = _
-  rw [h_tm _ _ _ hNewI hNewJ]
-  -- Step 5: show that restoring the parent recovers `views i`.
-  have hRestore :
-      (deepView.parent_n path.length).setHeadPosOf (views i) = views i := by
-    obtain ⟨hd, hp, _⟩ := TapeView.parent_n_fields deepView path.length
-    refine TapeView.ext ?_ ?_ ?_
-    · change (deepView.parent_n path.length).data = (views i).data
-      rw [hd]; rfl
-    · change (deepView.parent_n path.length).path = (views i).path
-      rw [hp]; exact List.dropLast_iterate_append _ _
-    · rfl
-  -- Step 6: collapse the chain of `Function.update`s.
-  simp
-  grind
+  -- -- Inline the deep view (without `set`, so structural reductions stay computable).
+  -- let deepView : TapeView := (views i).appendPath'' path h_atSome
+
+  -- -- Step 3: the deep view's `current` is `toData ((atPath? x path).get _)`.
+  -- have hDeepCurrent : deepView.current = StrEnc.toData (fPath x) := by
+  --   unfold deepView
+  --   unfold StrEnc.atPath? at h_path
+  --   -- Reduce deepView.current to `((views i).current.atPath path).get _`.
+  --   have h_atSome' : ((StrEnc.toData x).atPath path).isSome := by
+  --     rw [← h_views_i]; exact h_atSome
+  --   have hcurrent' : deepView.current =
+  --       ((StrEnc.toData x).atPath path).get h_atSome' := by
+  --     have hcurrent_eq : (views i).current = ((views i).data.atPath (views i).path).get
+  --         (views i).h_path := rfl
+  --     have h_eq : (views i).data.atPath ((views i).path ++ path) =
+  --         (StrEnc.toData x).atPath path := by
+  --       rw [hcurrent_eq] at h_views_i
+  --       rw [← h_views_i]; exact (Data.atPath_get_atPath _).symm
+  --     change ((views i).data.atPath ((views i).path ++ path)).get _ =
+  --       ((StrEnc.toData x).atPath path).get h_atSome'
+  --     grind
+  --   rw [hcurrent']
+  --   -- Now show: ((toData x).atPath path).get _ = toData ((atPath? x path).get _).
+  --   have hp := h_path x
+  --   simp only [StrEnc.atPath?] at hp
+  --   -- We extract the underlying data value at the path.
+  --   obtain ⟨d, hd⟩ : ∃ d, (StrEnc.toData x).atPath path = some d :=
+  --     Option.isSome_iff_exists.mp h_atSome'
+  --   -- And the corresponding decoded β value.
+  --   rw [hd] at hp
+  --   simp only [Option.bind_some] at hp
+  --   have hd_get : ((StrEnc.toData x).atPath path).get h_atSome' = d :=
+  --     Option.get_of_eq_some _ hd
+  --   rw [hd_get]
+  --   grind [StrEnc.toData_fromData]
+  -- have hNewI :
+  --     (Function.update views i deepView i).current =
+  --     StrEnc.toData (fPath x) := by
+  --   rw [Function.update_self]; exact hDeepCurrent
+  -- have hNewJ : Function.update views i deepView j = TapeView.ofEnc y := by
+  --   rw [Function.update_of_ne (Ne.symm h_ne)]; exact h_views_j
+  -- -- Step 4: apply `h_tm` on the deep view.
+  -- change Part.map (fun views' => Function.update views' i
+  --   (((views' i).parent_n path.length).setHeadPosOf (views i)))
+  --   (tm.eval_struct (Function.update views i deepView)) = _
+  -- rw [h_tm _ _ _ hNewI hNewJ]
+  -- -- Step 5: show that restoring the parent recovers `views i`.
+  -- have hRestore :
+  --     (deepView.parent_n path.length).setHeadPosOf (views i) = views i := by
+  --   obtain ⟨hd, hp, _⟩ := TapeView.parent_n_fields deepView path.length
+  --   refine TapeView.ext ?_ ?_ ?_
+  --   · change (deepView.parent_n path.length).data = (views i).data
+  --     rw [hd]; rfl
+  --   · change (deepView.parent_n path.length).path = (views i).path
+  --     rw [hp]; exact List.dropLast_iterate_append _ _
+  --   · rfl
+  -- -- Step 6: collapse the chain of `Function.update`s.
+  -- simp
+  -- grind
 
 end Routines
 end Turing

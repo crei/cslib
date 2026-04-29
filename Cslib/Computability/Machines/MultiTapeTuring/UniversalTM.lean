@@ -50,6 +50,18 @@ public instance : StrEnc (TapeCell Symbol) := StrEnc.mk'
          ({ c := (c, ch).1, containsHead := (c, ch).2 } : TapeCell Symbol).containsHead) = d
       exact this)
 
+omit [Inhabited Symbol] [Fintype Symbol] in
+@[simp]
+public lemma StrEnc.TapeCell_atPath_zero (x : TapeCell Symbol) :
+    (StrEnc.toData x).atPath [0] = StrEnc.toData x.c := by
+  simp [Data.atPath]
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+@[simp]
+public lemma StrEnc.TapeCell_atPath_one (x : TapeCell Symbol) :
+    (StrEnc.toData x).atPath [1] = StrEnc.toData x.containsHead := by
+  simp [Data.atPath]
+
 /-
 Outline of UTM:
 while the current state is not None:
@@ -151,7 +163,7 @@ lemma tapeCell_at_path {k : ℕ} (tapeIdx : Fin k) (tcs : Fin k → TapeCell Sym
 end
 
 
-lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : ℕ) (tapes out aux : Fin k)
+lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : Fin k)
   (h_tapes_aux : tapes ≠ aux)
   {t : Fin k' → BiTape Symbol}
   {views : Fin k → TapeView}
@@ -159,6 +171,23 @@ lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : ℕ) (tapes out aux : Fin
   (h_tapes : views tapes = .ofEnc (encodeTapes t params))
    :
   (getHeadSymbol k tapeIdx tapes out aux).eval_struct views = sorry := by
+  have h_copyHeadPos :
+      computes_function_read_update'
+      (atPath [tapeIdx, 1] tapes (copyEnc tapes aux))
+      (fun (tcs : Fin k' → TapeCell Symbol) _ => (tcs tapeIdx).containsHead)
+      tapes aux := by
+    apply atPath_eval_struct_of_constant h_tapes_aux
+      (h_tm := copyEnc_computes_fun h_tapes_aux)
+      (h_path := by simp)
+  have h_copySymbol :
+      computes_function_read_push'
+      (atPath [tapeIdx, 0] tapes (copy_to_list tapes out))
+      (fun (tcs : Fin k' → TapeCell Symbol) => (tcs tapeIdx).c)
+      tapes aux := by
+    apply atPath_eval_struct_of_constant h_tapes_aux
+      (h_tm := copyEnc_computes_fun h_tapes_aux)
+      (h_path := by simp)
+
   sorry
 
 -- /-- Copies the symbol the head of tape `i` currently points to, to tape 3. -/
