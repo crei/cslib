@@ -9,6 +9,7 @@ module
 public import Cslib.Computability.Machines.MultiTapeTuring.StructuralMachines
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Iterate
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Skip
+public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Typed
 
 
 namespace Turing
@@ -138,12 +139,63 @@ public lemma atElem_eval_struct {k : ℕ} {idx : ℕ} {i : Fin k} {tm : MultiTap
         fun views' => Function.update views' i ((views' i).parent.setHeadPosOf (views i)) := by
   simp [atElem, h_valid, Part.bind_some_eq_map]
 
+/-- The semantics of `atElem` when applied to a static index. This is not really useful
+when applied to a `List` because `fElem` needs to compute the elem for any valid `x` of the type. -/
+@[simp]
+public lemma atElem_computes_function {k : ℕ} {idx : ℕ} {i j : Fin k}
+    {α β γ : Type} [StrEnc α] [StrEnc β] [StrEnc γ]
+    {tm : MultiTapeTM k Char}
+    (h_ne : i ≠ j)
+    (fElem : α → β)
+    (h_elem : ∀ x, ((StrEnc.toData x).atPath [idx]) = some (StrEnc.toData (fElem x)))
+    (f : β → γ → γ)
+    (h_tm : computes_function_read_update' tm f i j) :
+    computes_function_read_update' (atElem idx i tm) (fun a => f (fElem a)) i j := by
+  intro x y views h_views_i h_views_j
+  rw [atElem_eval_struct (by simp [h_views_i, h_elem])]
+  rw [h_tm (fElem x) y _ (by simp; grind) (by grind)]
+  simp [h_ne]
+
+-- TODO this has a double toLeftEnd which is not needed.
+
 /-- Move into the given path, then execute `tm` and then move out again. -/
 public def atPath {k : ℕ} (path : List ℕ) (i : Fin k) (tm : MultiTapeTM k Char) :
     MultiTapeTM k Char :=
   match path with
   | [] => tm
-  | n :: path' => toElem n i;ₜ atPath path' i tm;ₜ outOfList i
+  | n :: path' => atElem n i (atPath path' i tm)
+
+@[simp]
+public lemma atPath_computes_function {k : ℕ} {path : List ℕ} {i j : Fin k}
+    {α β γ : Type} [StrEnc α] [StrEnc β] [StrEnc γ]
+    {tm : MultiTapeTM k Char}
+    (h_ne : i ≠ j)
+    (fPath : α → β)
+    (h_path : ∀ x, ((StrEnc.toData x).atPath path) = some (StrEnc.toData (fPath x)))
+    (f : β → γ → γ)
+    (h_tm : computes_function_read_update' tm f i j) :
+    computes_function_read_update' (atPath path i tm) (fun a => f (fPath a)) i j := by
+  intro x y views h_views_i h_views_j
+  have h_d := h_path x
+  clear h_path
+  change (atPath path i tm).eval_struct views =
+    Part.some (Function.update views j (TapeView.ofEnc (f (fPath x) y)))
+  generalize StrEnc.toData x = d at h_d h_views_i
+  generalize fPath x = b at h_d ⊢
+  induction path generalizing d views with
+  | nil =>
+    simp only [Data.atPath_nil, Option.some.injEq] at h_d
+    exact h_tm b y views (by simp [h_views_i, h_d]) h_views_j
+  | cons n path' ih =>
+    rw [show n :: path' = [n] ++ path' from rfl, Data.atPath_append] at h_d
+    obtain ⟨d₁, hd₁, h_tail⟩ := Option.bind_eq_some_iff.mp h_d
+    have h_valid : ((views i).current.atPath [n]).isSome := by simp [h_views_i, hd₁]
+    unfold atPath
+    rw [atElem_eval_struct h_valid]
+    rw [ih (Function.update views i ((views i).appendPath' n h_valid))
+        (by simp [h_ne.symm, h_views_j]) d₁ (by simp; grind) h_tail]
+    simp [h_ne]
+
 
 end Routines
 end Turing
