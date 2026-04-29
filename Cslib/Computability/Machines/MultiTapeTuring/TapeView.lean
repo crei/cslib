@@ -112,17 +112,30 @@ public def parent (tv : TapeView) : TapeView := ⟨tv.data, tv.path.dropLast, tv
 --   unfold parent
 --   split <;> grind
 
+@[expose]
+public def parent_n (tv : TapeView) : ℕ → TapeView
+  | 0 => tv
+  | n + 1 => (tv.parent_n n).parent
+
+
 /-- TODO don't use, I think it is unnatural to keep the headPos -/
 @[expose, simp]
 public def appendPath (tv : TapeView) (idx : ℕ)
     (h : (tv.current.atPath [idx]).isSome) : TapeView :=
   ⟨tv.data, tv.path ++ [idx], tv.headPos, by simpa using h⟩
 
+-- TODO rename `appendToPath`
+
 /-- Like `appendPath` but always sets `headPos` to `.leftEnd`. -/
 @[expose, simp]
 public def appendPath' (tv : TapeView) (idx : ℕ)
     (h : (tv.current.atPath [idx]).isSome) : TapeView :=
   ⟨tv.data, tv.path ++ [idx], .leftEnd, by simpa using h⟩
+
+@[expose, simp]
+public def appendPath'' (tv : TapeView) (path : List ℕ)
+    (h : (tv.current.atPath path).isSome) : TapeView :=
+  ⟨tv.data, tv.path ++ path, .leftEnd, by simpa using h⟩
 
 /-- Copy the `headPos` from `tv'` into `tv`, keeping all other fields. -/
 @[expose]

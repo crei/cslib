@@ -27,18 +27,41 @@ public inductive Literal where
   | pos (v : Var)
   | neg (v : Var)
 
-public instance : StrEnc Literal where
-  toData
+@[reducible]
+public instance instStrEncLiteral : StrEnc Literal := StrEnc.mk'
+  (fun
     | Literal.pos v => StrEnc.toData [0, v]
-    | Literal.neg v => StrEnc.toData [1, v]
-  fromData d := do
+    | Literal.neg v => StrEnc.toData [1, v])
+  (fun d => do
     match StrEnc.fromData d with
     | some [0, v] => some (Literal.pos v)
     | some [1, v] => some (Literal.neg v)
-    | _ => none
-  fromData_toData
-    | Literal.pos _ => by simp
-    | Literal.neg _ => by simp
+    | _ => none)
+  (fun
+    | Literal.pos v => by
+      show (match StrEnc.fromData (StrEnc.toData ([0, v] : List ℕ)) with
+        | some [0, v] => some (Literal.pos v)
+        | some [1, v] => some (Literal.neg v)
+        | _ => none) = some (Literal.pos v)
+      rw [StrEnc.fromData_toData]
+    | Literal.neg v => by
+      show (match StrEnc.fromData (StrEnc.toData ([1, v] : List ℕ)) with
+        | some [0, v] => some (Literal.pos v)
+        | some [1, v] => some (Literal.neg v)
+        | _ => none) = some (Literal.neg v)
+      rw [StrEnc.fromData_toData])
+  (fun d lit h => by
+    dsimp only at h
+    split at h
+    · rename_i hd
+      cases h
+      have := StrEnc.toData_fromData _ _ hd
+      simpa using this
+    · rename_i hd
+      cases h
+      have := StrEnc.toData_fromData _ _ hd
+      simpa using this
+    · exact absurd h (by simp))
 
 /-- TODO document -/
 public abbrev Clause := List Literal
@@ -53,23 +76,46 @@ public abbrev Assignments := List Var
 public inductive SATInput where
   | mk (formula : Formula) (assignment : Assignments)
 
-public instance : StrEnc SATInput where
-  toData
-    | SATInput.mk f a => Data.list [StrEnc.toData f, StrEnc.toData a]
-  fromData
+@[reducible]
+public instance instStrEncSATInput : StrEnc SATInput := StrEnc.mk'
+  (fun
+    | SATInput.mk f a => Data.list [StrEnc.toData f, StrEnc.toData a])
+  (fun
     | Data.list [fd, ad] => do
       let f ← StrEnc.fromData fd
       let a ← StrEnc.fromData ad
       pure (SATInput.mk f a)
-    | _ => none
-  fromData_toData
-    | SATInput.mk f a => by simp [StrEnc.fromData_toData f, StrEnc.fromData_toData a]
+    | _ => none)
+  (fun
+    | SATInput.mk f a => by
+      dsimp only
+      simp only [← List.toData, StrEnc.fromData_toData]
+      rfl)
+  (fun d s h => by
+    dsimp only at h
+    split at h
+    · rename_i fd ad
+      match hf : StrEnc.fromData (α := Formula) fd, h with
+      | some f, h =>
+        match ha : StrEnc.fromData (α := Assignments) ad, h with
+        | some a, h =>
+          have hf' := StrEnc.toData_fromData _ _ hf
+          have ha' := StrEnc.toData_fromData _ _ ha
+          have hs : s = SATInput.mk f a := by
+            change (some (SATInput.mk f a) : Option SATInput) = some s at h
+            cases h; rfl
+          subst hs
+          show Data.list [StrEnc.toData f, StrEnc.toData a] = _
+          rw [hf', ha']
+    · exact absurd h (by simp))
 
 @[simp]
-lemma SatInput_toData (formula : Formula) (assignments : Assignments) :
-  StrEnc.toData (SATInput.mk formula assignments) =
-    Data.list [StrEnc.toData formula, StrEnc.toData assignments] := by
-  simp [StrEnc.toData]
+lemma Literal.toData_pos (v : Var) :
+  StrEnc.toData (Literal.pos v) = StrEnc.toData ([0, v] : List ℕ) := rfl
+
+@[simp]
+lemma Literal.toData_neg (v : Var) :
+  StrEnc.toData (Literal.neg v) = StrEnc.toData ([1, v] : List ℕ) := rfl
 
 @[simp]
 lemma Literal_toData (lit : Literal) :
@@ -80,6 +126,11 @@ lemma Literal_toData (lit : Literal) :
   match lit with
   | Literal.pos v => rfl
   | Literal.neg v => rfl
+
+@[simp]
+lemma SatInput_toData (formula : Formula) (assignments : Assignments) :
+  StrEnc.toData (SATInput.mk formula assignments) =
+    Data.list [StrEnc.toData formula, StrEnc.toData assignments] := by rfl
 
 /-- Evaluate a literal given a list of positive-variable assignments. -/
 public def evalLiteral (a : Assignments) : Literal → Bool

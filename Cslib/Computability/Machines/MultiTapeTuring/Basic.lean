@@ -12,6 +12,7 @@ public import Cslib.Computability.Machines.SingleTapeTuring.Basic
 public import Mathlib.Data.Part
 
 import Mathlib.Algebra.Order.BigOperators.Group.Finset
+import Mathlib.Order.Interval.Finset.Defs
 
 /-!
 # Multi-Tape Turing Machines
@@ -120,6 +121,28 @@ public structure Cfg : Type where
   tapes : Fin k → BiTape Symbol
 deriving Inhabited
 
+@[expose]
+public abbrev transition (cfg : tm.Cfg) :
+  Option ((Fin k → SingleTapeTM.Stmt Symbol) × Option tm.State) := match cfg with
+| ⟨none, _⟩ =>
+  -- no transition from the halting state.
+  none
+| ⟨some q, tapes⟩ =>
+  -- If in state q, perform look up in the transition function
+  some (tm.tr q (fun i => (tapes i).head))
+
+@[expose]
+public abbrev headMovement (cfg : tm.Cfg) (i : Fin k) : Option Dir := do
+  ((← tm.transition cfg).1 i).movement
+
+@[expose]
+public abbrev symbolToWrite (cfg : tm.Cfg) (i : Fin k) : Option Symbol := do
+  ((← tm.transition cfg).1 i).symbol
+
+@[expose]
+public abbrev successorState (cfg : tm.Cfg) : Option tm.State := do
+  (←  tm.transition cfg).2
+
 /-- The step function corresponding to a `MultiTapeTM`. -/
 public def step : tm.Cfg → Option tm.Cfg
   | ⟨none, _⟩ =>
@@ -182,7 +205,14 @@ configuration. -/
 public def configs (tapes : Fin k → BiTape Symbol) (t : ℕ) : Option tm.Cfg :=
   (Option.bind · tm.step)^[t] (tm.initCfgTapes tapes)
 
+public def movement_to_int : Option Dir → ℤ
+ | none => 0
+ | some .left => -1
+ | some .right => 1
 
+/-- The position of a head relative to the initial position of zero. -/
+public def headPosition (tapes : Fin k → BiTape Symbol) (t : ℕ) (i : Fin k) : ℤ :=
+  ∑ t' : Fin (t + 1), movement_to_int ((tm.configs tapes t').bind fun cfg => tm.headMovement cfg i)
 
 -- TODO shouldn't this be spaceUsed? (If yes, also change it in SingleTapeTM)
 
