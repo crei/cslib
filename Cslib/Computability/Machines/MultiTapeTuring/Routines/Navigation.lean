@@ -154,12 +154,7 @@ public lemma atElem_computes_function {k : ℕ} {idx : ℕ} {i j : Fin k}
   intro x y views h_views_i h_views_j
   rw [atElem_eval_struct (by simp [h_views_i, h_elem])]
   rw [h_tm (fElem x) y _ (by simp; grind) (by grind)]
-  simp only [Part.map_some, Part.some_inj]
-  funext r
-  by_cases hri : r = i
-  · subst hri
-    simp [h_ne]
-  · grind
+  simp [h_ne]
 
 -- TODO this has a double toLeftEnd which is not needed.
 
@@ -180,15 +175,14 @@ public lemma atPath_computes_function {k : ℕ} {path : List ℕ} {i j : Fin k}
     (f : β → γ → γ)
     (h_tm : computes_function_read_update' tm f i j) :
     computes_function_read_update' (atPath path i tm) (fun a => f (fPath a)) i j := by
-  intro x y views h_views_i h_views_j
+  intro x y
   suffices h : ∀ {path : List ℕ} {d : Data} {b : β},
       d.atPath path = some (StrEnc.toData b) →
       ∀ (views : Fin k → TapeView),
         (views i).current = d → views j = TapeView.ofEnc y →
         (atPath path i tm).eval_struct views =
           .some (Function.update views j (TapeView.ofEnc (f b y))) from
-    h (h_path x) views h_views_i h_views_j
-  clear h_views_i h_views_j h_path views x
+    h (h_path x)
   intro path
   induction path with
   | nil =>
@@ -203,11 +197,7 @@ public lemma atPath_computes_function {k : ℕ} {path : List ℕ} {i j : Fin k}
     unfold atPath
     rw [atElem_eval_struct h_valid,
       ih h_tail _ (by simp [h_i, hd₁]) (by simp [h_ne.symm, h_j])]
-    simp only [Part.map_some, Part.some_inj]
-    funext r
-    by_cases hri : r = i
-    · subst hri; simp [h_ne]
-    · grind
+    simp [h_ne]
 
 
 end Routines
