@@ -9,6 +9,7 @@ module
 public import Cslib.Computability.Machines.MultiTapeTuring.StructuralMachines
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Iterate
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Skip
+public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Typed
 
 
 namespace Turing
@@ -138,12 +139,34 @@ public lemma atElem_eval_struct {k : ℕ} {idx : ℕ} {i : Fin k} {tm : MultiTap
         fun views' => Function.update views' i ((views' i).parent.setHeadPosOf (views i)) := by
   simp [atElem, h_valid, Part.bind_some_eq_map]
 
+-- TODO this has a double toLeftEnd which is not needed.
+
 /-- Move into the given path, then execute `tm` and then move out again. -/
 public def atPath {k : ℕ} (path : List ℕ) (i : Fin k) (tm : MultiTapeTM k Char) :
     MultiTapeTM k Char :=
-  match path with
-  | [] => tm
-  | n :: path' => toElem n i;ₜ atPath path' i tm;ₜ outOfList i
+  atLeft i (go path)
+  where go
+    | [] => tm
+    | n :: path' => toElem n i;ₜ go path';ₜ outOfList i
+
+@[simp]
+public lemma atPath_computes_function {k : ℕ} {path : List ℕ} {i j : Fin k}
+    {α β γ : Type} [StrEnc α] [StrEnc β] [StrEnc γ]
+    {tm : MultiTapeTM k Char}
+    (h_ne : i ≠ j)
+    (fPath : α → β)
+    (h_path : ∀ x, ((StrEnc.toData x).atPath path) = some (StrEnc.toData (fPath x)))
+    (f : β → γ)
+    (h_tm : computes_function_read_replace tm f i j) :
+    computes_function_read_replace (atPath path i tm) (f ∘ fPath) i j := by
+  induction path with
+  | nil =>
+    simp [atPath, atPath.go, h_tm]
+    simp at h_path
+    sorry
+  | cons n path ih =>
+    simp [atPath, h_path, Part.bind_some_eq_map]
+    rw [ih (by simp [h_ne]) (by simp [h_path])]
 
 end Routines
 end Turing
