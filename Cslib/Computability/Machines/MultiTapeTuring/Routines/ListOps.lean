@@ -33,6 +33,11 @@ public lemma copy_to_list.computes_fun {α : Type} [StrEnc α] {k : ℕ} {i j : 
   computes_function_read_push (α := α) (copy_to_list i j) id i j := by
   sorry
 
+@[simp]
+public lemma copy_to_list.computes_fun' {α : Type} [StrEnc α] {k : ℕ} {i j : Fin k} (h_ne : i ≠ j) :
+  computes_function_read_push' (α := α) (copy_to_list i j) id i j := by
+  sorry
+
 /-- Remove the first element from a list encoding on tape `i`.
     Running `popEnc` on an empty list does not modify the tape. -/
 public def popList {k : ℕ} (i : Fin k) : MultiTapeTM k Char := sorry
