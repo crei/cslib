@@ -80,7 +80,7 @@ def mk₁ (l : List Symbol) : BiTape Symbol :=
 def mk₂ (l r : List Symbol) : BiTape Symbol :=
   ⟨r.head?, StackTape.map_some l, StackTape.map_some r.tail ⟩
 
--- Returns the symbol at a position relative to the current head. -/
+/-- Returns the symbol at a position relative to the current head. -/
 def atPos (t : BiTape Symbol) (i : ℤ) : Option Symbol := match i with
   | .ofNat 0 => t.head
   | .ofNat (n + 1) => t.right.toList[n]?.getD none

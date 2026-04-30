@@ -90,6 +90,18 @@ public def encodeTapes {k : ℕ} (tapes : Fin k → BiTape Symbol) (params : Enc
       containsHead := (params.start i) + p == 0
     }
 
+
+omit [Inhabited Symbol] [Fintype Symbol] [StrEnc Symbol] in
+/-- If a cell in the encoding is marked as containing the head, then its symbol is the
+current head symbol of the corresponding tape. -/
+@[simp, grind =]
+lemma encodeTapes_getElem_of_containsHead {k : ℕ}
+    {t : Fin k → BiTape Symbol} {params : EncodingParams k}
+    {idx : ℕ} (h_idx_lt : idx < (encodeTapes t params).length) {i : Fin k}
+    (h : (((encodeTapes t params)[idx]'h_idx_lt) i).containsHead) :
+    ((encodeTapes t params)[idx]'h_idx_lt) i = {c := (t i).head, containsHead := true} := by
+  simp_all [encodeTapes, BiTape.atPos]
+
 /-- The minimal head positions over all tapes at step `t` starting from initial zero positions. -/
 public def minHeadPos
   {k : ℕ} (tm : MultiTapeTM k Symbol) (initialTapes : Fin k → BiTape Symbol) (t : ℕ) : ℤ :=
@@ -102,6 +114,7 @@ public def maxHeadPos
 
 -- TODO use this sequence of encoding parameters.
 
+/-- The execution sequence of tape encoding parameters. -/
 public def encodingParamSequence {k : ℕ} (tm : MultiTapeTM k Symbol)
     (initialTapes : Fin k → BiTape Symbol) (t : ℕ) : EncodingParams k :=
   let headPositions := tm.headPosition initialTapes
@@ -116,6 +129,7 @@ public def encodingParamSequence {k : ℕ} (tm : MultiTapeTM k Symbol)
   let start := fun i => (headPositions t i) - minHeadPosUntil
   ⟨ start, length ⟩
 
+/-- The next tape encoding parameter set given the previous one. -/
 public def updateEncodingParams {k : ℕ} (tm : MultiTapeTM k Symbol)
   (params : EncodingParams k)
   (cfg : tm.Cfg) : EncodingParams k := sorry
@@ -138,6 +152,7 @@ def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (tapes out aux : Fin k) : MultiTapeT
     (noop)
 
 
+omit [Fintype Symbol] [Inhabited Symbol] in
 lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : Fin k)
     (h_tapes_aux : tapes ≠ aux)
     (h_tapes_out : tapes ≠ out)
@@ -148,9 +163,9 @@ lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : 
     (h_aux : views aux = TapeView.empty)
     (idx : ℕ)
     (h_contains_head : ((encodeTapes t params).findIdx?
-          (fun c => (c tapeIdx).containsHead)) = some idx) :
-    ∀ outl : List (Option Symbol),
-    views out = .ofEnc outl →
+          (fun c => (c tapeIdx).containsHead)) = some idx)
+    (outl : List (Option Symbol))
+    (h_outl : views out = .ofEnc outl) :
     (getHeadSymbol k tapeIdx tapes out aux).eval_struct views = .some (Function.update
       views out (TapeView.ofEnc ((t tapeIdx).head :: outl))) := by
   have h_copyHeadPos :
@@ -169,16 +184,20 @@ lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : 
     apply atPath_computes_function h_tapes_out
       (h_tm := copy_to_list.computes_fun' h_tapes_out)
       (h_path := by simp)
+  unfold getHeadSymbol
+  rw [find_list.computes_fun h_tapes_aux h_copyHeadPos views
+      (encodeTapes t params) (by simp [h_tapes]) h_aux]
+  simp only [h_contains_head, TapeView.appendPath', seq_eval_struct]
+  obtain ⟨h_idx_lt, h_pred, _⟩ := List.findIdx?_eq_some_iff_getElem.mp h_contains_head
+  rw [h_copySymbol (encodeTapes t params)[idx] outl _ (by simp [h_tapes, h_idx_lt]) (by grind)]
+  simp only [Part.bind_some, outOfList_eval_struct, Part.coe_some, Part.some_inj]
+  rw [encodeTapes_getElem_of_containsHead h_idx_lt h_pred]
+  simp
+  grind
 
-  sorry
-
--- /-- Copies the symbol the head of tape `i` currently points to, to tape 3. -/
--- def copyReadSymbol (i : Fin k) : MultiTapeTM 10 Char :=
---   find_list 1 4 (atPath [0, i, 1] 1 (copyEnc 1 4))
---     (atPath [0, i, 0] 1 (copy_to_list 1 4))
---     (noop)
 
 
+/-- Execute a single step of the simulated machine. -/
 public def utm_step : MultiTapeTM 10 Char := sorry
 
 /-- Main theorem -/

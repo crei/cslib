@@ -100,6 +100,9 @@ lemma outOfList_inner {k : ℕ} {i : Fin k}
 public lemma outOfList_eval_struct {k : ℕ} {i : Fin k} {views : Fin k → TapeView} :
   (outOfList i).eval_struct views = some (Function.update views i (views i).parent) := by sorry
 
+public lemma outOfList_eval_struct' {k : ℕ} {i : Fin k} :
+  (outOfList i).eval_struct = fun views => .some (Function.update views i (views i).parent) := by sorry
+
 
 /-- Navigate to the `idx`-th element of a `Data.list` encoding on tape `i`.
 Moves past `(` and then skips `idx` Data elements.
