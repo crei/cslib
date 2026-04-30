@@ -85,10 +85,16 @@ def cons (x : Option Symbol) (xs : StackTape Symbol) : StackTape Symbol :=
   | none, ⟨hd :: tl, hl⟩ => ⟨none :: hd :: tl, by grind⟩
   | some a, ⟨l, hl⟩ => ⟨some a :: l, by grind⟩
 
-@[simp, scoped grind =]
+@[simp]
 lemma cons_none_nil_toList : (cons none (nil : StackTape Symbol)).toList = [] := by grind
 
-@[simp, scoped grind =]
+@[simp]
+lemma cons_none_nil : cons none (nil : StackTape Symbol) = nil := rfl
+
+@[simp]
+lemma cons_none_empty : cons none (∅ : StackTape Symbol) = ∅ := rfl
+
+@[simp]
 lemma cons_some_toList (a : Symbol) (l : StackTape Symbol) :
     (cons (some a) l).toList = some a :: l.toList := by simp only [cons]
 
@@ -99,12 +105,21 @@ def tail (l : StackTape Symbol) : StackTape Symbol :=
   | [] => nil
   | hd :: t => ⟨t, by grind⟩
 
+@[simp]
+lemma tail_nil : (nil : StackTape Symbol).tail = nil := rfl
+
 /-- Get the first element of the `StackTape`. -/
 @[scoped grind]
 def head (l : StackTape Symbol) : Option Symbol :=
   match l.toList with
   | [] => none
   | h :: _ => h
+
+@[simp, scoped grind =]
+lemma head_nil : (nil : StackTape Symbol).head = none := rfl
+
+@[simp, scoped grind =]
+lemma head_empty : (∅ : StackTape Symbol).head = none := rfl
 
 lemma eq_iff (l1 l2 : StackTape Symbol) :
     l1 = l2 ↔ l1.head = l2.head ∧ l1.tail = l2.tail := by
@@ -121,7 +136,9 @@ lemma head_cons (o : Option Symbol) (l : StackTape Symbol) : (cons o l).head = o
   | none =>
     cases l with | mk toList hl =>
     cases toList <;> grind
-  | some a => grind
+  | some a =>
+    cases l with | mk toList hl =>
+    simp [cons, head]
 
 @[simp]
 lemma tail_cons (o : Option Symbol) (l : StackTape Symbol) : (cons o l).tail = l := by
@@ -141,6 +158,33 @@ lemma cons_head_tail (l : StackTape Symbol) :
 /-- Create a `StackTape` from a list by mapping all elements to `some` -/
 @[scoped grind]
 def map_some (l : List Symbol) : StackTape Symbol := ⟨l.map some, by simp⟩
+
+@[simp, scoped grind =]
+lemma map_some_nil : (map_some [] : StackTape Symbol) = ∅ := rfl
+
+@[simp, scoped grind =]
+lemma map_some_cons (a : Symbol) (l : List Symbol) :
+    map_some (a :: l) = cons (some a) (map_some l) := by
+  cases l <;> simp [map_some, cons]
+
+@[simp, scoped grind =]
+lemma head_map_some_nil : (map_some [] : StackTape Symbol).head = none := rfl
+
+@[simp, scoped grind =]
+lemma head_map_some_cons (a : Symbol) (l : List Symbol) :
+    (map_some (a :: l) : StackTape Symbol).head = some a := rfl
+
+@[simp, scoped grind =]
+lemma head_map_some (l : List Symbol) :
+    (map_some l : StackTape Symbol).head = l.head? := by
+  cases l <;> rfl
+
+@[simp, scoped grind =]
+lemma tail_map_some (l : List Symbol) :
+    (map_some l : StackTape Symbol).tail = map_some l.tail := by
+  cases l with
+  | nil => rfl
+  | cons a t => cases t <;> simp [map_some, tail]
 
 section Length
 
@@ -162,7 +206,8 @@ lemma length_cons_none (l : StackTape Symbol) :
 @[scoped grind =]
 lemma length_cons_some (a : Symbol) (l : StackTape Symbol) :
     (cons (some a) l).length = l.length + 1 := by
-  grind
+  cases l with | mk toList hl =>
+  simp [length, cons]
 
 lemma length_cons_le (o : Option Symbol) (l : StackTape Symbol) :
     (cons o l).length ≤ l.length + 1 := by
