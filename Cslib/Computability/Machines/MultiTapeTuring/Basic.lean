@@ -122,6 +122,7 @@ public structure Cfg : Type where
 deriving Inhabited
 
 
+/-- The transition function output for a given configuration. -/
 @[expose]
 public abbrev transition (cfg : tm.Cfg) :
   Option ((Fin k → SingleTapeTM.Stmt Symbol) × Option tm.State) := match cfg with
@@ -132,14 +133,17 @@ public abbrev transition (cfg : tm.Cfg) :
   -- If in state q, perform look up in the transition function
   some (tm.tr q (fun i => (tapes i).head))
 
+/-- The head movements following a given configuration. -/
 @[expose]
 public abbrev headMovement (cfg : tm.Cfg) (i : Fin k) : Option Dir := do
   ((← tm.transition cfg).1 i).movement
 
+/-- The symbols to write following a given configuration. -/
 @[expose]
 public abbrev symbolToWrite (cfg : tm.Cfg) (i : Fin k) : Option Symbol := do
   ((← tm.transition cfg).1 i).symbol
 
+/-- The successor state of a given configuration. -/
 @[expose]
 public abbrev successorState (cfg : tm.Cfg) : Option tm.State := do
   (←  tm.transition cfg).2
@@ -206,6 +210,7 @@ configuration. -/
 public def configs (tapes : Fin k → BiTape Symbol) (t : ℕ) : Option tm.Cfg :=
   (Option.bind · tm.step)^[t] (tm.initCfgTapes tapes)
 
+/-- Turn a movement into an integer, where rightwards movement is positive. -/
 public def movement_to_int : Option Dir → ℤ
  | none => 0
  | some .left => -1
