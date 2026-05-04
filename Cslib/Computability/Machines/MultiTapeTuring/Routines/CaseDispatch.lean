@@ -33,11 +33,11 @@ public lemma case_nat_eval_struct {k : ℕ} {i : Fin k}
     {branches : List (MultiTapeTM k Char)}
     {views : Fin k → TapeView} :
     (case_nat i branches).eval_struct views =
-      match StrEnc.fromData (views i).current with
-      | some (n : ℕ) =>
+      match Data.asNat? (views i).current with
+      | some n =>
         if h : n < branches.length then branches[n].eval_struct views
         else some views
-      | _ => some views := by sorry
+      | none => some views := by sorry
 
 /-- Dispatch on the numeric value of the first element of a list.
     Pops the first element from the list on tape `i`. If it is `Data.num n`
@@ -46,19 +46,6 @@ public lemma case_nat_eval_struct {k : ℕ} {i : Fin k}
     or the index is out of range, leaves the tape unmodified. -/
 public def case_popList_num {k : ℕ} (i : Fin k)
     (branches : List (MultiTapeTM k Char)) : MultiTapeTM k Char := sorry
-
-@[simp]
-public lemma case_popList_num_eval_struct {k : ℕ} {i : Fin k}
-    {branches : List (MultiTapeTM k Char)}
-    {views : Fin k → TapeView} :
-    (case_popList_num i branches).eval_struct views = match views i with
-      | ⟨Data.list (n :: ds), [], .leftEnd, _⟩ => match StrEnc.fromData n with
-        | some (n : ℕ) => if h_n : n < branches.length then
-            branches[n].eval_struct (Function.update views i (.ofList ds))
-          else
-            .some views
-        | _ => .some views
-      | _ => .some views := by sorry
 
 /-- Runs `then_branch` if tape `i` points at a list whose head is `v`, otherwise
 runs `else_branch`. -/
