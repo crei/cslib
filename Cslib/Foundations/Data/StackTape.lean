@@ -197,6 +197,48 @@ lemma length_nil : (nil : StackTape Symbol).length = 0 := by grind
 
 end Length
 
+/-- Two `StackTape`s are equal iff their underlying lists agree at every position
+under `getD none`. -/
+lemma toList_ext_getElem?_getD {l1 l2 : StackTape Symbol}
+    (h : ∀ k : ℕ, l1.toList[k]?.getD (none : Option Symbol) = l2.toList[k]?.getD none) :
+    l1 = l2 := by
+  obtain ⟨xs, hx⟩ := l1
+  obtain ⟨ys, hy⟩ := l2
+  suffices h' : xs = ys by cases h'; rfl
+  -- Helper: if a no-trailing-none list `l` has any cell agreeing with `none` past its
+  -- last index `l.length - 1`, the agreement must come from the *other* list having
+  -- an element at that index whose value is `some none`, contradicting its invariant.
+  -- Conclude lengths equal, then pointwise equality.
+  have aux : ∀ {as bs : List (Option Symbol)},
+      as.getLast? ≠ some none → bs.getLast? ≠ some none →
+      (∀ k : ℕ, as[k]?.getD (none : Option Symbol) = bs[k]?.getD none) →
+      as.length ≤ bs.length → as = bs := by
+    intro as bs ha hb hk hle
+    rcases Nat.lt_or_eq_of_le hle with hlt | heq
+    · exfalso
+      have hpos : 0 < bs.length := by omega
+      have hne : bs ≠ [] := fun hnil => by simp [hnil] at hpos
+      have hkey := hk (bs.length - 1)
+      have h1 : as[bs.length - 1]? = none := List.getElem?_eq_none (by omega)
+      have h2 : bs[bs.length - 1]? = some (bs.getLast hne) := by
+        rw [List.getElem?_eq_getElem (by omega), List.getLast_eq_getElem]
+      rw [h1, h2] at hkey
+      simp at hkey
+      apply hb
+      rw [List.getLast?_eq_some_getLast hne, hkey]
+    · apply List.ext_getElem heq
+      intro k h1 h2
+      have := hk k
+      rw [List.getElem?_eq_getElem h1, List.getElem?_eq_getElem h2] at this
+      simpa using this
+  have hxlast : xs.getLast? ≠ some none := by
+    have := toList_getLast?_ne_some_none ⟨xs, hx⟩; simpa using this
+  have hylast : ys.getLast? ≠ some none := by
+    have := toList_getLast?_ne_some_none ⟨ys, hy⟩; simpa using this
+  rcases Nat.le_total xs.length ys.length with hle | hle
+  · exact aux hxlast hylast h hle
+  · exact (aux hylast hxlast (fun k => (h k).symm) hle).symm
+
 end StackTape
 
 end Turing
