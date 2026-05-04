@@ -123,24 +123,23 @@ instance inhabitedStmt : Inhabited (Stmt Symbol) := inferInstance
 /--
 The configurations of a Turing machine consist of:
 an `Option`al state (or none for the halting state),
-and a `BiTape` representing the tape contents.
+and a `BiTape` representing the tape.
 -/
 structure Cfg : Type where
   /-- the state of the TM (or none for the halting state) -/
   state : Option tm.State
-  /-- the BiTape contents -/
+  /-- the BiTape contents and head position -/
   BiTape : BiTape Symbol
 deriving Inhabited
 
 /-- The step function corresponding to a `SingleTapeTM`. -/
-@[simp]
 def step : tm.Cfg → Option tm.Cfg
   | ⟨none, _⟩ =>
     -- If in the halting state, there is no next configuration
     none
   | ⟨some q', t⟩ =>
     -- If in state q', perform look up in the transition function
-    match tm.tr q' t.head with
+    match tm.tr q' t.read with
     -- and enter a new configuration with state q'' (or none for halting)
     -- and tape updated according to the Stmt
     | ⟨⟨wr, dir⟩, q''⟩ => some ⟨q'', (t.write wr).optionMove dir⟩
@@ -152,35 +151,12 @@ This is to ensure that distinct lists map to distinct initial configurations.
 -/
 def initCfg (tm : SingleTapeTM Symbol) (s : List Symbol) : tm.Cfg := ⟨some tm.q₀, BiTape.mk₁ s⟩
 
+
 /-- The final configuration corresponding to a list in the output alphabet.
 (We demand that the head halts at the leftmost position of the output.)
 -/
+@[simp]
 def haltCfg (tm : SingleTapeTM Symbol) (s : List Symbol) : tm.Cfg := ⟨none, BiTape.mk₁ s⟩
-
-/--
-The space used by a configuration is the space used by its tape.
--/
-def Cfg.space_used (tm : SingleTapeTM Symbol) (cfg : tm.Cfg) : ℕ := cfg.BiTape.space_used
-
-@[scoped grind =]
-lemma Cfg.space_used_initCfg (tm : SingleTapeTM Symbol) (s : List Symbol) :
-    (tm.initCfg s).space_used = max 1 s.length := BiTape.space_used_mk₁ s
-
-@[scoped grind =]
-lemma Cfg.space_used_haltCfg (tm : SingleTapeTM Symbol) (s : List Symbol) :
-    (tm.haltCfg s).space_used = max 1 s.length := BiTape.space_used_mk₁ s
-
-lemma Cfg.space_used_step {tm : SingleTapeTM Symbol} (cfg cfg' : tm.Cfg)
-    (hstep : tm.step cfg = some cfg') : cfg'.space_used ≤ cfg.space_used + 1 := by
-  obtain ⟨_ | q, tape⟩ := cfg
-  · simp [step] at hstep
-  · simp only [step] at hstep
-    generalize hM : tm.tr q tape.head = result at hstep
-    obtain ⟨⟨wr, dir⟩, q''⟩ := result
-    cases hstep; cases dir with
-    | none => simp [Cfg.space_used, BiTape.optionMove, BiTape.space_used_write, hM]
-    | some d => simpa [Cfg.space_used, BiTape.optionMove, BiTape.space_used_write, hM] using
-        BiTape.space_used_move (tape.write wr) d
 
 end Cfg
 
@@ -198,11 +174,45 @@ def TransitionRelation (tm : SingleTapeTM Symbol) (c₁ c₂ : tm.Cfg) : Prop :=
 
 /-- A proof of `tm` outputting `l'` on input `l`. -/
 def Outputs (tm : SingleTapeTM Symbol) (l l' : List Symbol) : Prop :=
-  ReflTransGen tm.TransitionRelation (initCfg tm l) (haltCfg tm l')
+  ReflTransGen tm.TransitionRelation (initCfg tm l) (tm.haltCfg l')
 
 /-- A proof of `tm` outputting `l'` on input `l` in at most `m` steps. -/
 def OutputsWithinTime (tm : SingleTapeTM Symbol) (l l' : List Symbol) (m : ℕ) :=
-  RelatesWithinSteps tm.TransitionRelation (initCfg tm l) (haltCfg tm l') m
+  RelatesWithinSteps tm.TransitionRelation (initCfg tm l) (tm.haltCfg l') m
+
+/-- A single step of `tm` increases the size of the support of the tape by at most one
+(the position written to). -/
+private lemma step_supportSubset {tm : SingleTapeTM Symbol} {cfg cfg' : tm.Cfg}
+    {s : Finset ℤ} (hs : cfg.BiTape.supportSubset s)
+    (hstep : tm.step cfg = some cfg') :
+    ∃ s' : Finset ℤ, s'.card ≤ s.card + 1 ∧ cfg'.BiTape.supportSubset s' := by
+  obtain ⟨_ | q, tape⟩ := cfg
+  · simp [step] at hstep
+  · simp only [step] at hstep
+    cases htr : tm.tr q tape.read with
+    | mk wd q'' =>
+      obtain ⟨wr, dir⟩ := wd
+      simp only [htr] at hstep
+      cases hstep
+      refine ⟨(insert 0 s).image (· + BiTape.optionMoveToInt dir), ?_, ?_⟩
+      · exact Finset.card_image_le.trans <|
+          (Finset.card_insert_le _ _).trans (by omega)
+      · exact BiTape.supportSubset_optionMove _ _ _
+          (BiTape.supportSubset_write_insert _ _ _ hs)
+
+/-- Iterating the support bound: after `n` steps, the support is contained in a finset
+of cardinality at most the initial support's size plus `n`. -/
+private lemma relatesInSteps_supportSubset {tm : SingleTapeTM Symbol}
+    {cfg cfg' : tm.Cfg} {n : ℕ}
+    (h : RelatesInSteps tm.TransitionRelation cfg cfg' n)
+    {s : Finset ℤ} (hs : cfg.BiTape.supportSubset s) :
+    ∃ s' : Finset ℤ, s'.card ≤ s.card + n ∧ cfg'.BiTape.supportSubset s' := by
+  induction h with
+  | refl => exact ⟨s, by omega, hs⟩
+  | tail _ _ _ _ hstep ih =>
+    obtain ⟨s', hsc, hss⟩ := ih
+    obtain ⟨s'', hsc', hss''⟩ := step_supportSubset hss hstep
+    exact ⟨s'', by omega, hss''⟩
 
 /--
 This lemma bounds the size blow-up of the output of a Turing machine.
@@ -214,9 +224,25 @@ is bounded by the output length of the first machine.
 lemma output_length_le_input_length_add_time (tm : SingleTapeTM Symbol) (l l' : List Symbol) (t : ℕ)
     (h : tm.OutputsWithinTime l l' t) :
     l'.length ≤ max 1 l.length + t := by
-  obtain ⟨steps, hsteps_le, hevals⟩ := h
-  grind [hevals.apply_le_apply_add (Cfg.space_used tm)
-      fun a b hstep ↦ Cfg.space_used_step a b (Option.mem_def.mp hstep)]
+  obtain ⟨m, hm, hsteps⟩ := h
+  have h_init : (tm.initCfg l).BiTape.supportSubset
+      ((Finset.range l.length).image (Int.ofNat ·)) := by
+    simpa [initCfg] using BiTape.supportSubset_mk₁ l
+  obtain ⟨s', hsc, hss⟩ := relatesInSteps_supportSubset hsteps h_init
+  have h_subset : (Finset.range l'.length).image (Int.ofNat ·) ⊆ s' := by
+    intro x hx
+    simp only [Finset.mem_image, Finset.mem_range] at hx
+    obtain ⟨n, hn, rfl⟩ := hx
+    apply hss
+    simp [BiTape.mk₁, hn]
+  have h_image_card : ((Finset.range l'.length).image (Int.ofNat ·)).card = l'.length := by
+    rw [Finset.card_image_of_injective _ (fun _ _ h => Int.ofNat.inj h)]
+    simp
+  have hcard0 : ((Finset.range l.length).image (Int.ofNat ·)).card ≤ l.length :=
+    Finset.card_image_le.trans (by simp)
+  have h_le : l'.length ≤ s'.card := h_image_card ▸ Finset.card_le_card h_subset
+  omega
+
 
 section Computers
 
@@ -304,7 +330,7 @@ private theorem map_toCompCfg_left_step (hcfg1 : cfg1.state.isSome) :
     | none => grind
     | some q =>
       simp only [step, toCompCfg_left, compComputer]
-      generalize hM : tm1.tr q BiTape.head = result
+      generalize hM : tm1.tr q BiTape.read = result
       obtain ⟨⟨wr, dir⟩, nextState⟩ := result
       #adaptation_note
       /-- A grind regression found moving to nightly-2026-03-31 (changes from lean#13166) -/
@@ -320,7 +346,7 @@ private theorem map_toCompCfg_right_step :
     | none =>
       simp only [step, toCompCfg_right, Option.map_none, compComputer]
     | some q =>
-      generalize hM : tm2.tr q BiTape.head = result
+      generalize hM : tm2.tr q BiTape.read = result
       obtain ⟨⟨wr, dir⟩, nextState⟩ := result
       simp only [compComputer]
       grind [toCompCfg_right, step, compComputer]
@@ -401,7 +427,12 @@ structure TimeComputable (f : List Symbol → List Symbol) where
 def TimeComputable.id : TimeComputable (Symbol := Symbol) id where
   tm := idComputer
   time_bound _ := 1
-  outputsFunInTime _ := ⟨1, le_rfl, RelatesInSteps.single rfl⟩
+  outputsFunInTime a :=
+    ⟨1, le_rfl, RelatesInSteps.single (by
+      change idComputer.step (idComputer.initCfg a) = some (idComputer.haltCfg a)
+      simp only [step, idComputer, initCfg, haltCfg, BiTape.write_read,
+        BiTape.optionMove, BiTape.optionMoveToInt, BiTape.moveInt]
+      ext i; simp)⟩
 
 /--
 Time bounds for `compComputer`.
@@ -449,9 +480,8 @@ def TimeComputable.comp {f g : List Symbol → List Symbol}
     have h_a_reducesTo_g_f_a := RelatesWithinSteps.trans h_a_reducesTo_f_a h_f_a_reducesTo_g_f_a
     apply RelatesWithinSteps.of_le h_a_reducesTo_g_f_a
     refine Nat.add_le_add_left ?_ (hf.time_bound a.length)
-    · apply h_mono
-      -- Use the lemma about output length being bounded by input length + time
-      exact output_length_le_input_length_add_time hf.tm _ _ _ (hf.outputsFunInTime a)
+    apply h_mono
+    exact output_length_le_input_length_add_time hf.tm _ _ _ (hf.outputsFunInTime a)
 
 end TimeComputable
 

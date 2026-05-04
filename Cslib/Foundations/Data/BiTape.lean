@@ -9,8 +9,12 @@ module
 public import Cslib.Foundations.Data.StackTape
 public import Mathlib.Computability.TuringMachine.Tape
 public import Mathlib.Data.Finset.Attr
+public import Mathlib.Data.Finset.Range
+public import Mathlib.Data.Finset.Card
+public import Mathlib.Data.Finset.Image
 public import Mathlib.Tactic.SetLike
 public import Mathlib.Algebra.Order.Group.Nat
+public import Mathlib.Tactic.Ring
 
 /-!
 # BiTape: Bidirectionally infinite TM tape representation using StackTape
@@ -40,24 +44,17 @@ will not collide.
 
 namespace Turing
 
-/--
-A structure for bidirectionally-infinite Turing machine tapes
-that eventually take on blank `none` values
--/
+@[ext]
 structure BiTape (Symbol : Type) where
-  /-- The symbol currently under the tape head -/
-  head : Option Symbol
-  /-- The contents to the left of the head -/
-  left : StackTape Symbol
-  /-- The contents to the right of the head -/
-  right : StackTape Symbol
+  /-- the tape contents -/
+  cells : ℤ → Option Symbol
 
 namespace BiTape
 
 variable {Symbol : Type}
 
 /-- The empty `BiTape` -/
-def nil : BiTape Symbol := ⟨none, ∅, ∅⟩
+def nil : BiTape Symbol := ⟨fun _ => none⟩
 
 instance : Inhabited (BiTape Symbol) where
   default := nil
@@ -73,75 +70,78 @@ Given a `List` of `Symbol`s, construct a `BiTape` by mapping the list to `some` 
 and laying them out to the right side,
 with the head under the first element of the list if it exists.
 -/
-def mk₁ (l : List Symbol) : BiTape Symbol :=
-  match l with
-  | [] => ∅
-  | h :: t => { head := some h, left := ∅, right := StackTape.map_some t }
+def mk₁ {Symbol : Type} (l : List Symbol) : BiTape Symbol :=
+  { cells
+    | .ofNat n => l[n]?
+    | _ => none }
 
 section Move
 
-/--
-Move the head left by shifting the left StackTape under the head.
--/
-def move_left (t : BiTape Symbol) : BiTape Symbol :=
-  ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
+@[simp, local grind =]
+def optionMoveToInt : Option Dir → ℤ
+  | none => 0
+  | some .left => -1
+  | some .right => 1
 
-/--
-Move the head right by shifting the right StackTape under the head.
--/
-def move_right (t : BiTape Symbol) : BiTape Symbol :=
-  ⟨t.right.head, StackTape.cons t.head t.left, t.right.tail⟩
-
-/--
-Move the head to the left or right, shifting the tape underneath it.
--/
-def move (t : BiTape Symbol) : Dir → BiTape Symbol
-  | .left => t.move_left
-  | .right => t.move_right
+@[simp, local grind =]
+def moveInt (t : BiTape Symbol) (δ : ℤ) : BiTape Symbol := ⟨ fun i => t.cells (i - δ) ⟩
 
 /--
 Optionally perform a `move`, or do nothing if `none`.
 -/
-def optionMove : BiTape Symbol → Option Dir → BiTape Symbol
-  | t, none => t
-  | t, some d => t.move d
-
-@[simp]
-lemma move_left_move_right (t : BiTape Symbol) : t.move_left.move_right = t := by
-  simp [move_right, move_left]
-
-@[simp]
-lemma move_right_move_left (t : BiTape Symbol) : t.move_right.move_left = t := by
-  simp [move_left, move_right]
+@[simp, local grind =]
+def optionMove (t : BiTape Symbol) (dir : Option Dir) : BiTape Symbol :=
+  t.moveInt (optionMoveToInt dir)
 
 end Move
 
 /--
 Write a value under the head of the `BiTape`.
 -/
-def write (t : BiTape Symbol) (a : Option Symbol) : BiTape Symbol := { t with head := a }
+@[local grind =]
+def write (t : BiTape Symbol) (a : Option Symbol) : BiTape Symbol :=
+  ⟨ Function.update t.cells 0 a ⟩
+
+@[local grind =]
+def read (t : BiTape Symbol) : Option Symbol := t.cells 0
+
+@[simp]
+lemma write_read (t : BiTape Symbol) : t.write t.read = t := by simp [write, read]
 
 /--
-The space used by a `BiTape` is the number of symbols
-between and including the head, and leftmost and rightmost non-blank symbols on the `BiTape`.
+The cells of `t` are non-blank only at indices in `s`.
 -/
-@[scoped grind]
-def space_used (t : BiTape Symbol) : ℕ := 1 + t.left.length + t.right.length
+def supportSubset (t : BiTape Symbol) (s : Finset ℤ) : Prop :=
+  ∀ i, t.cells i ≠ none → i ∈ s
 
-@[simp, grind =]
-lemma space_used_write (t : BiTape Symbol) (a : Option Symbol) :
-    (t.write a).space_used = t.space_used := by rfl
+lemma supportSubset_mk₁ (l : List Symbol) :
+    supportSubset (mk₁ l) ((Finset.range l.length).image (Int.ofNat ·)) := by
+  intro i hi
+  simp only [mk₁] at hi
+  match i with
+  | .ofNat n => grind
+  | .negSucc n => grind
 
-lemma space_used_mk₁ (l : List Symbol) :
-    (mk₁ l).space_used = max 1 l.length := by
-  cases l with
-  | nil => simp [mk₁, space_used, nil, StackTape.length_nil]
-  | cons h t => simp [mk₁, space_used, StackTape.length_nil, StackTape.length_map_some]; omega
+lemma supportSubset_write_insert (t : BiTape Symbol) (a : Option Symbol) (s : Finset ℤ)
+    (hs : supportSubset t s) : supportSubset (t.write a) (insert 0 s) := by
+  intro i hi
+  simp only [write] at hi
+  by_cases h : i = 0
+  · simp [h]
+  · rw [Function.update_of_ne h] at hi
+    exact Finset.mem_insert_of_mem (hs i hi)
 
-lemma space_used_move (t : BiTape Symbol) (d : Dir) :
-    (t.move d).space_used ≤ t.space_used + 1 := by
-  cases d <;> grind [move_left, move_right, move,
-    space_used, StackTape.length_tail_le, StackTape.length_cons_le]
+lemma supportSubset_moveInt (t : BiTape Symbol) (δ : ℤ) (s : Finset ℤ)
+    (hs : supportSubset t s) :
+    supportSubset (t.moveInt δ) (s.image (· + δ)) := by
+  intro i hi
+  simp only [moveInt] at hi
+  exact Finset.mem_image.mpr ⟨i - δ, hs _ hi, by ring⟩
+
+lemma supportSubset_optionMove (t : BiTape Symbol) (d : Option Dir) (s : Finset ℤ)
+    (hs : supportSubset t s) :
+    supportSubset (t.optionMove d) (s.image (· + optionMoveToInt d)) :=
+  supportSubset_moveInt _ _ _ hs
 
 end BiTape
 
