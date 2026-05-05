@@ -270,22 +270,4 @@ lemma space_used_move (t : BiTape Symbol) (d : Dir) :
 
 end BiTape
 
-/-- Extensionality for `BiTape` via `atPos`: two tapes that agree at every position are equal. -/
-lemma BiTape.ext_atPos {t1 t2 : BiTape Symbol}
-    (h : ∀ i : ℤ, t1.atPos i = t2.atPos i) : t1 = t2 := by
-  obtain ⟨h1, l1, r1⟩ := t1
-  obtain ⟨h2, l2, r2⟩ := t2
-  have hh : h1 = h2 := by simpa [BiTape.atPos] using h 0
-  have hl : l1 = l2 := by
-    apply StackTape.toList_ext_getElem?_getD
-    intro k
-    have := h (.negSucc k)
-    simpa [BiTape.atPos] using this
-  have hr : r1 = r2 := by
-    apply StackTape.toList_ext_getElem?_getD
-    intro k
-    have := h (.ofNat (k + 1))
-    simpa [BiTape.atPos] using this
-  subst hh; subst hl; subst hr; rfl
-
 end Turing
