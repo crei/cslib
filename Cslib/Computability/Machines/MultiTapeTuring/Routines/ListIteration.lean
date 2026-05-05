@@ -196,15 +196,6 @@ instance : StrEnc FindMapState where
     | FindMapState.searching => StrEnc.toData 0
     | FindMapState.found => StrEnc.toData 1
     | FindMapState.notFound => StrEnc.toData 2
-  fromData
-    | d =>
-      if d == StrEnc.toData 0 then some FindMapState.searching
-      else if d == StrEnc.toData 1 then some FindMapState.found
-      else if d == StrEnc.toData 2 then some FindMapState.notFound
-      else none
-  fromData_toData := by
-    intro s
-    cases s <;> simp [StrEnc.toData, dyadic]
 
 /-- Execute `tm₁` on every item in the list on tape `i`. For the first item where it
 writes `true` to tape `j`, execute `tm₂`. If it never writes `true`, execute `tm₃` after

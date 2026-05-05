@@ -164,13 +164,6 @@ public lemma toRightEnd_toLeftEnd (tv : TapeView) :
   tv.toRightEnd.toLeftEnd = tv.toLeftEnd := by
   ext <;> simp_all
 
-/-- Attempt to decode the current value as a typed value of type `α`.
-    Returns `none` if the tape is empty, the path is invalid,
-    or the `Data` at the path does not represent a valid value of
-    type `α`. -/
-public def currentAs (α : Type*) [StrEnc α] (tv : TapeView) : Option α :=
-  StrEnc.fromData tv.current
-
 /-- The position of the head in the encoded version of the
     `TapeView`. -/
 @[expose]
@@ -716,15 +709,6 @@ public def updateListHead (tv : TapeView)
   | ⟨Data.list (d :: ds), [], headPos, _⟩ =>
     ⟨Data.list (f d :: ds), [], headPos, rfl⟩
   | other => other
-
-/-- TODO document -/
-public def updateListHeadTyped
-    {α β : Type} [StrEnc α] [StrEnc β]
-    (tv : TapeView) (f : α → β) : TapeView := (do
-  let ls <- tv.asWritableList
-  let d <- ls.head?
-  let x <- StrEnc.fromData d
-  return TapeView.ofList ((StrEnc.toData (f x)) :: ls.tail)).getD tv
 
 
 end TapeView

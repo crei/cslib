@@ -34,16 +34,12 @@ public structure TapeCell Symbol where
 
 public instance : StrEnc (TapeCell Symbol) where
   toData cell := StrEnc.toData (cell.c, cell.containsHead)
-  fromData d := do
-    let (c, containsHead) ← StrEnc.fromData d
-    pure { c, containsHead }
-  fromData_toData := by simp
 
-omit [Inhabited Symbol] [Fintype Symbol] in
-@[simp]
-public lemma StrEnc.toData_TapeCell (x : TapeCell Symbol) :
-    StrEnc.toData x = StrEnc.toData (x.c, x.containsHead) := by
-  simp [StrEnc.toData]
+public instance (α : Type) [StrEnc α] (k : ℕ) : StrEnc (Vector α k) where
+  toData v := StrEnc.toData v.toList
+
+public instance : StrEnc (MultiCell (k : ℕ)) where
+  toData mc := StrEnc.toData (mc.cells, mc.isLeftEnd, mc.isRightEnd)
 
 /-
 Outline of UTM:

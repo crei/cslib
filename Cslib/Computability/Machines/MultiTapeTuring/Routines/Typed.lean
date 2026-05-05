@@ -129,16 +129,18 @@ public def computes_function_read_read_push' {k : ℕ}
 
 /-- Turing machine `tm` updates the head of tape `i`. -/
 public def computes_function_head_update {k : ℕ}
-  {α β : Type} [StrEnc α] [StrEnc β]
-  (tm : MultiTapeTM k Char) (f : α → β)
+  {α : Type} [StrEnc α]
+  (tm : MultiTapeTM k Char) (f : α → α)
   (i : Fin k) :=
-  ∀ views, tm.eval_struct views =
-    .some (Function.update views i ((views i).updateListHeadTyped f))
+  computes_function_update tm
+    (fun ls => match ls with
+     | h :: tail => (f h) :: tail
+     | [] => []) i
 
 @[simp, grind =>]
 public theorem computes_function_seq₁ {k : ℕ}
-  {α β γ : Type} [StrEnc α] [StrEnc β] [StrEnc γ]
-  {tm₁ tm₂ : MultiTapeTM k Char} {f₁ : α → β} {f₂ : β → γ}
+  {α β : Type} [StrEnc α] [StrEnc β]
+  {tm₁ tm₂ : MultiTapeTM k Char} {f₁ : α → β} {f₂ : β → β}
   {i j : Fin k}
   (h_comp₁ : computes_function_read_push tm₁ f₁ i j)
   (h_comp₂ : computes_function_head_update tm₂ f₂ j) :
@@ -146,8 +148,8 @@ public theorem computes_function_seq₁ {k : ℕ}
 
 @[simp, grind =>]
 public theorem computes_function_seq₂ {k : ℕ}
-  {α β γ δ : Type} [StrEnc α] [StrEnc β] [StrEnc γ] [StrEnc δ]
-  {tm₁ tm₂ : MultiTapeTM k Char} {f₁ : α → β → γ} {f₂ : γ → δ}
+  {α β γ : Type} [StrEnc α] [StrEnc β] [StrEnc γ]
+  {tm₁ tm₂ : MultiTapeTM k Char} {f₁ : α → β → γ} {f₂ : γ → γ}
   {i j r : Fin k}
   (h_comp₁ : computes_function_read_read_push tm₁ f₁ i j r)
   (h_comp₂ : computes_function_head_update tm₂ f₂ r) :
