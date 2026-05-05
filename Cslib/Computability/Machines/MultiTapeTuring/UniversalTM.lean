@@ -240,7 +240,7 @@ def getHeadSymbols (k : ℕ) (tapeCount : ℕ) (tapes out aux : Fin k) : MultiTa
     getHeadSymbol k tapeCount tapes out aux ;ₜ getHeadSymbols k tapeCount tapes out aux
 
 omit [Fintype Symbol] [Inhabited Symbol] in
-lemma getHeadSymbols.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : Fin k)
+lemma getHeadSymbols.semantics {k k' : ℕ} (tapes out aux : Fin k)
     (h_distinct : [tapes, aux, out].get.Injective)
     {views : Fin k → TapeView}
     {encodedTapes : EncodedTapes k' (Symbol := Symbol)}
@@ -248,11 +248,36 @@ lemma getHeadSymbols.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : 
     (h_aux : views aux = TapeView.empty)
     (outl : List (Option Symbol))
     (h_outl : views out = .ofEnc outl) :
-    (getHeadSymbols k tk' tapes out aux).eval_struct views = .some (Function.update
-      -- FIx the next line, we should get all the head symbols.
-      views out (TapeView.ofEnc ((encodedTapes.tapes tapeIdx).head :: outl))) := by
-  -- prove by induction, after k'' steps, we het the last k'' head symbols on the output tape.
-  sorry
+    (getHeadSymbols k k' tapes out aux).eval_struct views = .some (Function.update
+      views out (TapeView.ofEnc
+        ((List.ofFn (fun i : Fin k' => (encodedTapes.tapes i).head)) ++ outl))) := by
+  have h_tapes_out : tapes ≠ out :=
+    Function.Injective.ne h_distinct (show (0 : Fin 3) ≠ 2 by decide)
+  have h_aux_out : aux ≠ out :=
+    Function.Injective.ne h_distinct (show (1 : Fin 3) ≠ 2 by decide)
+  suffices h : ∀ (tc : ℕ) (h_le : tc ≤ k') {views : Fin k → TapeView}
+      (outl : List (Option Symbol)),
+      views tapes = .ofEnc encodedTapes → views aux = TapeView.empty →
+      views out = .ofEnc outl →
+      (getHeadSymbols k tc tapes out aux).eval_struct views = .some (Function.update
+        views out (TapeView.ofEnc ((List.ofFn (fun i : Fin tc =>
+          (encodedTapes.tapes (Fin.castLE h_le i)).head)) ++ outl))) by
+    simpa using h k' (le_refl _) outl h_tapes h_aux h_outl
+  intro tc h_le views outl h_tapes h_aux h_outl
+  induction tc generalizing views outl with
+  | zero =>
+    simp [getHeadSymbols, noop.eval_struct, ← h_outl]
+  | succ tc ih =>
+    unfold getHeadSymbols
+    rw [seq_eval_struct,
+      getHeadSymbol.semantics ⟨tc, h_le⟩ tapes out aux h_distinct h_tapes h_aux outl h_outl]
+    simp only [Part.bind_some]
+    rw [ih (by omega) ((encodedTapes.tapes ⟨tc, h_le⟩).head :: outl)
+        (by grind) (by grind) (by simp)]
+    congr 1
+    rw [Function.update_idem, List.ofFn_succ' (n := tc)
+      (f := fun i : Fin (tc+1) => (encodedTapes.tapes (Fin.castLE h_le i)).head)]
+    simp [Fin.castLE]
 
 /-- Execute a single step of the simulated machine. -/
 public def utm_step : MultiTapeTM 10 Char := sorry
