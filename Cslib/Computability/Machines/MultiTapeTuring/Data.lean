@@ -475,7 +475,7 @@ public lemma atPath_toData_one_pair {α β : Type*} [StrEnc α] [StrEnc β]
     Activate with `letI := StrEnc.ofFunction α β`. -/
 @[reducible]
 public noncomputable def StrEnc.ofFunction (α : Type) (β : Type*)
-    [Fintype α] [DecidableEq α] [StrEnc α] [StrEnc β] : StrEnc (α → β) where
+    [Fintype α] [StrEnc α] [StrEnc β] : StrEnc (α → β) where
   toData f := StrEnc.toData (Finset.univ.val.toList.map fun a => (a, f a))
 
 /-- `StrEnc` instance for any `Encodable` type via its encoding to `ℕ`.
