@@ -89,7 +89,7 @@ public def EncodingParams.encodesCell {k : ℕ} (params : EncodingParams k)
   (params.start tapeIdx) ≤ cellPos ∧ cellPos - (params.start tapeIdx) < (params.length : ℤ)
 
 /-- The parameters are suitable to encode all relevant information of the tape. -/
-public def encodesTape {k : ℕ} (params : EncodingParams k) (tapes : Fin k → BiTape Symbol) : Prop :=
+public def EncodingParams.encodesTape {k : ℕ} (params : EncodingParams k) (tapes : Fin k → BiTape Symbol) : Prop :=
   ∀ idx,
     -- the head is encoded
     params.encodesCell idx 0 ∧
@@ -104,7 +104,7 @@ public structure EncodedTapes (k : ℕ) where
   /-- The encoding params -/
   params : EncodingParams k
   /-- The encoding is valid -/
-  h_vallid : encodesTape params tapes
+  h_valid : params.encodesTape tapes
 
 instance (k : ℕ) : StrEnc (EncodedTapes k (Symbol := Symbol)) where
   toData enc := StrEnc.toData (encodeTapes enc.tapes enc.params)
@@ -173,7 +173,7 @@ def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (tapes out aux : Fin k) : MultiTapeT
 
 
 omit [Fintype Symbol] [Inhabited Symbol] in
-lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : Fin k)
+lemma getHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : Fin k)
     (h_distinct : [tapes, aux, out].get.Injective)
     {views : Fin k → TapeView}
     {encodedTapes : EncodedTapes k' (Symbol := Symbol)}
@@ -203,48 +203,31 @@ lemma geatHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : 
     apply atPath_computes_function h_tapes_out
       (h_tm := copy_to_list.computes_fun' h_tapes_out)
       (h_path := by simp [StrEnc.toData])
-  -- Derive the head index and the `findIdx?` equation from the validity of `encodedTapes`.
-  set idx : ℕ := (-encodedTapes.params.start tapeIdx).toNat with hidx_def
-  obtain ⟨hhead, _⟩ := encodedTapes.h_vallid tapeIdx
-  have h_le : encodedTapes.params.start tapeIdx ≤ 0 := hhead.1
-  have h_lt : (0 : ℤ) - encodedTapes.params.start tapeIdx < encodedTapes.params.length := hhead.2
-  have hnn : 0 ≤ -encodedTapes.params.start tapeIdx := by omega
-  have h_idx_eq : (idx : ℤ) = -encodedTapes.params.start tapeIdx := by grind
-  have h_idx_lt : idx < (encodeTapes encodedTapes.tapes encodedTapes.params).length := by
-    have hlt : (idx : ℤ) < encodedTapes.params.length := by rw [h_idx_eq]; omega
-    have : idx < encodedTapes.params.length := by exact_mod_cast hlt
-    simpa [encodeTapes] using this
-  have h_pred :
-      (((encodeTapes encodedTapes.tapes encodedTapes.params)[idx]'h_idx_lt) tapeIdx).containsHead =
-        true := by
-    have h0 : encodedTapes.params.start tapeIdx + (idx : ℤ) = 0 := by rw [h_idx_eq]; omega
-    simp [encodeTapes, h0]
-  have h_contains_head :
-      (encodeTapes encodedTapes.tapes encodedTapes.params).findIdx?
-        (fun c => (c tapeIdx).containsHead) = some idx := by
-    rw [List.findIdx?_eq_some_iff_getElem]
-    refine ⟨h_idx_lt, h_pred, ?_⟩
-    intro j hji
-    have hjlen : j < (encodeTapes encodedTapes.tapes encodedTapes.params).length := by omega
-    have hjlen' : j < encodedTapes.params.length := by simpa [encodeTapes] using hjlen
-    simp only [encodeTapes, List.getElem_ofFn]
-    intro hbad
-    have heq0 : encodedTapes.params.start tapeIdx + (j : ℤ) = 0 := by simpa using hbad
-    have hj_eq : (j : ℤ) = -encodedTapes.params.start tapeIdx := by omega
-    have : (j : ℤ) = idx := by rw [hj_eq, ← h_idx_eq]
-    have : j = idx := by exact_mod_cast this
-    omega
   unfold getHeadSymbol
   rw [find_list.computes_fun h_tapes_aux h_copyHeadPos views
       (encodeTapes encodedTapes.tapes encodedTapes.params)
         (by simp [h_tapes, StrEnc.toData]) h_aux]
+  obtain ⟨⟨headValid1, headValid2⟩, _⟩ := encodedTapes.h_valid tapeIdx
+  simp at headValid2
+  -- Derive the head index and the `findIdx?` equation from the validity of `encodedTapes`.
+  let idx_z := -encodedTapes.params.start tapeIdx
+  let idx := idx_z.toNat
+  have h_idx_eq : (idx : ℤ) = idx_z := by simp_all [idx, idx_z]
+  have h_idx_lt : idx < (encodeTapes encodedTapes.tapes encodedTapes.params).length := by
+    simp_all [encodeTapes, idx, idx_z]
+  have h_pred :
+      (((encodeTapes encodedTapes.tapes encodedTapes.params)[idx]'h_idx_lt) tapeIdx).containsHead =
+        true := by
+    simp [encodeTapes, h_idx_eq, idx_z]
+  have h_contains_head : (encodeTapes encodedTapes.tapes encodedTapes.params).findIdx?
+        (fun c => (c tapeIdx).containsHead) = some idx := by
+    rw [List.findIdx?_eq_some_iff_getElem]
+    grind [encodeTapes]
   simp only [h_contains_head, TapeView.appendPath', seq_eval_struct]
   rw [h_copySymbol (encodeTapes encodedTapes.tapes encodedTapes.params)[idx]
         outl _
         (by simp [h_tapes, StrEnc.toData, h_idx_lt])
         (by simp [Function.update, h_outl, h_tapes_out.symm])]
-  simp only [Part.bind_some, outOfList_eval_struct, Part.coe_some, Part.some_inj]
-  rw [encodeTapes_getElem_of_containsHead h_idx_lt h_pred]
   simp
   grind
 
@@ -255,6 +238,21 @@ def getHeadSymbols (k : ℕ) (tapeCount : ℕ) (tapes out aux : Fin k) : MultiTa
   | 0 => noop
   | tapeCount + 1 =>
     getHeadSymbol k tapeCount tapes out aux ;ₜ getHeadSymbols k tapeCount tapes out aux
+
+omit [Fintype Symbol] [Inhabited Symbol] in
+lemma getHeadSymbols.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : Fin k)
+    (h_distinct : [tapes, aux, out].get.Injective)
+    {views : Fin k → TapeView}
+    {encodedTapes : EncodedTapes k' (Symbol := Symbol)}
+    (h_tapes : views tapes = .ofEnc encodedTapes)
+    (h_aux : views aux = TapeView.empty)
+    (outl : List (Option Symbol))
+    (h_outl : views out = .ofEnc outl) :
+    (getHeadSymbols k tk' tapes out aux).eval_struct views = .some (Function.update
+      -- FIx the next line, we should get all the head symbols.
+      views out (TapeView.ofEnc ((encodedTapes.tapes tapeIdx).head :: outl))) := by
+  -- prove by induction, after k'' steps, we het the last k'' head symbols on the output tape.
+  sorry
 
 /-- Execute a single step of the simulated machine. -/
 public def utm_step : MultiTapeTM 10 Char := sorry
