@@ -8,6 +8,7 @@ module
 
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Put
 public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Typed
+public import Cslib.Computability.Machines.MultiTapeTuring.Routines.Untyped
 
 namespace Turing
 namespace Routines
@@ -32,6 +33,12 @@ public lemma copyEnc_computes_fun {k : ℕ} {α : Type} [StrEnc α] {i j : Fin k
   intro x y views h_read h_write
   simp [copyEnc_eval_struct, h_ne]
   grind
+
+
+-- @[simp, grind .]
+-- public def copyEnc_computes_fun {k : ℕ} {i j : Fin k} (h_ne : i ≠ j) :
+--   ComputesFunctionReadPut (copyEnc i j) i j := by
+--   sorry
 
 end Routines
 end Turing

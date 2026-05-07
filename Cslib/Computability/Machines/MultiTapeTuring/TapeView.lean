@@ -97,6 +97,14 @@ public lemma current_atPath_length_sub_one_isSome_of_non_empty (tv : TapeView)
 @[expose, simp]
 public def parent (tv : TapeView) : TapeView := ⟨tv.data, tv.path.dropLast, tv.headPos, by simp⟩
 
+@[expose]
+public def parent_n (tv : TapeView) (n : ℕ) : TapeView :=
+  ⟨tv.data, tv.path.take (tv.path.length - n), tv.headPos, by simp⟩
+
+@[simp]
+public def parent_zero (tv : TapeView) : parent_n tv 0 = tv := by
+  simp [parent_n]
+
 -- @[simp]
 -- public lemma parent_data (tv : TapeView) : tv.parent.data = tv.data := by
 --   unfold parent
@@ -118,11 +126,19 @@ public def appendPath (tv : TapeView) (idx : ℕ)
     (h : (tv.current.atPath [idx]).isSome) : TapeView :=
   ⟨tv.data, tv.path ++ [idx], tv.headPos, by simpa using h⟩
 
-/-- Like `appendPath` but always sets `headPos` to `.leftEnd`. -/
+/-- Like `appendPath` but always sets `headPos` to `.leftEnd`.
+-- TODO rename to appendToPath or consPath or snocPath -/
 @[expose, simp]
 public def appendPath' (tv : TapeView) (idx : ℕ)
     (h : (tv.current.atPath [idx]).isSome) : TapeView :=
   ⟨tv.data, tv.path ++ [idx], .leftEnd, by simpa using h⟩
+
+
+/-- Like `appendPath` but always sets `headPos` to `.leftEnd`. -/
+@[expose, simp]
+public def appendPath'' (tv : TapeView) (path : List ℕ)
+    (h : (tv.current.atPath path).isSome) : TapeView :=
+  ⟨tv.data, tv.path ++ path, .leftEnd, by simpa using h⟩
 
 /-- Copy the `headPos` from `tv'` into `tv`, keeping all other fields. -/
 @[expose]
@@ -163,6 +179,13 @@ public lemma toLeftEnd_toRightEnd (tv : TapeView) :
 public lemma toRightEnd_toLeftEnd (tv : TapeView) :
   tv.toRightEnd.toLeftEnd = tv.toLeftEnd := by
   ext <;> simp_all
+
+-- /-- simp lemma that says that `(tv.appendPath' n _).parent = tv.toLeftEnd -/
+-- @[simp]
+-- public lemma parent_appendPath' (tv : TapeView) (idx : ℕ)
+--     (h : (tv.current.atPath [idx]).isSome) :
+--   (tv.appendPath' idx h).parent = tv.toLeftEnd := by
+--   simp [appendPath', parent, toLeftEnd]
 
 /-- The position of the head in the encoded version of the
     `TapeView`. -/
@@ -674,6 +697,12 @@ public def pushList (d : Data) (tv : TapeView) : TapeView :=
   match tv with
   | ⟨Data.list ds, [], headPos, _⟩ => ⟨Data.list (d :: ds), [], headPos, rfl⟩
   | other => other
+
+@[simp]
+public lemma pushList_ofData {x d : Data} :
+    (TapeView.ofData d).pushList x = TapeView.ofEnc (x :: d.toList) := by
+  simp [pushList, ofData, ofEnc]
+  sorry
 
 @[simp]
 public lemma pushList_list {d : Data} {ds : List Data} {headPos : HeadPos} :

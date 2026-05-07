@@ -159,6 +159,22 @@ public lemma atElem_computes_function {k : ℕ} {idx : ℕ} {i j : Fin k}
   rw [h_tm (fElem x) y _ (by simp; grind) (by grind)]
   simp [h_ne]
 
+/-- Like atElem, but execute tm₁ if the element exists and tm₂ otherwise. -/
+public def atElem? {k : ℕ} (idx : ℕ) (i : Fin k) (tm₁ tm₂ : MultiTapeTM k Char) :
+  MultiTapeTM k Char := sorry
+
+@[simp]
+public lemma atElem?_eval_struct {k : ℕ} {idx : ℕ} {i : Fin k} {tm₁ tm₂ : MultiTapeTM k Char}
+    {views : Fin k → TapeView} :
+    (atElem? idx i tm₁ tm₂).eval_struct views =
+      if h : ((views i).current.atPath [idx]).isSome then
+        (tm₁.eval_struct
+          (Function.update views i ((views i).appendPath' idx h))).map
+            fun views' => Function.update views' i ((views' i).parent.setHeadPosOf (views i))
+      else
+        (tm₂.eval_struct views) := by
+  sorry
+
 -- TODO this has a double toLeftEnd which is not needed.
 
 /-- Move into the given path, then execute `tm` and then move out again. -/
@@ -199,6 +215,37 @@ public lemma atPath_computes_function {k : ℕ} {path : List ℕ} {i j : Fin k}
         (by simp [h_ne.symm, h_views_j]) d₁ (by simp; grind) h_tail]
     simp [h_ne]
 
+
+/-- Move into the given path, if it exists, then execute `tm₁` and then move out again,
+if it does not exist, execute `tm₂` at the initial position. -/
+public def atPath? {k : ℕ} (path : List ℕ) (i : Fin k) (tm₁ tm₂ : MultiTapeTM k Char) :
+    MultiTapeTM k Char :=
+  match path with
+  | [] => atLeft i tm₁
+  | n :: path' => atElem? n i (atPath? path' i tm₁ (outOfList i ;ₜ tm₂)) tm₂
+
+
+@[simp]
+public lemma atPath?_eval_struct {k : ℕ} {path : List ℕ} {i : Fin k} {tm₁ tm₂ : MultiTapeTM k Char}
+    {views : Fin k → TapeView} :
+    (atPath? path i tm₁ tm₂).eval_struct views =
+      if h : ((views i).current.atPath path).isSome then
+        (tm₁.eval_struct (Function.update views i ((views i).appendPath'' path h))).map
+          fun views' => Function.update views' i
+            (((views' i).parent_n path.length).setHeadPosOf (views i))
+      else
+        (tm₂.eval_struct views) := by
+  induction path generalizing views tm₁ tm₂ with
+  | nil => simp [atPath?]
+  | cons n path' ih =>
+    unfold atPath?
+    by_cases h : ((views i).current.atPath [n]).isSome
+    · simp [h, -TapeView.parent, -TapeView.appendPath', -TapeView.appendPath'']
+      rw [ih]
+      simp
+      sorry
+    · simp [h]
+      sorry -- TODO what is left is the first case which is a contradiction
 
 end Routines
 end Turing

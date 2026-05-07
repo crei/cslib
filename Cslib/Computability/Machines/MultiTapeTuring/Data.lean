@@ -18,6 +18,10 @@ public inductive Data where
   /-- A list of data values. -/
   | list : List Data → Data
 
+public abbrev Data.empty : Data := Data.list []
+
+public abbrev Data.cons : Data → Data → Data := fun d ⟨ds⟩ => Data.list (d :: ds)
+
 /-- Extract the list of children from a `Data` value. -/
 @[expose]
 public abbrev Data.toList : Data → List Data
@@ -291,6 +295,11 @@ public lemma Data.atPath_append {d : Data} {path₁ path₂ : List ℕ} :
     cases d with
     | list ds => grind [Data.atPath]
 
+public lemma Data.atPath_isSome_of_cons_isSome {d : Data} {i : ℕ} {path : List ℕ}
+    (h : (d.atPath (i :: path)).isSome) :
+    (d.atPath [i]).isSome := by
+  sorry
+
 @[simp]
 public lemma Data.atPath_get_atPath {d : Data} {path₁ path₂ : List ℕ}
     (h_valid : (d.atPath path₁).isSome) :
@@ -321,6 +330,14 @@ public lemma Data.atPath_dropLast_bind_getLast {d : Data} {path : List ℕ}
   conv_rhs => rw [show path = path.dropLast ++ [path.getLast?.get h_path] from by
     simp [List.dropLast_append_getLast?]]
   simp [Data.atPath_append]
+
+
+@[simp]
+public lemma Data.atPath_take_isSome_of_isSome {d : Data} {path : List ℕ} {n : ℕ}
+    (h_is_some : (d.atPath path).isSome) :
+  (d.atPath (path.take n)).isSome := by
+  sorry
+
 
 public lemma Data.atPath_isSome_of_le_isSome {d : Data} {i₁ i₂ : ℕ}
     (h_le : i₁ ≤ i₂)
@@ -473,10 +490,10 @@ public lemma atPath_toData_one_pair {α β : Type*} [StrEnc α] [StrEnc β]
     graph: a list of `(a, f a)` pairs.
     Not registered as an instance to avoid overlap with `Fin k → α`.
     Activate with `letI := StrEnc.ofFunction α β`. -/
-@[reducible]
-public noncomputable def StrEnc.ofFunction (α : Type) (β : Type*)
-    [Fintype α] [StrEnc α] [StrEnc β] : StrEnc (α → β) where
-  toData f := StrEnc.toData (Finset.univ.val.toList.map fun a => (a, f a))
+@[reducible, expose]
+public def StrEnc.ofFunction (α : Type) (β : Type*)
+    [Fintype α] [LinearOrder α] [StrEnc α] [StrEnc β] : StrEnc (α → β) where
+  toData f := StrEnc.toData ((Finset.univ.sort (· ≤ ·)).map fun a => (a, f a))
 
 /-- `StrEnc` instance for any `Encodable` type via its encoding to `ℕ`.
     Not registered as an instance to avoid overlap with specific encodings

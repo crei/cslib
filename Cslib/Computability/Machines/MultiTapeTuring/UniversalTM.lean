@@ -160,9 +160,31 @@ public def updateEncodingParams {k : ℕ} (tm : MultiTapeTM k Symbol)
   --     | .some .right => 1
   --     | .some .left => -1)
 
+-- TODO: Can we describe the semantics of getHeadSymbol on Data itself?
+-- This way, we could maybe use Data-based lemmas only and thus
+-- unconditional simp lemmas. One problem might be that the atPath
+-- combinator does not work in all cases.
+-- Solution: We define `ifHasElem idx tm\₁tm\2`. Using this, define `atPath` to only do
+-- something if the path exists.
+-- then find_list compares to `StrEnc.toData true` - if nothing was executed,
+-- it is false.
+-- So the discriminator in the list search  is `d.atPath [tapeIdx, 1] == some (StrEnc.toData true)`
+-- which is equivalent to `(tcs tapeIdx).containsHead` if `d = StrEnc.toData tcs`
+
 /-- Copies the symbol under the head of tape `tapeIdx` from the multi-track tape `tape` to
 tape `out` using the auxiliary tape `aux`. -/
-def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (tapes out aux : Fin k) : MultiTapeTM k Char :=
+def getHeadSymbol_v2 {k : ℕ} (tapeIdx : ℕ) (tapes out aux : Fin k) : MultiTapeTM k Char :=
+  find_list tapes aux
+    -- Find the cell where the tapeIdx-th tape has the head
+    (atPath? [tapeIdx, 1] tapes (copyEnc tapes aux) noop)
+    -- copy the symbol to out and move back to the start of the list.
+    (atPath? [tapeIdx, 0] tapes (copy_to_list tapes out) noop ;ₜ outOfList tapes)
+    -- otherwise do nothing (because we know there is a head marker)
+    (noop)
+
+/-- Copies the symbol under the head of tape `tapeIdx` from the multi-track tape `tape` to
+tape `out` using the auxiliary tape `aux`. -/
+def getHeadSymbol {k : ℕ} (tapeIdx : ℕ) (tapes out aux : Fin k) : MultiTapeTM k Char :=
   find_list tapes aux
     -- Find the cell where the tapeIdx-th tape has the head
     (atPath [tapeIdx, 1] tapes (copyEnc tapes aux))
@@ -181,7 +203,7 @@ lemma getHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : F
     (h_aux : views aux = TapeView.empty)
     (outl : List (Option Symbol))
     (h_outl : views out = .ofEnc outl) :
-    (getHeadSymbol k tapeIdx tapes out aux).eval_struct views = .some (Function.update
+    (getHeadSymbol tapeIdx tapes out aux).eval_struct views = .some (Function.update
       views out (TapeView.ofEnc ((encodedTapes.tapes tapeIdx).head :: outl))) := by
   have h_tapes_aux : tapes ≠ aux :=
     Function.Injective.ne h_distinct (show (0 : Fin 3) ≠ 1 by decide)
@@ -192,7 +214,13 @@ lemma getHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : F
       (atPath [tapeIdx, 1] tapes (copyEnc tapes aux))
       (fun (tcs : Fin k' → TapeCell Symbol) _ => (tcs tapeIdx).containsHead)
       tapes aux :=
-      atPath_computes_function h_tapes_aux
+      atPath_computes_function
+        (α := Fin k' → TapeCell Symbol)
+        (β := Bool)
+        (γ := Bool)
+        (tm := copyEnc tapes aux)
+        (path := [tapeIdx, 1])
+        h_tapes_aux
         (h_tm := copyEnc_computes_fun h_tapes_aux)
         (h_path := by simp [StrEnc.toData])
   have h_copySymbol :
@@ -233,11 +261,11 @@ lemma getHeadSymbol.semantics {k k' : ℕ} (tapeIdx : Fin k') (tapes out aux : F
 
 /-- Copies symbols under the heads of all tapes for `tapeCount` tapes from the multi-track
 tape `tapes` to tape `out` using the auxiliary tape `aux`. -/
-def getHeadSymbols (k : ℕ) (tapeCount : ℕ) (tapes out aux : Fin k) : MultiTapeTM k Char :=
+def getHeadSymbols {k : ℕ} (tapeCount : ℕ) (tapes out aux : Fin k) : MultiTapeTM k Char :=
   match tapeCount with
   | 0 => noop
   | tapeCount + 1 =>
-    getHeadSymbol k tapeCount tapes out aux ;ₜ getHeadSymbols k tapeCount tapes out aux
+    getHeadSymbol tapeCount tapes out aux ;ₜ getHeadSymbols tapeCount tapes out aux
 
 omit [Fintype Symbol] [Inhabited Symbol] in
 lemma getHeadSymbols.semantics {k k' : ℕ} (tapes out aux : Fin k)
@@ -248,7 +276,7 @@ lemma getHeadSymbols.semantics {k k' : ℕ} (tapes out aux : Fin k)
     (h_aux : views aux = TapeView.empty)
     (outl : List (Option Symbol))
     (h_outl : views out = .ofEnc outl) :
-    (getHeadSymbols k k' tapes out aux).eval_struct views = .some (Function.update
+    (getHeadSymbols k' tapes out aux).eval_struct views = .some (Function.update
       views out (TapeView.ofEnc
         ((List.ofFn (fun i : Fin k' => (encodedTapes.tapes i).head)) ++ outl))) := by
   have h_tapes_out : tapes ≠ out :=
@@ -259,14 +287,13 @@ lemma getHeadSymbols.semantics {k k' : ℕ} (tapes out aux : Fin k)
       (outl : List (Option Symbol)),
       views tapes = .ofEnc encodedTapes → views aux = TapeView.empty →
       views out = .ofEnc outl →
-      (getHeadSymbols k tc tapes out aux).eval_struct views = .some (Function.update
+      (getHeadSymbols tc tapes out aux).eval_struct views = .some (Function.update
         views out (TapeView.ofEnc ((List.ofFn (fun i : Fin tc =>
           (encodedTapes.tapes (Fin.castLE h_le i)).head)) ++ outl))) by
     simpa using h k' (le_refl _) outl h_tapes h_aux h_outl
   intro tc h_le views outl h_tapes h_aux h_outl
   induction tc generalizing views outl with
-  | zero =>
-    simp [getHeadSymbols, noop.eval_struct, ← h_outl]
+  | zero => simp [getHeadSymbols, h_outl]
   | succ tc ih =>
     unfold getHeadSymbols
     rw [seq_eval_struct,
@@ -278,6 +305,27 @@ lemma getHeadSymbols.semantics {k k' : ℕ} (tapes out aux : Fin k)
     rw [Function.update_idem, List.ofFn_succ' (n := tc)
       (f := fun i : Fin (tc+1) => (encodedTapes.tapes (Fin.castLE h_le i)).head)]
     simp [Fin.castLE]
+
+def provideTransitionInput {k : ℕ} (tapeCount : ℕ)
+    (state tapes out aux : Fin k) : MultiTapeTM k Char :=
+  replace Data.empty out ;ₜ getHeadSymbols tapeCount tapes out aux ;ₜ copy_to_list state out
+
+-- states, tapes, out, aux: 1 2 3 4
+omit [Fintype Symbol] [Inhabited Symbol] in
+lemma provideTransitionInput.semantics {k' : ℕ}
+    {views : Fin 5 → TapeView}
+    {encodedTapes : EncodedTapes k' (Symbol := Symbol)}
+    (h_tapes : views 2 = .ofEnc encodedTapes)
+    (h_aux : views 4 = TapeView.empty) :
+    (provideTransitionInput k' 1 2 3 4).eval_struct views = .some (Function.update
+      views 3 (TapeView.ofEnc ((views 1).current ::
+        List.ofFn fun i : Fin k' => StrEnc.toData (encodedTapes.tapes i).head))) := by
+  simp only [provideTransitionInput, seq_eval_struct, replace.eval_struct,
+             Part.coe_some, Part.bind_some]
+  rw [getHeadSymbols.semantics (encodedTapes := encodedTapes) (Symbol := Symbol) 2 3 4 (by decide)
+      (by simp [h_tapes]) (by simp [h_aux]) [] (by simp [StrEnc.toData])]
+  simp
+  congr
 
 /-- Execute a single step of the simulated machine. -/
 public def utm_step : MultiTapeTM 10 Char := sorry

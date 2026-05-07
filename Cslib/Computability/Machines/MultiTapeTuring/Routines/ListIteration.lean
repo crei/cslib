@@ -228,5 +228,23 @@ public theorem find_list.computes_fun {k : ℕ} {i j : Fin k}
       | none => tm₃.eval_struct views := by
   sorry
 
+-- public theorem find_list.eval_struct {k : ℕ} {i j : Fin k}
+--     (h_neq : i ≠ j)
+--     {tm₁ tm₂ tm₃ : MultiTapeTM k Char}
+--     (halts₁ : AlwaysHaltsOnStruct tm₁)
+--     -- {f : α → Bool}
+--     -- TODO maybe instead of this, we need that tm₁ does not modify tape i.
+--     -- (h_comp₁ : computes_function_read_replace tm₁ f i j)
+--     (views : Fin k → TapeView) :
+--     (find_list i j tm₁ tm₂ tm₃).eval_struct views =
+--       let length := (views i).current.toList.length
+--       let condition := fun (⟨idx, h⟩ : Fin length) => (tm₁.eval_struct_tot halts₁
+--           (Function.update views i ((views i).appendPath' idx (by sorry)))
+--             j).current = StrEnc.toData true
+--       match Fin.find? condition with
+--       | some idx => tm₂.eval_struct (Function.update views i ((views i).appendPath' idx (by sorry)))
+--       | none => tm₃.eval_struct views := by
+--   sorry
+
 end Routines
 end Turing
