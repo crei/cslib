@@ -38,7 +38,9 @@ inductive Data where
   | l : List Data → Data
 deriving Repr, BEq
 
-def Data.asList
+abbrev Data.empty := Data.l []
+
+abbrev Data.asList
   | Data.l xs => xs
 
 abbrev TapeIndex := ℕ
@@ -61,6 +63,10 @@ inductive Operation where
   | copy   : TapeIndex → Operation
   -- cons tape h and tape t to a new tape (h :: t)
   | cons   : TapeIndex → TapeIndex → Operation
+  -- head of the data if it exists, or empty otherwise
+  | head   : TapeIndex → Operation
+  -- tail of the data
+  | tail   : TapeIndex → Operation
   -- compare two tapes, returning empty if equal, nonempty otherwise
   | eq     : TapeIndex → TapeIndex → Operation
   -- branch on tape i: if empty then then_ else else_
@@ -89,57 +95,60 @@ abbrev Prog := List Operation
 -- that allows us to build space-efficient algorithms: We implicitly overwrite the old
 -- accumulator value even though there is no explicit "overwrite" or "free" operation.
 
+abbrev dataTrue := Data.l [Data.l []]
+abbrev dataFalse := Data.l []
+
 -- Interpreter:
 -- It returns Part.none if the program does not terminate and Part.some Option.none if the
 -- program is not well-formed.
 mutual
-  def evalOp (stack : List Data) (op : Operation) : Part (Option (List Data)) := match op with
-    | .empty      => .some (some (stack ++ [Data.l []]))
-    | .copy  i    => .some (do stack ++ [← stack[i]?])
-    | .cons  h t  =>
-        .some (do
-          let hv ← stack[h]?
-          let tv ← stack[h]?
-          return stack ++ [Data.l (hv :: tv.asList)])
+  def evalOp (stack : List Data) (op : Operation) : Part (Option Data) := match op with
+    | .empty => .some (some Data.empty)
+    | .copy i => .some stack[i]?
+    | .cons h t =>
+        .some do Data.l ((← stack[h]?) :: (← stack[t]?).asList)
+    | .head i =>
+        .some (do (← stack[i]?).asList.headD Data.empty)
+    | .tail i =>
+        .some (do Data.l (← stack[i]?).asList.tail)
     | .eq i j =>
-        .some (do
-          let a ← stack[i]?
-          let b ← stack[j]?
-          stack ++ [if a == b then Data.l [] else Data.l [Data.l []]])
-    | .ite i then_ else_ =>
-        match stack[i]? with
-        | none     => .some none
-        | some cond =>
-          if cond == Data.l [] then evalProg then_ stack else evalProg else_ stack
-    | .fold  l i body => match (stack[l]?, stack[i]?) with
-        | (some list, some initial) =>
-          (goFold list.asList initial stack body).map (fun result => result.map (stack ++ [·]))
+        .some (do if (← stack[i]?) == (← stack[j]?) then dataTrue else dataFalse)
+    | .ite i then_ else_ => match stack[i]? with
+        | none => .some none
+        | some d => if d == dataTrue then evalProg then_ stack else evalProg else_ stack
+    | .fold l i body => match (stack[l]?, stack[i]?) with
+        | (some list, some initial) => goFold list.asList initial stack body
         | _ => .some none
     | .while_ i body =>
         match stack[i]? with
         | none     => .some none
-        | some acc => sorry -- use Part.fix
+        | some acc =>
+          -- recurse as long as the head of the returned value is true (the rest is used
+          -- to pass data across iterations).
+          let F := fun rec d => (evalProg body (d :: stack)).bind fun
+              | none => .some none
+              | some d => if d.asList.head? == dataTrue then rec d else Data.l d.asList.tail
+          Part.fix F acc
 
 
-  def goFold (children : List Data) (acc : Data)
-      (stack : List Data) (body : Prog) : Part (Option Data) :=
-    match children with
+  def goFold (items : List Data) (acc : Data) (stack : List Data) (body : Prog) :
+      Part (Option Data) :=
+    match items with
     | []      => .some (some acc)
     | c :: cs =>
       -- Put the item and the accumulator on two new tapes and run the program.
       -- take the contents of the last tape as the result / new accumulator.
-      (evalProg body (stack ++ [c, acc])).bind fun result =>
-        match result >>= (·.getLast?) with
+      (evalProg body (c :: acc :: stack)).bind fun result =>
+        match result with
         | none      => .some none
         | some acc' => goFold cs acc' stack body
 
-  def evalProg (p : Prog) (stack : List Data) : Part (Option (List Data)) := match p with
-    | []           => .some (some stack)
+  def evalProg (p : Prog) (stack : List Data) : Part (Option Data) := match p with
+    | []           => .some stack.head?
     | op :: rest   =>
-      (evalOp stack op).bind fun result =>
-        match result with
+      (evalOp stack op).bind fun
         | none   => .some none
-        | some stack' => evalProg rest stack'
+        | some r => evalProg rest (r :: stack)
 end
 
 -- `Part` is annoying but unfortunately needed. Since we are dealing with complexity, all programs
