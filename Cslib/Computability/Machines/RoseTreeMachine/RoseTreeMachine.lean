@@ -108,9 +108,10 @@ end
 
 -- TODO define space measure:
 -- elementary operations incur the size of their output as additional space
--- fold incurs space of init plus the max of the space of the step function - this is the crucial point
--- that allows us to build space-efficient algorithms: We implicitly overwrite the old
--- accumulator value even though there is no explicit "overwrite" or "free" operation.
+-- fold incurs space of init plus the max of the space of the step function
+-- this is the crucial point that allows us to build space-efficient algorithms:
+-- We implicitly overwrite the old accumulator value even though there is no
+-- explicit "overwrite" or "free" operation.
 
 abbrev dataTrue := Data.l [Data.l []]
 abbrev dataFalse := Data.l []
@@ -233,73 +234,131 @@ theorem whileFree_total (p : WellFormedProgram) (hwf : WhileFreeProg p.prog) : p
 --   sorry
 
 
--- The problem with the current programs is that they reference stack slots relative to the stack
--- head, so they are constantly shifting. The following Builder monad makes that easier:
+-- ================= Builder monad
+--
+-- The problem with writing programs directly is that tape indices are top-relative
+-- (0 = newest item), so every push shifts all existing indices by 1.
+--
+-- The builder monad solves this by working with *bottom-indexed* references internally.
+-- A `Ref` stores the absolute position of a stack slot counting from the bottom (oldest = 0).
+-- Bottom-indices are stable: pushing a new item never changes any existing Ref.
+-- When an Operation is about to be emitted, `Ref.toIdx` converts the stored bottom-index
+-- to the top-relative index expected by the machine: `currentHeight - 1 - bottomIndex`.
+--
+-- Sub-program builders (for ite/fold/while_) are created with `n_initial` set to the
+-- outer stack height at the point of the combinator plus any extra items prepended by
+-- the combinator (2 for fold, 1 for while_). Outer Refs pass into sub-builders unchanged
+-- because their bottom-indices remain valid.
 
-def AbsoluteIndex := ℕ
+/-- Monad state: the initial stack size for this (sub-)program and the ops collected so far. -/
+structure BuildCtx where
+  n_initial : ℕ
+  prog : Prog := []
 
-structure IndexAllocator where
-  initialStackSize : ℕ
-  prog : Prog
+/-- The builder monad. -/
+abbrev Build (α : Type) := StateT BuildCtx (Except String) α
 
-abbrev Build (α : Type) := StateT IndexAllocator (Except String) α
+/-- A stable reference to a stack slot.  The value is the slot's bottom-index:
+    position from the bottom of the conceptual stack (oldest item = 0).
+    Using `abbrev` so all `ℕ` instances (LE, Sub, ToString, …) are inherited. -/
+abbrev Ref := ℕ
 
--- Only way to allocate a slot
-def newSlot (op : String) : Build Slot := do
-  let env ← get
-  let sid := env.next
-  set { env with next := sid + 1, ops := env.ops ++ [op] }
-  return ⟨sid⟩
+/-- Current stack height (= n_initial + number of ops emitted so far). -/
+def Build.currentHeight : Build ℕ := do
+  let ctx ← get
+  return ctx.n_initial + ctx.prog.length
 
--- ============================================================
--- SLOT PRIMITIVES
--- ============================================================
+/-- Convert a stable `Ref` to its current top-relative index (for use in Operations).
+    Throws if the ref is out of range. -/
+def Ref.toIdx (r : Ref) : Build TapeIndex := do
+  let h ← Build.currentHeight
+  if r ≥ h then throw s!"Ref {r} is out of range (current height {h})"
+  return h - 1 - r
 
--- Allocate a slot holding Data.l []
-def new : Build Slot :=
-  newSlot "new"
+/-- Emit one operation and return a `Ref` to the slot it creates. -/
+private def emit (op : Operation) : Build Ref := do
+  let ctx ← get
+  let b : Ref := ctx.n_initial + ctx.prog.length
+  set { ctx with prog := ctx.prog ++ [op] }
+  return b
 
+/-- Obtain a `Ref` to an item that already exists in the initial stack.
+    `j = 0` is the top of the initial stack, `j = n_initial - 1` is the bottom. -/
+def Build.inputRef (j : TapeIndex) : Build Ref := do
+  let ctx ← get
+  if j ≥ ctx.n_initial then
+    throw s!"inputRef {j} is out of range (n_initial = {ctx.n_initial})"
+  return ctx.n_initial - 1 - j
 
-def bit0 : Build Slot := new
-def bit1 : Build Slot := true_
+-- ── Primitive operations ──────────────────────────────────────────────────────
 
-def addBits (a b carry : Slot) : Build (Slot × Slot) := do
-  let sumBit   ← xor_ (← xor_ a b) carry
-  let carryOut ← if_ (← and_ a b)
-    true_
-    (and_ b carry)
-  return (sumBit, carryOut)
+def Build.empty : Build Ref := emit .empty
 
--- Add two binary numbers — O(n²) time, O(n) space
-def add (a b : Slot) : Build Slot := do
-  let (acc, bRest, carry) ← fold a (← new, b, ← bit0)
-    (fun aBit (acc, bRest, carry) => do
-      let (bBit, bTail) ← if_ bRest
-        (fold bRest (← bit0, ← new)
-          (fun h _ => return (h, ← new)))  -- take head of bRest
-        (do return (← bit0, ← new))        -- b exhausted
-      let (s, c) ← addBits aBit bBit carry
-      return (← cons s acc, bTail, c))
-  let (acc2, carry2) ← fold bRest (acc, carry)
-    (fun bBit (acc, carry) => do
-      let (s, c) ← addBits (← bit0) bBit carry
-      return (← cons s acc, c))
-  if_ carry2
-    (cons (← bit1) acc2)
-    (return acc2)
+def Build.cons (h t : Ref) : Build Ref := do emit (.cons (← h.toIdx) (← t.toIdx))
 
+def Build.head (r : Ref) : Build Ref := do emit (.head (← r.toIdx))
 
-def appendOp (op : Operation) : Build TapeIndex := do
-  let prog ← get
-  let idx := prog.length
-  set (prog ++ [op])
-  return idx
+def Build.tail (r : Ref) : Build Ref := do emit (.tail (← r.toIdx))
 
-def empty : Build TapeIndex := appendOp .empty
+def Build.eq (r s : Ref) : Build Ref := do emit (.eq (← r.toIdx) (← s.toIdx))
 
-def cons (h t : TapeIndex) : Build TapeIndex := appendOp (.cons h t)
+-- ── Combinators ───────────────────────────────────────────────────────────────
 
-def eq (i j : TapeIndex) : Build TapeIndex := appendOp (.eq i j)
+/-- Run a sub-program builder in a fresh context whose initial stack = the current
+    outer stack height plus `extra` items prepended on top.
+    Returns the compiled `Prog`.  The `Ref`s returned by `inner` are bottom-indices
+    valid in the sub-context; `extraRefs` are the `Ref`s for the `extra` prepended
+    items (index 0 = topmost prepended item). -/
+private def Build.subProg (extra : ℕ) (inner : Array Ref → Build Ref)
+    : Build Prog := do
+  let h ← Build.currentHeight
+  let n_initial_inner := h + extra
+  -- Bottom-indices for the `extra` prepended items (top item = h + extra - 1, …)
+  let extraRefs : Array Ref := (Array.range extra).map (fun k => h + extra - 1 - k)
+  let (_, innerCtx) ←
+    liftM (StateT.run (inner extraRefs) ({ n_initial := n_initial_inner } : BuildCtx))
+  return innerCtx.prog
 
-def ite_ (cond : TapeIndex) (then_ else_ : Prog) : Build TapeIndex := do
-  appendOp (.ite cond (getThenProg) (getElseProg))
+/-- Branch on `cond`: if `cond == dataTrue` run `then_`, else run `else_`.
+    Both branches receive no extra prepended items (same stack as the outer context
+    at the ite op).  Each branch builder must return the `Ref` it wants as the result. -/
+def Build.ite (cond : Ref) (then_ else_ : Build Ref) : Build Ref := do
+  let ci ← cond.toIdx
+  let thenProg ← Build.subProg 0 (fun _ => then_)
+  let elseProg ← Build.subProg 0 (fun _ => else_)
+  emit (.ite ci thenProg elseProg)
+
+/-- Fold over the children of `list_`, starting with accumulator `acc_`, using `body`.
+    `body` receives two `Ref`s: the current child (index 0) and the current accumulator
+    (index 1), plus all outer `Ref`s remain valid unchanged. -/
+def Build.fold (list_ acc_ : Ref) (body : Ref → Ref → Build Ref) : Build Ref := do
+  let li ← list_.toIdx
+  let ai ← acc_.toIdx
+  let bodyProg ← Build.subProg 2 (fun extra => body extra[0]! extra[1]!)
+  emit (.fold li ai bodyProg)
+
+/-- While `cond_` is nonempty, run `body`.
+    `body` receives one `Ref` for the current accumulator (= current value of `cond_`). -/
+def Build.while_ (cond_ : Ref) (body : Ref → Build Ref) : Build Ref := do
+  let ci ← cond_.toIdx
+  let bodyProg ← Build.subProg 1 (fun extra => body extra[0]!)
+  emit (.while_ ci bodyProg)
+
+-- ── Running the builder ───────────────────────────────────────────────────────
+
+/-- Run a builder that starts with `n_initial` pre-existing stack items.
+    The builder returns the `Ref` it considers the result.
+    `run` checks that the result `Ref` is the top of the final stack (top-index 0),
+    i.e., the result is the last emitted op, and returns the completed `Prog`. -/
+def Build.run (n_initial : ℕ) (b : Build Ref) : Except String Prog := do
+  let (resultRef, ctx) ← StateT.run b { n_initial }
+  let finalHeight := n_initial + ctx.prog.length
+  if finalHeight = 0 then throw "empty program with empty initial stack"
+  let resultIdx := finalHeight - 1 - resultRef
+  if resultIdx ≠ 0 then
+    throw s!"result Ref is not at the top of the stack (top-index {resultIdx}, expected 0)"
+  return ctx.prog
+
+/-- `Build.run` for programs that take no initial input (n_initial = 0 would violate
+    WFProg at the empty case, so callers must ensure at least one op is emitted). -/
+def Build.runFresh (b : Build Ref) : Except String Prog := Build.run 0 b
