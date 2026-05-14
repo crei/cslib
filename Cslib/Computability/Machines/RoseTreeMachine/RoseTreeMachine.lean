@@ -78,8 +78,28 @@ inductive Operation where
 
 abbrev Prog := List Operation
 
+mutual
+  /-- `WFOp n op` states that `op` is well-formed when the current stack has `n` entries.
+      All tape indices must be in bounds, and sub-programs must be well-formed at the
+      appropriate derived stack heights. -/
+  def WFOp (n : ℕ) : Operation → Prop
+    | .empty      => True
+    | .copy i     => i < n
+    | .cons h t   => h < n ∧ t < n
+    | .head i     => i < n
+    | .tail i     => i < n
+    | .eq i j     => i < n ∧ j < n
+    | .ite i t e  => i < n ∧ WFProg n t ∧ WFProg n e
+    | .fold l i b => l < n ∧ i < n ∧ WFProg (n + 2) b
+    | .while_ i b => i < n ∧ WFProg (n + 1) b
 
--- TODO define a well-formedness Prop that ensures that tape indices are all in bounds.
+  /-- `WFProg n p` states that `p` is well-formed given an initial stack of size `n`.
+      Since each operation pushes exactly one value, the k-th operation (0-indexed) sees
+      a stack of size `n + k`, so the tail of the program is checked at height `n + 1`. -/
+  def WFProg : ℕ → Prog → Prop
+    | n, []         => n ≠ 0 -- we require this because a program has to return a result.
+    | n, op :: rest => WFOp n op ∧ WFProg (n + 1) rest
+end
 
 -- One could define a monadic builder-pattern that handles tape index allocation:
 -- def filter (a : TapeIndex) (predicate : TapeIndex → Build TapeIndex) : Build TapeIndex := do
@@ -98,63 +118,72 @@ abbrev Prog := List Operation
 abbrev dataTrue := Data.l [Data.l []]
 abbrev dataFalse := Data.l []
 
+
 -- Interpreter:
 -- It returns Part.none if the program does not terminate and Part.some Option.none if the
 -- program is not well-formed.
 mutual
-  def evalOp (stack : List Data) (op : Operation) : Part (Option Data) := match op with
-    | .empty => .some (some Data.empty)
-    | .copy i => .some stack[i]?
+  def evalOp (stack : List Data) (op : Operation) (h_wf : WFOp stack.length op) : Part Data := match op with
+    | .empty => .some Data.empty
+    | .copy i => .some stack[i]
     | .cons h t =>
-        .some do Data.l ((← stack[h]?) :: (← stack[t]?).asList)
-    | .head i =>
-        .some (do (← stack[i]?).asList.headD Data.empty)
-    | .tail i =>
-        .some (do Data.l (← stack[i]?).asList.tail)
+      let ⟨h₁, h₂⟩ := h_wf
+      .some (Data.l (stack[h] :: stack[t].asList))
+    | .head i => .some (stack[i].asList.headD Data.empty)
+    | .tail i => .some (Data.l stack[i].asList.tail)
     | .eq i j =>
-        .some (do if (← stack[i]?) == (← stack[j]?) then dataTrue else dataFalse)
-    | .ite i then_ else_ => match stack[i]? with
-        | none => .some none
-        | some d => if d == dataTrue then evalProg then_ stack else evalProg else_ stack
-    | .fold l i body => match (stack[l]?, stack[i]?) with
-        | (some list, some initial) => goFold list.asList initial stack body
-        | _ => .some none
+      let ⟨h₁, h₂⟩ := h_wf
+      .some (if stack[i] == stack[j] then dataTrue else dataFalse)
+    | .ite i then_ else_ =>
+       let ⟨h₁, h₂, h₃⟩ := h_wf
+       if stack[i] == dataTrue then evalProg then_ stack h₂ else evalProg else_ stack h₃
+    | .fold list initial body =>
+       let ⟨h₁, h₂, h₃⟩ := h_wf
+       goFold stack[list].asList stack[initial] stack body h₃
     | .while_ i body =>
-        match stack[i]? with
-        | none     => .some none
-        | some acc =>
-          -- recurse as long as the head of the returned value is true (the rest is used
-          -- to pass data across iterations).
-          let F := fun rec d => (evalProg body (d :: stack)).bind fun
-              | none => .some none
-              | some d => if d.asList.head? == dataTrue then rec d else Data.l d.asList.tail
-          Part.fix F acc
+       let ⟨h₁, h₂⟩ := h_wf
+        -- recurse as long as the head of the returned value is true (the rest is used
+        -- to pass data across iterations).
+        let F := fun rec d =>
+          (evalProg body (d :: stack) h₂).bind fun d =>
+            if d.asList.head? == dataTrue then rec d else Data.l d.asList.tail
+        Part.fix F stack[i]
 
-
-  def goFold (items : List Data) (acc : Data) (stack : List Data) (body : Prog) :
-      Part (Option Data) :=
+  def goFold (items : List Data) (acc : Data) (stack : List Data) (body : Prog)
+      (h_wf : WFProg (stack.length + 2) body) : Part Data :=
     match items with
-    | []      => .some (some acc)
+    | []      => .some acc
     | c :: cs =>
       -- Put the item and the accumulator on two new tapes and run the program.
       -- take the contents of the last tape as the result / new accumulator.
-      (evalProg body (c :: acc :: stack)).bind fun result =>
-        match result with
-        | none      => .some none
-        | some acc' => goFold cs acc' stack body
+      (evalProg body (c :: acc :: stack) h_wf).bind fun acc' => goFold cs acc' stack body h_wf
 
-  def evalProg (p : Prog) (stack : List Data) : Part (Option Data) := match p with
-    | []           => .some stack.head?
-    | op :: rest   =>
-      (evalOp stack op).bind fun
-        | none   => .some none
-        | some r => evalProg rest (r :: stack)
+  def evalProg (prog : Prog) (stack : List Data) (h_wf : WFProg stack.length prog) : Part Data :=
+    match prog with
+      | []           => .some (stack.head (by grind [WFProg]))
+      | op :: rest   =>
+        let ⟨h_wf_head, h_wf_tail⟩ := h_wf
+        (evalOp stack op h_wf_head).bind fun r => evalProg rest (r :: stack) h_wf_tail
 end
 
--- `Part` is annoying but unfortunately needed. Since we are dealing with complexity, all programs
--- should compute total functions, so we define totality as a prop. Of course, any program that
--- does not use while_ is total. This can be hopefully derived structurally using simp lemmas and thus
--- should auto-solve in simp lemmas.
+structure WellFormedProgram where
+  prog : Prog
+  inputs : ℕ
+  h_wf : WFProg inputs prog
+
+def FunType (wf : WellFormedProgram) : Type :=
+  let rec of_input_count := fun
+    | 0 => Data
+    | n + 1 => Data → of_input_count n
+  of_input_count wf.inputs
+
+def WellFormedProgram.eval (h_wf : WellFormedProgram)
+    (stack : List Data) (h_len : stack.length = h_wf.inputs) : Part Data :=
+  evalProg h_wf.prog stack (by simpa [h_len] using h_wf.h_wf)
+
+def WellFormedProgram.Total (wfp : WellFormedProgram) : Prop :=
+  ∀ (stack : List Data) (h_len : stack.length = wfp.inputs), (wfp.eval stack h_len).Dom
+
 
 mutual
   def WhileFreeOp : Operation → Prop
@@ -167,11 +196,9 @@ mutual
     | op :: rest => WhileFreeOp op ∧ WhileFreeProg rest
 end
 
-def ComputesTotalFunction (prog : Prog) : Prop :=
-  ∀ (stack : List Data), (evalProg prog stack).Dom
+theorem whileFree_total (p : WellFormedProgram) (hwf : WhileFreeProg p.prog) : p.Total := by
 
-theorem whileFree_total (prog : Prog) (hwf : WhileFreeProg prog) :
-    ComputesTotalFunction prog := by sorry
+  sorry
 
 def WellFormedTotal (prog : Prog) : Prop :=
   ∃ (h_total : ComputesTotalFunction prog), ∀ stack : List Data,
