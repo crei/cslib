@@ -59,8 +59,6 @@ abbrev TapeIndex := ℕ
 inductive Operation where
   -- create a new tape initialized with `Data.l []`
   | empty  : Operation
-  -- copy tape i to a new tape -- not sure if this is needed
-  | copy   : TapeIndex → Operation
   -- cons tape h and tape t to a new tape (h :: t)
   | cons   : TapeIndex → TapeIndex → Operation
   -- head of the data if it exists, or empty otherwise
@@ -84,7 +82,6 @@ mutual
       appropriate derived stack heights. -/
   def WFOp (n : ℕ) : Operation → Prop
     | .empty      => True
-    | .copy i     => i < n
     | .cons h t   => h < n ∧ t < n
     | .head i     => i < n
     | .tail i     => i < n
@@ -123,9 +120,9 @@ abbrev dataFalse := Data.l []
 -- It returns Part.none if the program does not terminate and Part.some Option.none if the
 -- program is not well-formed.
 mutual
-  def evalOp (stack : List Data) (op : Operation) (h_wf : WFOp stack.length op) : Part Data := match op with
+  def evalOp (stack : List Data) (op : Operation) (h_wf : WFOp stack.length op)
+      : Part Data := match op with
     | .empty => .some Data.empty
-    | .copy i => .some stack[i]
     | .cons h t =>
       let ⟨h₁, h₂⟩ := h_wf
       .some (Data.l (stack[h] :: stack[t].asList))
@@ -197,37 +194,100 @@ mutual
 end
 
 theorem whileFree_total (p : WellFormedProgram) (hwf : WhileFreeProg p.prog) : p.Total := by
+  intro data h_len
+  induction h : p.prog generalizing data with
+  | nil =>
+    simp [WellFormedProgram.eval, evalProg, h]
+  | cons op rest ih =>
+    simp [WellFormedProgram.eval, h]
+    cases op with
+    | empty =>
+      unfold evalProg evalOp
+      simp
+      sorry
+    | cons h t => sorry
+    | head i => sorry
+    | tail i => sorry
+    | eq i j => sorry
+    | ite i then_ else_ => sorry
+    | fold l i body => sorry
+    | while_ i body => sorry
 
-  sorry
-
-def WellFormedTotal (prog : Prog) : Prop :=
-  ∃ (h_total : ComputesTotalFunction prog), ∀ stack : List Data,
-    ((evalProg prog stack).get (h_total stack)).isSome
 
 -- Now the most important part: If a program is total, and well-formed we can talk about the
 -- function computed by the program - this is something that was not really possible with my old
 -- design:
 
-def progFun (prog : Prog) (h_wft : WellFormedTotal prog) (stack : List Data) : Data :=
-    -- TODO prove that the stack size increases by at least 1 or similar
-  (((evalProg prog stack).get (h_wft.1 stack)).get (h_wft.2 stack)).getLast sorry
-
 -- With these at hand, we can define simp lemmas and thus auto-derive semantics
 -- and maybe even resource requirements of programs:
 
-@[simp]
-theorem evalFold_eq_foldl
-    (stack : List Data) (l i : ℕ) (hl : l < stack.length) (hi : i < stack.length)
-    (body : Prog) (h : WellFormedTotal body)
-    (rest : Prog) :
-    evalProg ((.fold l i body) :: rest) stack =
-    .some (some (stack ++ [(stack[l].asList.foldl
-      (fun (acc : Data) (el : Data) => progFun body h (stack ++ [el, acc]))
-      stack[i])])) := by
-  sorry
+-- @[simp]
+-- theorem evalFold_eq_foldl
+--     (stack : List Data) (l i : ℕ) (hl : l < stack.length) (hi : i < stack.length)
+--     (body : Prog) (h : WellFormedTotal body)
+--     (rest : Prog) :
+--     evalProg ((.fold l i body) :: rest) stack =
+--     .some (some (stack ++ [(stack[l].asList.foldl
+--       (fun (acc : Data) (el : Data) => progFun body h (stack ++ [el, acc]))
+--       stack[i])])) := by
+--   sorry
 
 
-abbrev Build (α : Type) := StateT Prog (Except String) α
+-- The problem with the current programs is that they reference stack slots relative to the stack
+-- head, so they are constantly shifting. The following Builder monad makes that easier:
+
+def AbsoluteIndex := ℕ
+
+structure IndexAllocator where
+  initialStackSize : ℕ
+  prog : Prog
+
+abbrev Build (α : Type) := StateT IndexAllocator (Except String) α
+
+-- Only way to allocate a slot
+def newSlot (op : String) : Build Slot := do
+  let env ← get
+  let sid := env.next
+  set { env with next := sid + 1, ops := env.ops ++ [op] }
+  return ⟨sid⟩
+
+-- ============================================================
+-- SLOT PRIMITIVES
+-- ============================================================
+
+-- Allocate a slot holding Data.l []
+def new : Build Slot :=
+  newSlot "new"
+
+
+def bit0 : Build Slot := new
+def bit1 : Build Slot := true_
+
+def addBits (a b carry : Slot) : Build (Slot × Slot) := do
+  let sumBit   ← xor_ (← xor_ a b) carry
+  let carryOut ← if_ (← and_ a b)
+    true_
+    (and_ b carry)
+  return (sumBit, carryOut)
+
+-- Add two binary numbers — O(n²) time, O(n) space
+def add (a b : Slot) : Build Slot := do
+  let (acc, bRest, carry) ← fold a (← new, b, ← bit0)
+    (fun aBit (acc, bRest, carry) => do
+      let (bBit, bTail) ← if_ bRest
+        (fold bRest (← bit0, ← new)
+          (fun h _ => return (h, ← new)))  -- take head of bRest
+        (do return (← bit0, ← new))        -- b exhausted
+      let (s, c) ← addBits aBit bBit carry
+      return (← cons s acc, bTail, c))
+  let (acc2, carry2) ← fold bRest (acc, carry)
+    (fun bBit (acc, carry) => do
+      let (s, c) ← addBits (← bit0) bBit carry
+      return (← cons s acc, c))
+  if_ carry2
+    (cons (← bit1) acc2)
+    (return acc2)
+
 
 def appendOp (op : Operation) : Build TapeIndex := do
   let prog ← get
@@ -236,8 +296,6 @@ def appendOp (op : Operation) : Build TapeIndex := do
   return idx
 
 def empty : Build TapeIndex := appendOp .empty
-
-def copy (i : TapeIndex) : Build TapeIndex := appendOp (.copy i)
 
 def cons (h t : TapeIndex) : Build TapeIndex := appendOp (.cons h t)
 
