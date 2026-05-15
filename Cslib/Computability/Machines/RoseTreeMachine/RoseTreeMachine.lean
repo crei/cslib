@@ -310,17 +310,6 @@ def ComputableInTimeAndSpace (α β : Type) [DataEncode α] [DataEncode β]
   ∃ (p : WellFormedProgram 1), ComputesInTimeAndSpace p f t s
 
 
-lemma fold_space_linear {s : ℕ → ℕ} {step : Data → Data → Data}
-    (hbody : ∀ (c acc : Data),
-      meteredEvalOp stack .fold  body (c :: acc :: stack) h_wf =
-        .some (step c acc, stepTime c acc, stepSpace c acc)) :
-    ∀ (xs : List Data) (acc : Data) (stack : List Data) (h_wf : WFProg (stack.length + 2) body),
-      goMeteredFold xs acc stack body h_wf =
-        .some (xs.foldl (fun a x => step x a) acc,
-               foldTime stepTime step xs acc,
-               foldSpace stepSpace step xs acc) := by
-  exact goMeteredFold_of_step hbody
-
 def prog_reverse : WellFormedProgram 1 := {
   prog := [
     .empty,
@@ -351,6 +340,65 @@ def foldSpace (stepSpace : Data → Data → ℕ) (step : Data → Data → Data
     : List Data → Data → ℕ
   | [],      acc => acc.size
   | x :: xs, acc => max (stepSpace x acc) (foldSpace stepSpace step xs (step x acc))
+
+/-- Generic space bound for `foldSpace` via a single budget `B`:
+    if `init.size ≤ B`, and for every reachable accumulator each iteration's per-step
+    space and the resulting accumulator both stay within `B`, then the entire fold's
+    space is at most `B`. -/
+lemma foldSpace_le {step : Data → Data → Data} {stepSpace : Data → Data → ℕ}
+    (B : ℕ) (xs : List Data) (init : Data) (hInit : init.size ≤ B)
+    (hStep : ∀ acc c, acc.size ≤ B → c ∈ xs →
+                stepSpace c acc ≤ B ∧ (step c acc).size ≤ B) :
+    foldSpace stepSpace step xs init ≤ B := by
+  induction xs generalizing init with
+  | nil => simpa [foldSpace] using hInit
+  | cons x xs ih =>
+    have ⟨hSp, hAcc⟩ := hStep init x hInit (List.mem_cons_self ..)
+    refine max_le hSp
+      (ih _ hAcc fun acc c hAcc' hc => hStep acc c hAcc' (List.mem_cons_of_mem _ hc))
+
+/-- Linear-space body + constant-size init ⟹ linear-space fold.
+
+    If every step costs space at most `s₁ * (c.size + acc.size) + s₂`, the accumulator
+    grows by at most `c.size + k` per item, and `init.size ≤ c₀`, then `foldSpace` is
+    linear in `(xs.map Data.size).sum + xs.length * k + c₀`. -/
+lemma fold_space_linear {step : Data → Data → Data} {stepSpace : Data → Data → ℕ}
+    {s₁ s₂ k c₀ : ℕ}
+    (hStepSpace : ∀ c acc, stepSpace c acc ≤ s₁ * (c.size + acc.size) + s₂)
+    (hGrowth : ∀ c acc, (step c acc).size ≤ acc.size + c.size + k)
+    (xs : List Data) (init : Data) (hInit : init.size ≤ c₀) :
+    foldSpace stepSpace step xs init ≤
+      max (c₀ + (xs.map Data.size).sum + xs.length * k)
+          (s₁ * ((xs.map Data.size).sum + c₀ + xs.length * k) + s₂) := by
+  -- Strengthen by allowing any starting bound `c₀'` on `init.size`.
+  suffices h : ∀ (xs : List Data) (init : Data) (c₀' : ℕ), init.size ≤ c₀' →
+      foldSpace stepSpace step xs init ≤
+        max (c₀' + (xs.map Data.size).sum + xs.length * k)
+            (s₁ * ((xs.map Data.size).sum + c₀' + xs.length * k) + s₂) from h xs init c₀ hInit
+  clear hInit init xs
+  intro xs
+  induction xs with
+  | nil => intro init c₀' hInit; simpa [foldSpace] using Or.inl (by omega)
+  | cons x xs ih =>
+    intro init c₀' hInit
+    have hStepSize : (step x init).size ≤ c₀' + x.size + k := by
+      have := hGrowth x init; omega
+    have ih' := ih (step x init) (c₀' + x.size + k) hStepSize
+    have hSp : stepSpace x init ≤
+        s₁ * (x.size + (xs.map Data.size).sum + c₀' + (xs.length + 1) * k) + s₂ := by
+      have := Nat.mul_le_mul_left s₁
+        (show x.size + init.size ≤ x.size + (xs.map Data.size).sum + c₀' + (xs.length + 1) * k by
+          omega)
+      have h1 := hStepSpace x init
+      omega
+    simp only [foldSpace, List.length_cons, List.map_cons, List.sum_cons]
+    refine max_le (le_trans hSp (le_max_right _ _)) (le_trans ih' (max_le_max ?_ ?_))
+    · have : (xs.length + 1) * k = xs.length * k + k := by ring
+      omega
+    · apply Nat.add_le_add_right
+      apply Nat.mul_le_mul_left
+      have : (xs.length + 1) * k = xs.length * k + k := by ring
+      omega
 
 /-- Generic semantics + time + space for any well-formed fold body that acts as a pure
     deterministic step.
