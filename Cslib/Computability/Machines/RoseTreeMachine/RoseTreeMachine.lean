@@ -43,6 +43,10 @@ abbrev Data.empty := Data.l []
 abbrev Data.asList
   | Data.l xs => xs
 
+--- Encoding length of d.
+def Data.size : Data → ℕ
+  | Data.l xs => 2 + (xs.map Data.size |>.sum)
+
 abbrev TapeIndex := ℕ
 
 
@@ -117,6 +121,10 @@ end
 abbrev dataTrue := Data.l [Data.l []]
 abbrev dataFalse := Data.l []
 
+structure InterpreterState where
+  stack : List Data
+  time : ℕ
+  space : ℕ
 
 -- Interpreter:
 -- It returns Part.none if the program does not terminate and Part.some Option.none if the
@@ -153,12 +161,52 @@ mutual
       -- take the contents of the last tape as the result / new accumulator.
       (evalProg body (c :: acc :: stack) h_wf).bind fun acc' => goFold cs acc' stack body h_wf
 
+  @[simp]
   def evalProg (prog : Prog) (stack : List Data) (h_wf : WFProg stack.length prog) : Part Data :=
     match prog with
       | []           => .some (stack.head (by grind [WFProg]))
       | op :: rest   =>
         let ⟨h_wf_head, h_wf_tail⟩ := h_wf
         (evalOp stack op h_wf_head).bind fun r => evalProg rest (r :: stack) h_wf_tail
+end
+
+mutual
+  --- Evaluate a single operation and return the return value, additional time and additional space.
+  def meteredEvalOp (stack : List Data) (op : Operation) (h_wf : WFOp stack.length op) :
+      Part (Data × ℕ × ℕ) :=
+    match op with
+    | .empty => .some (Data.empty, 1, 1)
+    | .cons h t =>
+      let result := Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)
+      .some (result, 1 + result.size, 1 + result.size)
+    | .head i =>
+      let result := stack[i].asList.headD Data.empty
+      .some (result, 1 + result.size, 1 + result.size)
+    | .tail i =>
+      let result := Data.l stack[i].asList.tail
+      .some (result, 1 + result.size, 1 + result.size)
+    | .eq i j => .some
+      (if stack[i]'h_wf.1 == stack[j]'h_wf.2 then dataTrue else dataFalse,
+      1 + (min (stack[i]'h_wf.1).size (stack[j]'h_wf.2).size),
+      1)
+    | .ite i then_ else_ =>
+      (if stack[i]'h_wf.1 == dataTrue then
+        meteredEvalProg then_ stack h_wf.2.1
+      else
+        meteredEvalProg else_ stack h_wf.2.2).map (fun (r, t, s) => (r, 1 + t, s))
+    | .fold list initial body => sorry
+    | .while_ i body => sorry
+
+
+  def meteredEvalProg (prog : Prog) (stack : List Data) (h_wf : WFProg stack.length prog) :
+      Part (Data × ℕ × ℕ) :=
+    match prog with
+    | [] => .some (stack.head (by grind [WFProg]), 0, 0)
+    | op :: rest => do
+      let (r, opTime, opSpace) ← meteredEvalOp stack op h_wf.1
+      let (r, time, space) ← meteredEvalProg rest (r :: stack) h_wf.2
+      (r, opTime + time, opSpace + space)
+
 end
 
 @[simp]
@@ -175,6 +223,9 @@ structure WellFormedProgram where
   prog : Prog
   inputs : ℕ
   h_wf : WFProg inputs prog
+
+--- The output stack size of the program.
+abbrev WellFormedProgram.stackSize (p : WellFormedProgram) : ℕ := p.inputs + p.prog.length
 
 def FunType (wf : WellFormedProgram) : Type :=
   let rec of_input_count := fun
@@ -208,6 +259,64 @@ def prog_negate : WellFormedProgram := {
 }
 lemma prog_true.semantics : prog_true.eval [] rfl = .some dataTrue := by
   simp [prog_true, evalOp]
+
+def WellFormedProgram.append (p1 p2 : WellFormedProgram) (h_le : p2.inputs ≤ p1.stackSize) :
+    WellFormedProgram :=
+  { prog := p1.prog ++ p2.prog
+    inputs := p1.inputs
+    h_wf := by sorry }
+
+class DataEncode (α : Type) where
+  encode : α → Data
+  h_inj : encode.Injective
+
+instance : DataEncode Bool where
+  encode b := if b then dataTrue else dataFalse
+  h_inj := by intros a b h_eq; grind
+
+instance (α : Type) [DataEncode α] : DataEncode (List α) where
+  encode xs := Data.l (xs.map DataEncode.encode)
+  h_inj := by sorry
+
+instance (α : Type) [DataEncode α] : DataEncode (Option α) where
+  encode := fun
+    | none => Data.l []
+    | some x => Data.l [DataEncode.encode x]
+  h_inj := by sorry
+
+instance : DataEncode ℕ where
+  encode x := DataEncode.encode (Nat.bits x)
+  h_inj := by sorry
+
+-- Binary addition
+def prog_add : WellFormedProgram := {
+  prog := [
+    .fold 0 1 [
+      .cons 0 2, -- cons the bit to the accumulator
+      .ite 2 [ -- if the new accumulator is nonempty (the bit was 1)
+        .cons 1 2, -- add the carry from the previous bit
+        .empty -- else just put the carry (0 or 1) as the new accumulator
+      ] [
+         .cons 1 2 -- if the new bit is zero, we only get a carry if the previous carry was one
+      ]
+    ]
+    -- TODO
+  ],
+  inputs := 2,
+  h_wf := by sorry
+}
+
+def add (x y : List Bool) : List Bool :=
+
+  match prog_add.eval [DataEncode.encode x, DataEncode.encode y] rfl with
+  | .some d => d.asList.map (fun b => b == dataTrue)
+  | .none => [] -- this should never happen since the program is total
+
+theorem prog_add_semantics : ∀ (x y : ℕ),
+    prog_add.eval [DataEncode.encode x, DataEncode.encode y] rfl =
+      .some (DataEncode.encode (x + y)) := by
+  sorry
+
 
 mutual
   def WhileFreeOp : Operation → Prop
