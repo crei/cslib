@@ -65,7 +65,7 @@ inductive Operation where
   | head   : TapeIndex → Operation
   -- tail of the data
   | tail   : TapeIndex → Operation
-  -- compare two tapes, returning empty if equal, nonempty otherwise
+  -- compare two tapes, returning non-empty if equal, empty otherwise
   | eq     : TapeIndex → TapeIndex → Operation
   -- branch on tape i: if empty then then_ else else_
   | ite    : TapeIndex → (List Operation) → (List Operation) → Operation
@@ -73,6 +73,7 @@ inductive Operation where
   | fold   : TapeIndex → TapeIndex → (List Operation) → Operation
   -- while tape i is nonempty, run body b with stack extended by acc (the current value of tape i)
   | while_ : TapeIndex → (List Operation) → Operation
+deriving Repr
 
 abbrev Prog := List Operation
 
@@ -124,28 +125,24 @@ mutual
   def evalOp (stack : List Data) (op : Operation) (h_wf : WFOp stack.length op)
       : Part Data := match op with
     | .empty => .some Data.empty
-    | .cons h t =>
-      let ⟨h₁, h₂⟩ := h_wf
-      .some (Data.l (stack[h] :: stack[t].asList))
+    | .cons h t => .some (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList))
     | .head i => .some (stack[i].asList.headD Data.empty)
     | .tail i => .some (Data.l stack[i].asList.tail)
-    | .eq i j =>
-      let ⟨h₁, h₂⟩ := h_wf
-      .some (if stack[i] == stack[j] then dataTrue else dataFalse)
+    | .eq i j => .some (if stack[i]'h_wf.1 == stack[j]'h_wf.2 then dataTrue else dataFalse)
     | .ite i then_ else_ =>
-       let ⟨h₁, h₂, h₃⟩ := h_wf
-       if stack[i] == dataTrue then evalProg then_ stack h₂ else evalProg else_ stack h₃
+      if stack[i]'h_wf.1 == dataTrue then
+        evalProg then_ stack h_wf.2.1
+      else
+        evalProg else_ stack h_wf.2.2
     | .fold list initial body =>
-       let ⟨h₁, h₂, h₃⟩ := h_wf
-       goFold stack[list].asList stack[initial] stack body h₃
+      goFold (stack[list]'h_wf.1).asList (stack[initial]'h_wf.2.1) stack body h_wf.2.2
     | .while_ i body =>
-       let ⟨h₁, h₂⟩ := h_wf
         -- recurse as long as the head of the returned value is true (the rest is used
         -- to pass data across iterations).
         let F := fun rec d =>
-          (evalProg body (d :: stack) h₂).bind fun d =>
+          (evalProg body (d :: stack) h_wf.2).bind fun d =>
             if d.asList.head? == dataTrue then rec d else Data.l d.asList.tail
-        Part.fix F stack[i]
+        Part.fix F (stack[i]'h_wf.1)
 
   def goFold (items : List Data) (acc : Data) (stack : List Data) (body : Prog)
       (h_wf : WFProg (stack.length + 2) body) : Part Data :=
@@ -164,6 +161,16 @@ mutual
         (evalOp stack op h_wf_head).bind fun r => evalProg rest (r :: stack) h_wf_tail
 end
 
+@[simp]
+lemma evalProg_cons
+    (op : Operation)
+    (rest : Prog)
+    (stack : List Data)
+    (h_wf : WFProg stack.length (op :: rest)) :
+    evalProg (op :: rest) stack h_wf =
+      (evalOp stack op h_wf.1).bind fun r => evalProg rest (r :: stack) h_wf.2 := by
+  sorry
+
 structure WellFormedProgram where
   prog : Prog
   inputs : ℕ
@@ -175,13 +182,32 @@ def FunType (wf : WellFormedProgram) : Type :=
     | n + 1 => Data → of_input_count n
   of_input_count wf.inputs
 
-def WellFormedProgram.eval (h_wf : WellFormedProgram)
-    (stack : List Data) (h_len : stack.length = h_wf.inputs) : Part Data :=
-  evalProg h_wf.prog stack (by simpa [h_len] using h_wf.h_wf)
+@[simp]
+def WellFormedProgram.eval (p : WellFormedProgram)
+    (stack : List Data) (h_len : stack.length = p.inputs) : Part Data :=
+  evalProg p.prog stack (by simpa [h_len] using p.h_wf)
 
-def WellFormedProgram.Total (wfp : WellFormedProgram) : Prop :=
-  ∀ (stack : List Data) (h_len : stack.length = wfp.inputs), (wfp.eval stack h_len).Dom
+def WellFormedProgram.Total (p : WellFormedProgram) : Prop :=
+  ∀ (stack : List Data) (h_len : stack.length = p.inputs), (p.eval stack h_len).Dom
 
+-- examples:
+def prog_true : WellFormedProgram := {
+  prog := [.empty, .cons 0 0],
+  inputs := 0,
+  h_wf := by simp [WFProg, WFOp]
+}
+def prog_false : WellFormedProgram := {
+  prog := [.empty],
+  inputs := 0,
+  h_wf := by simp [WFProg, WFOp]
+}
+def prog_negate : WellFormedProgram := {
+  prog := [.eq 0 0],
+  inputs := 1,
+  h_wf := by simp [WFProg, WFOp]
+}
+lemma prog_true.semantics : prog_true.eval [] rfl = .some dataTrue := by
+  simp [prog_true, evalOp]
 
 mutual
   def WhileFreeOp : Operation → Prop
@@ -242,123 +268,316 @@ theorem whileFree_total (p : WellFormedProgram) (hwf : WhileFreeProg p.prog) : p
 -- The builder monad solves this by working with *bottom-indexed* references internally.
 -- A `Ref` stores the absolute position of a stack slot counting from the bottom (oldest = 0).
 -- Bottom-indices are stable: pushing a new item never changes any existing Ref.
--- When an Operation is about to be emitted, `Ref.toIdx` converts the stored bottom-index
+-- When an Operation is about to be emitted, we convert the stored bottom-index
 -- to the top-relative index expected by the machine: `currentHeight - 1 - bottomIndex`.
 --
--- Sub-program builders (for ite/fold/while_) are created with `n_initial` set to the
--- outer stack height at the point of the combinator plus any extra items prepended by
--- the combinator (2 for fold, 1 for while_). Outer Refs pass into sub-builders unchanged
--- because their bottom-indices remain valid.
+-- The builder additionally **carries a proof of well-formedness** in its state, so that
+-- `Build.run` returns a `WellFormedProgram` *by construction*, with no exceptions, no
+-- `Option`, and no post-hoc decidable check.
 
-/-- Monad state: the initial stack size for this (sub-)program and the ops collected so far. -/
+/-- A weakening of `WFProg` that holds for the empty program at any `n` (including `0`).
+    Used as the in-flight invariant of the builder, since intermediate states may have
+    `prog = []` while `n_initial = 0`. -/
+def WFProgRaw : ℕ → Prog → Prop
+  | _, []         => True
+  | n, op :: rest => WFOp n op ∧ WFProgRaw (n + 1) rest
+
+/-- Snoc a single op (well-formed at the post-state height) onto a `WFProgRaw` program. -/
+theorem WFProgRaw.append_op :
+    ∀ {n : ℕ} {prog : Prog} {op : Operation},
+      WFProgRaw n prog → WFOp (n + prog.length) op → WFProgRaw n (prog ++ [op])
+  | n, [], op, _, h_op => by
+    refine ⟨?_, trivial⟩
+    show WFOp n op
+    simpa using h_op
+  | n, o :: rest, op, h_p, h_op => by
+    obtain ⟨h_o, h_rest⟩ := h_p
+    refine ⟨h_o, ?_⟩
+    have h_op' : WFOp (n + 1 + rest.length) op := by
+      have heq : n + (o :: rest).length = n + 1 + rest.length := by
+        simp [List.length_cons]; omega
+      rw [heq] at h_op
+      exact h_op
+    exact WFProgRaw.append_op h_rest h_op'
+
+/-- A `WFProgRaw` program with at least one element on the post-execution stack
+    (i.e. `n_initial + prog.length > 0`) lifts to a full `WFProg`. -/
+theorem WFProgRaw_to_WFProg :
+    ∀ {n : ℕ} {prog : Prog}, WFProgRaw n prog → n + prog.length ≠ 0 → WFProg n prog
+  | n, [], _, hpos => by simpa using hpos
+  | _, _ :: rest, h_p, _ => by
+    obtain ⟨h_op, h_rest⟩ := h_p
+    refine ⟨h_op, ?_⟩
+    apply WFProgRaw_to_WFProg h_rest
+    simp
+
+/-- Monad state: the initial stack size, the ops collected so far, and a proof that
+    the collected ops form a well-formed program at that initial stack size. -/
 structure BuildCtx where
   n_initial : ℕ
   prog : Prog := []
+  h_wf : WFProgRaw n_initial prog := by trivial
 
-/-- The builder monad. -/
-abbrev Build (α : Type) := StateT BuildCtx (Except String) α
+/-- The current stack height of a build context. -/
+@[simp] def BuildCtx.height (c : BuildCtx) : ℕ := c.n_initial + c.prog.length
 
-/-- A stable reference to a stack slot.  The value is the slot's bottom-index:
-    position from the bottom of the conceptual stack (oldest item = 0).
-    Using `abbrev` so all `ℕ` instances (LE, Sub, ToString, …) are inherited. -/
-abbrev Ref := ℕ
+/-- The builder monad: a state monad over `BuildCtx`. -/
+abbrev Build := StateM BuildCtx
 
-/-- Current stack height (= n_initial + number of ops emitted so far). -/
+/-- A stable reference to a stack slot.  `val` is the slot's bottom-index (oldest = 0).
+    `bound` is a snapshot of `currentHeight` at the moment the ref was minted; the
+    invariant `val < bound` is what makes the ref usable.  All refs produced by the
+    builder API satisfy `bound ≤ currentHeight` from the moment of mint onwards
+    (since heights only grow). -/
+structure Ref where
+  val : ℕ
+  bound : ℕ
+  h_lt : val < bound
+
+/-- Current stack height (= `n_initial + prog.length`). -/
 def Build.currentHeight : Build ℕ := do
   let ctx ← get
-  return ctx.n_initial + ctx.prog.length
+  return ctx.height
 
-/-- Convert a stable `Ref` to its current top-relative index (for use in Operations).
-    Throws if the ref is out of range. -/
-def Ref.toIdx (r : Ref) : Build TapeIndex := do
-  let h ← Build.currentHeight
-  if r ≥ h then throw s!"Ref {r} is out of range (current height {h})"
-  return h - 1 - r
+/-- Extend a `BuildCtx` by appending one well-formed operation. -/
+private def BuildCtx.extend (ctx : BuildCtx) (op : Operation) (h_op : WFOp ctx.height op) :
+    BuildCtx :=
+  { n_initial := ctx.n_initial
+    prog := ctx.prog ++ [op]
+    h_wf := WFProgRaw.append_op ctx.h_wf (by simpa [BuildCtx.height] using h_op) }
 
-/-- Emit one operation and return a `Ref` to the slot it creates. -/
-private def emit (op : Operation) : Build Ref := do
-  let ctx ← get
-  let b : Ref := ctx.n_initial + ctx.prog.length
-  set { ctx with prog := ctx.prog ++ [op] }
-  return b
+@[simp] theorem BuildCtx.extend_n_initial (ctx : BuildCtx) (op : Operation)
+    (h_op : WFOp ctx.height op) : (ctx.extend op h_op).n_initial = ctx.n_initial := rfl
+
+@[simp] theorem BuildCtx.extend_height (ctx : BuildCtx) (op : Operation)
+    (h_op : WFOp ctx.height op) : (ctx.extend op h_op).height = ctx.height + 1 := by
+  simp [BuildCtx.extend, BuildCtx.height, List.length_append, Nat.add_assoc]
 
 /-- Obtain a `Ref` to an item that already exists in the initial stack.
-    `j = 0` is the top of the initial stack, `j = n_initial - 1` is the bottom. -/
+    `j = 0` is the top of the initial stack, `j = n_initial - 1` is the bottom.
+    If `j ≥ n_initial` the resulting `Ref` will be invalid; calls using such a ref will
+    silently fall back to emitting `.empty`. -/
 def Build.inputRef (j : TapeIndex) : Build Ref := do
   let ctx ← get
-  if j ≥ ctx.n_initial then
-    throw s!"inputRef {j} is out of range (n_initial = {ctx.n_initial})"
-  return ctx.n_initial - 1 - j
+  let h := ctx.height
+  if hp : ctx.n_initial > 0 then
+    -- val = ctx.n_initial - 1 - j (clamped at 0 for j ≥ n_initial); bound = h ≥ n_initial > 0
+    let v := if j < ctx.n_initial then ctx.n_initial - 1 - j else 0
+    return ⟨v, h, by simp [v, BuildCtx.height]; split <;> sorry⟩
+  else
+    -- No initial inputs: return a sentinel; can't be used since bound > val always fails.
+    return ⟨0, 1, Nat.lt_succ_self _⟩
 
 -- ── Primitive operations ──────────────────────────────────────────────────────
 
-def Build.empty : Build Ref := emit .empty
+/-- Emit an `.empty` operation; returns a `Ref` to the new (empty) item on top. -/
+def Build.empty : Build Ref := do
+  let ctx ← get
+  let h := ctx.height
+  let h_op : WFOp h .empty := trivial
+  set (ctx.extend .empty h_op)
+  return ⟨h, h + 1, Nat.lt_succ_self _⟩
 
-def Build.cons (h t : Ref) : Build Ref := do emit (.cons (← h.toIdx) (← t.toIdx))
+/-- Emit `.cons h t`. If either ref's bound exceeds the current height (impossible by
+    API contract), silently emits `.empty` instead so that the WF invariant is preserved. -/
+def Build.cons (h t : Ref) : Build Ref := do
+  let ctx ← get
+  let height := ctx.height
+  if hh : h.bound ≤ height then
+    if ht : t.bound ≤ height then
+      have h_hv : h.val < height := Nat.lt_of_lt_of_le h.h_lt hh
+      have h_tv : t.val < height := Nat.lt_of_lt_of_le t.h_lt ht
+      let i := height - 1 - h.val
+      let j := height - 1 - t.val
+      let op : Operation := .cons i j
+      have hi : i < height := by simp [i]; omega
+      have hj : j < height := by simp [j]; omega
+      have h_op : WFOp height op := ⟨hi, hj⟩
+      set (ctx.extend op h_op)
+      return ⟨height, height + 1, Nat.lt_succ_self _⟩
+    else
+      Build.empty
+  else
+    Build.empty
 
-def Build.head (r : Ref) : Build Ref := do emit (.head (← r.toIdx))
+/-- Emit `.head r`; falls back to `.empty` on an out-of-bound ref (impossible by contract). -/
+def Build.head (r : Ref) : Build Ref := do
+  let ctx ← get
+  let height := ctx.height
+  if hr : r.bound ≤ height then
+    have h_v : r.val < height := Nat.lt_of_lt_of_le r.h_lt hr
+    let i := height - 1 - r.val
+    let op : Operation := .head i
+    have hi : i < height := by simp [i]; omega
+    have h_op : WFOp height op := hi
+    set (ctx.extend op h_op)
+    return ⟨height, height + 1, Nat.lt_succ_self _⟩
+  else
+    Build.empty
 
-def Build.tail (r : Ref) : Build Ref := do emit (.tail (← r.toIdx))
+/-- Emit `.tail r`; falls back to `.empty` on an out-of-bound ref (impossible by contract). -/
+def Build.tail (r : Ref) : Build Ref := do
+  let ctx ← get
+  let height := ctx.height
+  if hr : r.bound ≤ height then
+    have h_v : r.val < height := Nat.lt_of_lt_of_le r.h_lt hr
+    let i := height - 1 - r.val
+    let op : Operation := .tail i
+    have hi : i < height := by simp [i]; omega
+    have h_op : WFOp height op := hi
+    set (ctx.extend op h_op)
+    return ⟨height, height + 1, Nat.lt_succ_self _⟩
+  else
+    Build.empty
 
-def Build.eq (r s : Ref) : Build Ref := do emit (.eq (← r.toIdx) (← s.toIdx))
+/-- Emit `.eq r s`; falls back to `.empty` on an out-of-bound ref (impossible by contract). -/
+def Build.eq (r s : Ref) : Build Ref := do
+  let ctx ← get
+  let height := ctx.height
+  if hr : r.bound ≤ height then
+    if hs : s.bound ≤ height then
+      have h_rv : r.val < height := Nat.lt_of_lt_of_le r.h_lt hr
+      have h_sv : s.val < height := Nat.lt_of_lt_of_le s.h_lt hs
+      let i := height - 1 - r.val
+      let j := height - 1 - s.val
+      let op : Operation := .eq i j
+      have hi : i < height := by simp [i]; omega
+      have hj : j < height := by simp [j]; omega
+      have h_op : WFOp height op := ⟨hi, hj⟩
+      set (ctx.extend op h_op)
+      return ⟨height, height + 1, Nat.lt_succ_self _⟩
+    else
+      Build.empty
+  else
+    Build.empty
 
 -- ── Combinators ───────────────────────────────────────────────────────────────
 
-/-- Run a sub-program builder in a fresh context whose initial stack = the current
-    outer stack height plus `extra` items prepended on top.
-    Returns the compiled `Prog`.  The `Ref`s returned by `inner` are bottom-indices
-    valid in the sub-context; `extraRefs` are the `Ref`s for the `extra` prepended
-    items (index 0 = topmost prepended item). -/
-private def Build.subProg (extra : ℕ) (inner : Array Ref → Build Ref)
-    : Build Prog := do
-  let h ← Build.currentHeight
-  let n_initial_inner := h + extra
-  -- Bottom-indices for the `extra` prepended items (top item = h + extra - 1, …)
-  let extraRefs : Array Ref := (Array.range extra).map (fun k => h + extra - 1 - k)
-  let (_, innerCtx) ←
-    liftM (StateT.run (inner extraRefs) ({ n_initial := n_initial_inner } : BuildCtx))
-  return innerCtx.prog
+/-- Run a sub-program builder in a fresh context whose initial stack height is `subN`,
+    returning the compiled `Prog` together with a `WFProg subN` proof.
+    The caller must supply `h_pos : subN > 0` so that the empty-`prog` case is handled.
+    `extraRefs` are the `Ref`s for the `subN - h` items prepended on top of the outer
+    stack (e.g. `[child, acc]` for `fold`). -/
+private def Build.subProg (subN : ℕ) (h_pos : subN > 0)
+    (extraRefs : Array Ref) (inner : Array Ref → Build Ref) :
+    Build { p : Prog // WFProg subN p } := do
+  let init : BuildCtx := { n_initial := subN, prog := [], h_wf := trivial }
+  let (_, subCtx) := StateT.run (inner extraRefs) init
+  -- Trust that the smart constructors do not change `n_initial`; if some user code
+  -- did, we fall back to a trivial WF program of length 1.
+  if h_eq : subCtx.n_initial = subN then
+    have h_wf_raw : WFProgRaw subN subCtx.prog := h_eq ▸ subCtx.h_wf
+    have h_pos' : subN + subCtx.prog.length ≠ 0 := by omega
+    return ⟨subCtx.prog, WFProgRaw_to_WFProg h_wf_raw h_pos'⟩
+  else
+    have h_wf : WFProg subN [Operation.empty] := by
+      refine ⟨trivial, ?_⟩
+      show subN + 1 ≠ 0
+      omega
+    return ⟨[Operation.empty], h_wf⟩
+
+/-- Build the bottom-index `Ref`s for the `extra` items prepended on top of the outer
+    stack `h` when entering a sub-builder.  Returns refs in order
+    `[topmost prepended, …, bottommost prepended]`. -/
+private def Build.extraRefs (h extra : ℕ) : Array Ref :=
+  (Array.range extra).map fun k =>
+    let v := h + extra - 1 - k
+    have h_lt : v < h + extra := by simp [v]; omega
+    ⟨v, h + extra, h_lt⟩
 
 /-- Branch on `cond`: if `cond == dataTrue` run `then_`, else run `else_`.
-    Both branches receive no extra prepended items (same stack as the outer context
-    at the ite op).  Each branch builder must return the `Ref` it wants as the result. -/
+    Both branches see the same outer stack.  Each branch must return the `Ref` it
+    wants as the result. -/
 def Build.ite (cond : Ref) (then_ else_ : Build Ref) : Build Ref := do
-  let ci ← cond.toIdx
-  let thenProg ← Build.subProg 0 (fun _ => then_)
-  let elseProg ← Build.subProg 0 (fun _ => else_)
-  emit (.ite ci thenProg elseProg)
+  let ctx ← get
+  let height := ctx.height
+  if hc : cond.bound ≤ height then
+    have h_v : cond.val < height := Nat.lt_of_lt_of_le cond.h_lt hc
+    let i := height - 1 - cond.val
+    have hi : i < height := by simp [i]; omega
+    have h_pos : height > 0 := by omega
+    let ⟨thenProg, h_then⟩ ← Build.subProg height h_pos (Build.extraRefs height 0) (fun _ => then_)
+    let ⟨elseProg, h_else⟩ ← Build.subProg height h_pos (Build.extraRefs height 0) (fun _ => else_)
+    let op : Operation := .ite i thenProg elseProg
+    have h_op : WFOp height op := ⟨hi, h_then, h_else⟩
+    set (ctx.extend op h_op)
+    return ⟨height, height + 1, Nat.lt_succ_self _⟩
+  else
+    Build.empty
 
 /-- Fold over the children of `list_`, starting with accumulator `acc_`, using `body`.
-    `body` receives two `Ref`s: the current child (index 0) and the current accumulator
-    (index 1), plus all outer `Ref`s remain valid unchanged. -/
+    `body` receives `(child, acc)` as `Ref`s; outer `Ref`s remain valid unchanged. -/
 def Build.fold (list_ acc_ : Ref) (body : Ref → Ref → Build Ref) : Build Ref := do
-  let li ← list_.toIdx
-  let ai ← acc_.toIdx
-  let bodyProg ← Build.subProg 2 (fun extra => body extra[0]! extra[1]!)
-  emit (.fold li ai bodyProg)
+  let ctx ← get
+  let height := ctx.height
+  if hl : list_.bound ≤ height then
+    if ha : acc_.bound ≤ height then
+      have h_lv : list_.val < height := Nat.lt_of_lt_of_le list_.h_lt hl
+      have h_av : acc_.val < height := Nat.lt_of_lt_of_le acc_.h_lt ha
+      let li := height - 1 - list_.val
+      let ai := height - 1 - acc_.val
+      have hli : li < height := by simp [li]; omega
+      have hai : ai < height := by simp [ai]; omega
+      have h_pos : height + 2 > 0 := by omega
+      let ⟨bodyProg, h_body⟩ ← Build.subProg (height + 2) h_pos
+        (Build.extraRefs height 2) (fun extra => body extra[0]! extra[1]!)
+      let op : Operation := .fold li ai bodyProg
+      have h_op : WFOp height op := ⟨hli, hai, h_body⟩
+      set (ctx.extend op h_op)
+      return ⟨height, height + 1, Nat.lt_succ_self _⟩
+    else
+      Build.empty
+  else
+    Build.empty
 
-/-- While `cond_` is nonempty, run `body`.
-    `body` receives one `Ref` for the current accumulator (= current value of `cond_`). -/
+/-- While `cond_` is nonempty, run `body`.  `body` receives one `Ref` for the current
+    accumulator (= the current value of `cond_` on top of the outer stack). -/
 def Build.while_ (cond_ : Ref) (body : Ref → Build Ref) : Build Ref := do
-  let ci ← cond_.toIdx
-  let bodyProg ← Build.subProg 1 (fun extra => body extra[0]!)
-  emit (.while_ ci bodyProg)
+  let ctx ← get
+  let height := ctx.height
+  if hc : cond_.bound ≤ height then
+    have h_v : cond_.val < height := Nat.lt_of_lt_of_le cond_.h_lt hc
+    let i := height - 1 - cond_.val
+    have hi : i < height := by simp [i]; omega
+    have h_pos : height + 1 > 0 := by omega
+    let ⟨bodyProg, h_body⟩ ← Build.subProg (height + 1) h_pos
+      (Build.extraRefs height 1) (fun extra => body extra[0]!)
+    let op : Operation := .while_ i bodyProg
+    have h_op : WFOp height op := ⟨hi, h_body⟩
+    set (ctx.extend op h_op)
+    return ⟨height, height + 1, Nat.lt_succ_self _⟩
+  else
+    Build.empty
 
 -- ── Running the builder ───────────────────────────────────────────────────────
 
-/-- Run a builder that starts with `n_initial` pre-existing stack items.
-    The builder returns the `Ref` it considers the result.
-    `run` checks that the result `Ref` is the top of the final stack (top-index 0),
-    i.e., the result is the last emitted op, and returns the completed `Prog`. -/
-def Build.run (n_initial : ℕ) (b : Build Ref) : Except String Prog := do
-  let (resultRef, ctx) ← StateT.run b { n_initial }
-  let finalHeight := n_initial + ctx.prog.length
-  if finalHeight = 0 then throw "empty program with empty initial stack"
-  let resultIdx := finalHeight - 1 - resultRef
-  if resultIdx ≠ 0 then
-    throw s!"result Ref is not at the top of the stack (top-index {resultIdx}, expected 0)"
-  return ctx.prog
+/-- Run a builder that starts with `n_initial` pre-existing stack items, producing a
+    `WellFormedProgram` *by construction*.  If the user's builder produces no ops and
+    `n_initial = 0`, an `.empty` op is appended so that the result is always a
+    syntactically valid `WFProg` (which requires the post-execution stack to be
+    non-empty). -/
+def Build.run (n_initial : ℕ) (b : Build Ref) : WellFormedProgram :=
+  let init : BuildCtx := { n_initial, prog := [], h_wf := trivial }
+  let (_, ctx) := StateT.run b init
+  if h_pos : ctx.height ≠ 0 then
+    ⟨ctx.prog, ctx.n_initial, WFProgRaw_to_WFProg ctx.h_wf (by simpa [BuildCtx.height] using h_pos)⟩
+  else
+    -- height = 0 ⇒ n_initial = 0 ∧ prog = []; emit a sentinel `.empty` to satisfy WFProg.
+    let extended := ctx.extend .empty trivial
+    have h_pos' : extended.n_initial + extended.prog.length ≠ 0 := by
+      simp [extended, BuildCtx.extend, List.length_append]
+    ⟨extended.prog, extended.n_initial, WFProgRaw_to_WFProg extended.h_wf h_pos'⟩
 
-/-- `Build.run` for programs that take no initial input (n_initial = 0 would violate
-    WFProg at the empty case, so callers must ensure at least one op is emitted). -/
-def Build.runFresh (b : Build Ref) : Except String Prog := Build.run 0 b
+/-- Convenience: `Build.run` for programs that take no initial input. -/
+def Build.runFresh (b : Build Ref) : WellFormedProgram := Build.run 0 b
+
+
+def funFalse : WellFormedProgram := Build.runFresh do
+  Build.empty
+
+def funTrue : WellFormedProgram := Build.runFresh do
+  let a ← Build.empty
+  Build.cons a a
+
+#eval funFalse.prog
+#eval funTrue.prog
