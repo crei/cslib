@@ -206,52 +206,50 @@ lemma goMeteredFold_cons (head : Data) (tail : List Data) (acc : Data) (stack : 
           (r, 1 + tBody + t, max sBody s) := by
   simp [goMeteredFold]
 
-structure WellFormedProgram where
+structure WellFormedProgram (inputs : ℕ) where
   prog : Prog
-  inputs : ℕ
   h_wf : WFProg inputs prog
 
 --- The output stack size of the program.
-abbrev WellFormedProgram.stackSize (p : WellFormedProgram) : ℕ := p.inputs + p.prog.length
+abbrev WellFormedProgram.stackSize {inputs : ℕ} (p : WellFormedProgram inputs) : ℕ := inputs + p.prog.length
 
-def FunType (wf : WellFormedProgram) : Type :=
-  let rec of_input_count := fun
-    | 0 => Data
-    | n + 1 => Data → of_input_count n
-  of_input_count wf.inputs
+def FunType (inputs : ℕ) : Type := match inputs with
+  | 0 => Data
+  | n + 1 => Data → FunType n
 
 @[simp]
-def WellFormedProgram.eval (p : WellFormedProgram)
-    (stack : List Data) (h_len : stack.length = p.inputs) : Part Data :=
+def WellFormedProgram.eval {inputs : ℕ} (p : WellFormedProgram inputs)
+    (stack : List Data) (h_len : stack.length = inputs) : Part Data :=
   (meteredEvalProg p.prog stack (by simpa [h_len] using p.h_wf)).map fun (d, _, _) => d
 
 @[simp]
-def WellFormedProgram.time (p : WellFormedProgram)
-    (stack : List Data) (h_len : stack.length = p.inputs) : Part ℕ :=
+def WellFormedProgram.time {inputs : ℕ} (p : WellFormedProgram inputs)
+    (stack : List Data) (h_len : stack.length = inputs) : Part ℕ :=
   (meteredEvalProg p.prog stack (by simpa [h_len] using p.h_wf)).map fun (_, t, _) => t
 
 @[simp]
-def WellFormedProgram.space (p : WellFormedProgram)
-    (stack : List Data) (h_len : stack.length = p.inputs) : Part ℕ :=
+def WellFormedProgram.space {inputs : ℕ} (p : WellFormedProgram inputs)
+    (stack : List Data) (h_len : stack.length = inputs) : Part ℕ :=
   (meteredEvalProg p.prog stack (by simpa [h_len] using p.h_wf)).map fun (_, _, s) => s
 
-def WellFormedProgram.Total (p : WellFormedProgram) : Prop :=
-  ∀ (stack : List Data) (h_len : stack.length = p.inputs), (p.eval stack h_len).Dom
+def WellFormedProgram.Total {inputs : ℕ} (p : WellFormedProgram inputs) : Prop :=
+  ∀ (stack : List Data) (h_len : stack.length = inputs), (p.eval stack h_len).Dom
+
+def WellFormedProgram.as_fun {inputs : ℕ} (p : WellFormedProgram inputs) (h_total : p.Total) :
+    FunType inputs :=
+  sorry
 
 -- examples:
-def prog_true : WellFormedProgram := {
+def prog_true : WellFormedProgram 0 := {
   prog := [.empty, .cons 0 0],
-  inputs := 0,
   h_wf := by simp [WFProg, WFOp]
 }
-def prog_false : WellFormedProgram := {
+def prog_false : WellFormedProgram 0 := {
   prog := [.empty],
-  inputs := 0,
   h_wf := by simp [WFProg, WFOp]
 }
-def prog_negate : WellFormedProgram := {
+def prog_negate : WellFormedProgram 1 := {
   prog := [.eq 0 0],
-  inputs := 1,
   h_wf := by simp [WFProg, WFOp]
 }
 lemma prog_true.semantics : prog_true.eval [] rfl = .some dataTrue := by
@@ -263,11 +261,10 @@ lemma prog_true.space : prog_true.space [] rfl = .some 6 := by
 lemma prog_true.time : prog_true.time [] rfl = .some 6 := by
   simp [prog_true, meteredEvalOp, Data.size]
 
-def WellFormedProgram.append (p1 p2 : WellFormedProgram) (h_le : p2.inputs ≤ p1.stackSize) :
-    WellFormedProgram :=
-  { prog := p1.prog ++ p2.prog
-    inputs := p1.inputs
-    h_wf := by sorry }
+def WellFormedProgram.append {in₁ in₁ : ℕ}
+    (p₁ : WellFormedProgram in₁) (p₂ : WellFormedProgram in₂) (h_le : in₂ ≤ p₁.stackSize) :
+    WellFormedProgram in₁ :=
+  { prog := p₁.prog ++ p₂.prog, h_wf := by sorry }
 
 class DataEncode (α : Type) where
   encode : α → Data
@@ -291,29 +288,135 @@ instance : DataEncode ℕ where
   encode x := DataEncode.encode (Nat.bits x)
   h_inj := by sorry
 
+def RunsInSpace {inputs : ℕ} (p : WellFormedProgram inputs) (s : ℕ → ℕ) : Prop :=
+  ∃ s₁ s₂, ∀ x, (h_l : x.length = inputs) → ∃ s' ≤ s₁ * (s (Data.l x).size) + s₂,
+  p.space x h_l = .some s'
 
-def prog_reverse : WellFormedProgram := {
+def RunsInTime {inputs : ℕ} (p : WellFormedProgram inputs) (t : ℕ → ℕ) : Prop :=
+  ∃ t₁ t₂, ∀ x, (h_l : x.length = inputs) → ∃ t' ≤ t₁ * (t (Data.l x).size) + t₂,
+  p.time x h_l = .some t'
+
+def ComputesInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+  (p : WellFormedProgram 1) (f : α → β) (t s : ℕ → ℕ) : Prop :=
+  ∃ t₁ t₂ s₁ s₂,
+    (∀ x : α, p.eval [DataEncode.encode x] rfl = .some (DataEncode.encode (f x))) ∧
+    (∀ x : α, ∃ t' ≤ t₁ * (t (DataEncode.encode x).size) + t₂,
+        p.time [DataEncode.encode x] rfl = .some t') ∧
+    (∀ x : α, ∃ s' ≤ s₁ * (s (DataEncode.encode x).size) + s₂,
+        p.space [DataEncode.encode x] sorry = .some s')
+
+def ComputableInTimeAndSpace (α β : Type) [DataEncode α] [DataEncode β]
+  (f : α → β) (t s : ℕ → ℕ) : Prop :=
+  ∃ (p : WellFormedProgram 1), ComputesInTimeAndSpace p f t s
+
+
+lemma fold_space_linear {s : ℕ → ℕ} {step : Data → Data → Data}
+    (hbody : ∀ (c acc : Data),
+      meteredEvalOp stack .fold  body (c :: acc :: stack) h_wf =
+        .some (step c acc, stepTime c acc, stepSpace c acc)) :
+    ∀ (xs : List Data) (acc : Data) (stack : List Data) (h_wf : WFProg (stack.length + 2) body),
+      goMeteredFold xs acc stack body h_wf =
+        .some (xs.foldl (fun a x => step x a) acc,
+               foldTime stepTime step xs acc,
+               foldSpace stepSpace step xs acc) := by
+  exact goMeteredFold_of_step hbody
+
+def prog_reverse : WellFormedProgram 1 := {
   prog := [
     .empty,
     .fold [
       .cons 0 1
     ] 0 1
   ],
-  inputs := 1,
   h_wf := by simp [WFProg, WFOp]
 }
 
+theorem ComputesInTimeAndSpace_reverse {α : Type} [DataEncode α]
+  : ComputesInTimeAndSpace prog_reverse (List.reverse : List α → List α)
+    (fun n => 1 + 2 * n + n * n) (fun n => 1 + 2 * n + n * n) := by
+  refine ⟨_, _, _, _, ?_⟩
+  · intro xs; simp [prog_reverse, meteredEvalOp, Data.asList, List.reverse]
+  · intro xs; simp [prog_reverse, meteredEvalOp, Data.asList, List.reverse]; use 1 + 2 * xs.size + xs.size * xs.size; omega
+  · intro xs; simp [prog_reverse, meteredEvalOp, Data.asList, List.reverse]; use 1 + 2 * xs.size + xs.size * xs.size; omega
+
+/-- Generic time cost of a metered fold whose body acts as a pure step
+    `(item, acc) ↦ acc'` with per-iteration time `stepTime item acc`. -/
+def foldTime (stepTime : Data → Data → ℕ) (step : Data → Data → Data)
+    : List Data → Data → ℕ
+  | [],      acc => acc.size
+  | x :: xs, acc => 1 + stepTime x acc + foldTime stepTime step xs (step x acc)
+
+/-- Generic space cost: max of per-iteration body space and the rest of the fold. -/
+def foldSpace (stepSpace : Data → Data → ℕ) (step : Data → Data → Data)
+    : List Data → Data → ℕ
+  | [],      acc => acc.size
+  | x :: xs, acc => max (stepSpace x acc) (foldSpace stepSpace step xs (step x acc))
+
+/-- Generic semantics + time + space for any well-formed fold body that acts as a pure
+    deterministic step.
+
+    The hypothesis `hbody` must hold for every iteration: running `body` on a stack of the
+    form `c :: acc :: stack` (for any `c, acc`) produces `step c acc` with cost
+    `(stepTime c acc, stepSpace c acc)`. -/
+lemma goMeteredFold_of_step {body : Prog} {stack : List Data}
+    (h_wf : WFProg (stack.length + 2) body)
+    (step : Data → Data → Data) (stepTime stepSpace : Data → Data → ℕ)
+    (hbody : ∀ (c acc : Data),
+      meteredEvalProg body (c :: acc :: stack) h_wf =
+        .some (step c acc, stepTime c acc, stepSpace c acc))
+    (xs : List Data) (acc : Data) :
+    goMeteredFold xs acc stack body h_wf =
+      .some (xs.foldl (fun a x => step x a) acc,
+             foldTime stepTime step xs acc,
+             foldSpace stepSpace step xs acc) := by
+  induction xs generalizing acc with
+  | nil => simp [foldTime, foldSpace]
+  | cons x xs ih => simp [hbody, ih, foldTime, foldSpace]
+
+/-- Time cost of running the body `[.cons 0 1]` repeatedly over `xs`, threading `acc`. -/
+def revFoldTime (xs : List Data) (acc : Data) : ℕ :=
+  foldTime (fun x a => 1 + (Data.l (x :: a.asList)).size)
+           (fun x a => Data.l (x :: a.asList)) xs acc
+
+/-- Space cost of the same fold: maximum live size across iterations. -/
+def revFoldSpace (xs : List Data) (acc : Data) : ℕ :=
+  foldSpace (fun x a => 1 + (Data.l (x :: a.asList)).size)
+            (fun x a => Data.l (x :: a.asList)) xs acc
+
+/-- Combined semantics + time + space for the inner fold of `prog_reverse`. -/
+lemma goMeteredFold_reverseBody (xs : List Data) (acc : Data) (stack : List Data)
+    (h_wf : WFProg (stack.length + 2) [Operation.cons 0 1]) :
+    goMeteredFold xs acc stack [Operation.cons 0 1] h_wf =
+      .some (xs.foldl (fun a x => Data.l (x :: a.asList)) acc,
+             revFoldTime xs acc, revFoldSpace xs acc) := by
+  exact goMeteredFold_of_step h_wf
+    (fun x a => Data.l (x :: a.asList))
+    (fun x a => 1 + (Data.l (x :: a.asList)).size)
+    (fun x a => 1 + (Data.l (x :: a.asList)).size)
+    (by intro c acc'; simp [meteredEvalOp]) xs acc
+
+/-- The reverse-body fold reverses the input list, prepended onto the accumulator. -/
+lemma foldl_reverseBody (xs : List Data) (acc : Data) :
+    xs.foldl (fun a x => Data.l (x :: a.asList)) acc =
+      Data.l (xs.reverse ++ acc.asList) := by
+  induction xs generalizing acc with
+  | nil => cases acc with | l _ => simp [Data.asList]
+  | cons x xs ih => cases acc with | l _ => simp [ih, Data.asList, List.reverse_cons]
+
+/-- `prog_reverse` reverses its input list, with concrete time and space cost. -/
 theorem prog_reverse.semantics (xs : List Data) :
+    meteredEvalProg prog_reverse.prog [Data.l xs] prog_reverse.h_wf
+      = .some (Data.l xs.reverse,
+               1 + revFoldTime xs Data.empty,
+               1 + revFoldSpace xs Data.empty) := by
+  have h := goMeteredFold_reverseBody xs Data.empty [Data.empty, Data.l xs]
+    (by simp [WFProg, WFOp])
+  simp [prog_reverse, meteredEvalOp, h, foldl_reverseBody, Data.asList]
+
+/-- Convenient corollary: `prog_reverse.eval` returns the reversed list. -/
+theorem prog_reverse.eval_eq (xs : List Data) :
     prog_reverse.eval [Data.l xs] rfl = .some (Data.l xs.reverse) := by
-  unfold prog_reverse
-  induction xs with
-  | nil => simp [meteredEvalOp]
-  | cons x xs ih =>
-    simp
-    simp at ih
-    simp [meteredEvalOp] at ih ⊢
-    simp [ih, List.reverse_cons]
-    sorry
+  simp [WellFormedProgram.eval, prog_reverse.semantics]
 
 -- Binary addition
 def prog_inc : WellFormedProgram := {
