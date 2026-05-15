@@ -74,9 +74,12 @@ inductive Operation where
   -- branch on tape i: if empty then then_ else else_
   | ite    : TapeIndex → (List Operation) → (List Operation) → Operation
   -- fold over the children of tape l with initial accumulator tape i and body program b
-  | fold   : TapeIndex → TapeIndex → (List Operation) → Operation
+  | fold   : (List Operation) → TapeIndex → TapeIndex → Operation
   -- while tape i is nonempty, run body b with stack extended by acc (the current value of tape i)
   | while_ : TapeIndex → (List Operation) → Operation
+  -- call executes a sub-program and returns its stack top. This is not strictly needed, but
+  -- makes it easier to write programs.
+  | call : (List Operation) → Operation
 deriving Repr
 
 abbrev Prog := List Operation
@@ -92,8 +95,9 @@ mutual
     | .tail i     => i < n
     | .eq i j     => i < n ∧ j < n
     | .ite i t e  => i < n ∧ WFProg n t ∧ WFProg n e
-    | .fold l i b => l < n ∧ i < n ∧ WFProg (n + 2) b
+    | .fold b i l => l < n ∧ i < n ∧ WFProg (n + 2) b
     | .while_ i b => i < n ∧ WFProg (n + 1) b
+    | .call b => WFProg n b
 
   /-- `WFProg n p` states that `p` is well-formed given an initial stack of size `n`.
       Since each operation pushes exactly one value, the k-th operation (0-indexed) sees
@@ -121,55 +125,6 @@ end
 abbrev dataTrue := Data.l [Data.l []]
 abbrev dataFalse := Data.l []
 
-structure InterpreterState where
-  stack : List Data
-  time : ℕ
-  space : ℕ
-
--- Interpreter:
--- It returns Part.none if the program does not terminate and Part.some Option.none if the
--- program is not well-formed.
-mutual
-  def evalOp (stack : List Data) (op : Operation) (h_wf : WFOp stack.length op)
-      : Part Data := match op with
-    | .empty => .some Data.empty
-    | .cons h t => .some (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList))
-    | .head i => .some (stack[i].asList.headD Data.empty)
-    | .tail i => .some (Data.l stack[i].asList.tail)
-    | .eq i j => .some (if stack[i]'h_wf.1 == stack[j]'h_wf.2 then dataTrue else dataFalse)
-    | .ite i then_ else_ =>
-      if stack[i]'h_wf.1 == dataTrue then
-        evalProg then_ stack h_wf.2.1
-      else
-        evalProg else_ stack h_wf.2.2
-    | .fold list initial body =>
-      goFold (stack[list]'h_wf.1).asList (stack[initial]'h_wf.2.1) stack body h_wf.2.2
-    | .while_ i body =>
-        -- recurse as long as the head of the returned value is true (the rest is used
-        -- to pass data across iterations).
-        let F := fun rec d =>
-          (evalProg body (d :: stack) h_wf.2).bind fun d =>
-            if d.asList.head? == dataTrue then rec d else Data.l d.asList.tail
-        Part.fix F (stack[i]'h_wf.1)
-
-  def goFold (items : List Data) (acc : Data) (stack : List Data) (body : Prog)
-      (h_wf : WFProg (stack.length + 2) body) : Part Data :=
-    match items with
-    | []      => .some acc
-    | c :: cs =>
-      -- Put the item and the accumulator on two new tapes and run the program.
-      -- take the contents of the last tape as the result / new accumulator.
-      (evalProg body (c :: acc :: stack) h_wf).bind fun acc' => goFold cs acc' stack body h_wf
-
-  @[simp]
-  def evalProg (prog : Prog) (stack : List Data) (h_wf : WFProg stack.length prog) : Part Data :=
-    match prog with
-      | []           => .some (stack.head (by grind [WFProg]))
-      | op :: rest   =>
-        let ⟨h_wf_head, h_wf_tail⟩ := h_wf
-        (evalOp stack op h_wf_head).bind fun r => evalProg rest (r :: stack) h_wf_tail
-end
-
 mutual
   --- Evaluate a single operation and return the return value, additional time and additional space.
   def meteredEvalOp (stack : List Data) (op : Operation) (h_wf : WFOp stack.length op) :
@@ -194,10 +149,38 @@ mutual
         meteredEvalProg then_ stack h_wf.2.1
       else
         meteredEvalProg else_ stack h_wf.2.2).map (fun (r, t, s) => (r, 1 + t, s))
-    | .fold list initial body => sorry
-    | .while_ i body => sorry
+    | .fold body initial list =>
+      -- Time: 1 + Σ_iterations (1 + body_time).
+      -- Space: init.size + max_iterations(body_space).
+      (goMeteredFold (stack[list]'h_wf.1).asList (stack[initial]'h_wf.2.1) stack body h_wf.2.2)
+    | .while_ i body =>
+      -- Same accounting as fold: time sums per-iteration costs (each iteration adds 1 + body_time);
+      -- space is init.size plus the max body space across iterations.
+      let init := stack[i]'h_wf.1
+      let F : ((Data × ℕ × ℕ) → Part (Data × ℕ × ℕ)) →
+              (Data × ℕ × ℕ) → Part (Data × ℕ × ℕ) :=
+        fun rec d_ts =>
+          let (d, t, s) := d_ts
+          (meteredEvalProg body (d :: stack) h_wf.2).bind fun (d', tBody, sBody) =>
+            let t' := t + 1 + tBody
+            let s' := max s sBody
+            if d'.asList.head? == .some dataTrue then rec (d', t', s')
+            else .some (Data.l d'.asList.tail, t', s')
+      (Part.fix F (init, 0, 0)).map fun (r, t, s) => (r, 1 + t, init.size + s)
+    | .call body => meteredEvalProg body stack h_wf
 
+  /-- Metered analogue of `goFold`: walks the items, threading the accumulator and accumulating
+      `(sum of (1 + body_time), max of body_space)` across iterations. -/
+  def goMeteredFold (items : List Data) (acc : Data) (stack : List Data) (body : Prog)
+      (h_wf : WFProg (stack.length + 2) body) : Part (Data × ℕ × ℕ) :=
+    match items with
+    | []      => .some (acc, acc.size, acc.size)
+    | c :: cs =>
+      (meteredEvalProg body (c :: acc :: stack) h_wf).bind fun (acc', tBody, sBody) =>
+        (goMeteredFold cs acc' stack body h_wf).map fun (r, t, s) =>
+          (r, 1 + tBody + t, max sBody s)
 
+  @[simp]
   def meteredEvalProg (prog : Prog) (stack : List Data) (h_wf : WFProg stack.length prog) :
       Part (Data × ℕ × ℕ) :=
     match prog with
@@ -210,14 +193,18 @@ mutual
 end
 
 @[simp]
-lemma evalProg_cons
-    (op : Operation)
-    (rest : Prog)
-    (stack : List Data)
-    (h_wf : WFProg stack.length (op :: rest)) :
-    evalProg (op :: rest) stack h_wf =
-      (evalOp stack op h_wf.1).bind fun r => evalProg rest (r :: stack) h_wf.2 := by
-  sorry
+lemma goMeteredFold_nil (acc : Data) (stack : List Data) (h_wf : WFProg (stack.length + 2) body) :
+    goMeteredFold [] acc stack body h_wf = .some (acc, acc.size, acc.size) := by
+  simp [goMeteredFold]
+
+@[simp]
+lemma goMeteredFold_cons (head : Data) (tail : List Data) (acc : Data) (stack : List Data)
+    (h_wf : WFProg (stack.length + 2) body) :
+    goMeteredFold (head :: tail) acc stack body h_wf =
+      (meteredEvalProg body (head :: acc :: stack) h_wf).bind fun (acc', tBody, sBody) =>
+        (goMeteredFold tail acc' stack body h_wf).map fun (r, t, s) =>
+          (r, 1 + tBody + t, max sBody s) := by
+  simp [goMeteredFold]
 
 structure WellFormedProgram where
   prog : Prog
@@ -236,7 +223,17 @@ def FunType (wf : WellFormedProgram) : Type :=
 @[simp]
 def WellFormedProgram.eval (p : WellFormedProgram)
     (stack : List Data) (h_len : stack.length = p.inputs) : Part Data :=
-  evalProg p.prog stack (by simpa [h_len] using p.h_wf)
+  (meteredEvalProg p.prog stack (by simpa [h_len] using p.h_wf)).map fun (d, _, _) => d
+
+@[simp]
+def WellFormedProgram.time (p : WellFormedProgram)
+    (stack : List Data) (h_len : stack.length = p.inputs) : Part ℕ :=
+  (meteredEvalProg p.prog stack (by simpa [h_len] using p.h_wf)).map fun (_, t, _) => t
+
+@[simp]
+def WellFormedProgram.space (p : WellFormedProgram)
+    (stack : List Data) (h_len : stack.length = p.inputs) : Part ℕ :=
+  (meteredEvalProg p.prog stack (by simpa [h_len] using p.h_wf)).map fun (_, _, s) => s
 
 def WellFormedProgram.Total (p : WellFormedProgram) : Prop :=
   ∀ (stack : List Data) (h_len : stack.length = p.inputs), (p.eval stack h_len).Dom
@@ -258,7 +255,13 @@ def prog_negate : WellFormedProgram := {
   h_wf := by simp [WFProg, WFOp]
 }
 lemma prog_true.semantics : prog_true.eval [] rfl = .some dataTrue := by
-  simp [prog_true, evalOp]
+  simp [prog_true, meteredEvalOp]
+
+lemma prog_true.space : prog_true.space [] rfl = .some 6 := by
+  simp [prog_true, meteredEvalOp, Data.size]
+
+lemma prog_true.time : prog_true.time [] rfl = .some 6 := by
+  simp [prog_true, meteredEvalOp, Data.size]
 
 def WellFormedProgram.append (p1 p2 : WellFormedProgram) (h_le : p2.inputs ≤ p1.stackSize) :
     WellFormedProgram :=
@@ -288,8 +291,32 @@ instance : DataEncode ℕ where
   encode x := DataEncode.encode (Nat.bits x)
   h_inj := by sorry
 
+
+def prog_reverse : WellFormedProgram := {
+  prog := [
+    .empty,
+    .fold [
+      .cons 0 1
+    ] 0 1
+  ],
+  inputs := 1,
+  h_wf := by simp [WFProg, WFOp]
+}
+
+theorem prog_reverse.semantics (xs : List Data) :
+    prog_reverse.eval [Data.l xs] rfl = .some (Data.l xs.reverse) := by
+  unfold prog_reverse
+  induction xs with
+  | nil => simp [meteredEvalOp]
+  | cons x xs ih =>
+    simp
+    simp at ih
+    simp [meteredEvalOp] at ih ⊢
+    simp [ih, List.reverse_cons]
+    sorry
+
 -- Binary addition
-def prog_add : WellFormedProgram := {
+def prog_inc : WellFormedProgram := {
   prog := [
     .fold 0 1 [
       .cons 0 2, -- cons the bit to the accumulator
