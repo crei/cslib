@@ -255,16 +255,31 @@ lemma Operation.meteredEvalT_empty {stack : List Data} {h_wf : WFOp stack.length
   simp [Operation.meteredEvalT, meteredEvalOp]
 
 @[simp]
+lemma Operation.meteredEvalT_cons
+    {stack : List Data}
+    {h_wf : WFOp stack.length (.cons h t)}
+    {h_total : Op.Total (.cons h t) h_wf} :
+    Operation.meteredEvalT (.cons h t) stack h_wf h_total =
+      (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList),
+      1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size,
+      1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size) := by
+  simp [Operation.meteredEvalT, meteredEvalOp]
+
+@[simp]
 lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
-    {h_wf : WFOp stack.length (.fold body initial list)} {h_total : Op.Total (.fold body initial list) h_wf} :
+    {h_wf : WFOp stack.length (.fold body initial list)}
+    {h_total : Op.Total (.fold body initial list) h_wf}
+    (h_body_total : body.Total h_wf.2.2) :
     Operation.meteredEvalT (.fold body initial list) stack h_wf h_total =
       (
-        List.foldl (fun a x => Prog.meteredEvalT body (a :: x :: stack) sorry sorry) (stack[initial]'h_wf.2.1) (stack[list]'h_wf.1).asList,
+        List.foldl
+          (fun a x => (Prog.meteredEvalT body (x :: a :: stack) h_wf.2.2 h_body_total).1)
+          (stack[initial]'h_wf.2.1) (stack[list]'h_wf.1).asList,
         sorry,
         sorry
       )
       := by
-  simp [Operation.meteredEvalT, meteredEvalOp]
+  sorry
 
 @[simp]
 lemma Prog.meteredEvalT_nil
@@ -475,10 +490,9 @@ lemma prog_reverse.semantics (x : Data) (xs : List Data) :
     (prog_reverse.prog.meteredEvalT (x :: xs) (by simp; sorry) (by simp; sorry)).1 = Data.l (x.asList).reverse := by
   unfold prog_reverse
   simp
-  rw [goMeteredFold_of_total _ _ x.asList Data.empty]
-
-
-  simp [prog_reverse, meteredEvalOp, Data.asList, List.reverse]
+  rw [Operation.meteredEvalT_fold (by simp)]
+  simp
+  sorry
 
 theorem ComputesInTimeAndSpace_reverse {α : Type} [DataEncode α]
   : ComputesInTimeAndSpace prog_reverse (List.reverse : List α → List α)
