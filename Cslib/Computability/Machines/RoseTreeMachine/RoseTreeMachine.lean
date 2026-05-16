@@ -260,12 +260,27 @@ lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stac
     {h_whf : Operation.WhileFree (.fold body initial list)}
     (h_body_total : body.Total h_wf.2.2) :
     Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf =
-      (
-        List.foldl
-          (fun a x => (Prog.meteredEvalT body (x :: a :: stack) h_wf.2.2 (by simpa using h_whf)).1)
-          (stack[initial]'h_wf.2.1) (stack[list]'h_wf.1).asList,
-        sorry,
-        sorry
+      ( -- data: fold over accumulator
+        (stack[list]'h_wf.1).asList.foldl
+          (fun acc x => (Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
+            (by simpa using h_whf)).1)
+          (stack[initial]'h_wf.2.1),
+        -- time: thread (acc, time), then add final acc size
+        (let (a', t) := (stack[list]'h_wf.1).asList.foldl
+            (fun (acc, t) x =>
+              let (r, t', _) := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
+                (by simpa using h_whf)
+              (r, t + 1 + t'))
+            (stack[initial]'h_wf.2.1, 0);
+          t + a'.size),
+        -- space: thread (acc, max-space), then max with final acc size
+        (let (a', s) := (stack[list]'h_wf.1).asList.foldl
+            (fun (acc, s) x =>
+              let (r, _, s') := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
+                (by simpa using h_whf)
+              (r, max s s'))
+            (stack[initial]'h_wf.2.1, 0);
+          max s a'.size)
       )
       := by
   sorry
@@ -310,6 +325,24 @@ lemma prog_reverse.semantics (x : Data) (xs : List Data) :
     | nil => simp
     | cons x xs ih => simp [List.foldl, ih]
   simp [prog_reverse, h]
+
+lemma prog_reverse.time (x : Data) (xs : List Data) :
+    (prog_reverse.meteredEvalT
+      (x :: xs)
+      (by simp [prog_reverse, WFProg, WFOp])
+      (by simp [prog_reverse])).2 =
+      sorry := by
+  simp [prog_reverse]
+  sorry
+
+lemma prog_reverse.space (x : Data) (xs : List Data) :
+    (prog_reverse.meteredEvalT
+      (x :: xs)
+      (by simp [prog_reverse, WFProg, WFOp])
+      (by simp [prog_reverse])).2.1 =
+      sorry := by
+  simp [prog_reverse]
+  sorry
 
 
 -----------------------------------------------------------------------------------------
@@ -457,19 +490,6 @@ def Prog.foldStep {body : Prog} {stack : List Data}
     (c acc : Data) : Data × ℕ × ℕ :=
   (meteredEvalProg body (c :: acc :: stack) h_wf).get
     (h_total (c :: acc :: stack) (by simp))
-
-/-- Generic time cost of a metered fold whose body acts as a pure step
-    `(item, acc) ↦ acc'` with per-iteration time `stepTime item acc`. -/
-def foldTime (stepTime : Data → Data → ℕ) (step : Data → Data → Data)
-    : List Data → Data → ℕ
-  | [],      acc => acc.size
-  | x :: xs, acc => 1 + stepTime x acc + foldTime stepTime step xs (step x acc)
-
-/-- Generic space cost: max of per-iteration body space and the rest of the fold. -/
-def foldSpace (stepSpace : Data → Data → ℕ) (step : Data → Data → Data)
-    : List Data → Data → ℕ
-  | [],      acc => acc.size
-  | x :: xs, acc => max (stepSpace x acc) (foldSpace stepSpace step xs (step x acc))
 
 lemma Prog.meteredEvalProg_eq_foldStep {body : Prog} {stack : List Data}
     (h_wf : WFProg (stack.length + 2) body) (h_total : body.Total h_wf)
