@@ -43,6 +43,12 @@ abbrev Data.empty := Data.l []
 abbrev Data.asList
   | Data.l xs => xs
 
+@[simp]
+lemma Data.asList_empty : Data.empty.asList = [] := by simp [Data.empty]
+
+@[simp]
+lemma Data.asList_l : Data.l xs.asList = xs := by grind
+
 --- Encoding length of d.
 def Data.size : Data → ℕ
   | Data.l xs => 2 + (xs.map Data.size |>.sum)
@@ -210,7 +216,7 @@ end
 --           (r, 1 + tBody + t, max sBody s) := by
 --   simp [goMeteredFold]
 
-def Op.Total (op : Operation) (h_wf : WFOp n op) : Prop :=
+def Operation.Total (op : Operation) (h_wf : WFOp n op) : Prop :=
   ∀ (stack : List Data) (h_len : stack.length = n),
   (meteredEvalOp stack op (h_len ▸ h_wf)).Dom
 
@@ -225,41 +231,60 @@ mutual
   @[simp]
   def Operation.WhileFree (op : Operation) : Prop :=
     match op with
+    | .ite _ a b => Prog.WhileFree a ∧ Prog.WhileFree b
     | .while_ _ _ => False
     | .fold b _ _ => Prog.WhileFree b
+    | .call p => Prog.WhileFree p
     | _ => True
   @[simp]
   def Prog.WhileFree (body : Prog) : Prop :=
-    ∀ op ∈ body, Operation.WhileFree op
+    match body with
+    | [] => True
+    | op :: rest => Operation.WhileFree op ∧ Prog.WhileFree rest
 end
 
 @[simp]
-theorem Total_of_WhileFree {n : ℕ} {body : Prog}
+theorem Prog_total_of_WhileFree {n : ℕ} {body : Prog}
     (h_wf : WFProg n body) (h_whileFree : Prog.WhileFree body) :
     Prog.Total body h_wf := by
   sorry
 
+@[simp]
+theorem Op_total_of_WhileFree {n : ℕ} {op : Operation}
+    (h_wf : WFOp n op) (h_whileFree : Operation.WhileFree op) :
+    Operation.Total op h_wf := by
+  sorry
+
+@[simp]
+theorem Dom_meteredEvalOp_of_WhileFree {op : Operation} {stack : List Data}
+    (h_wf : WFOp stack.length op) (h_whf : Operation.WhileFree op) :
+    (meteredEvalOp stack op h_wf).Dom :=
+  Op_total_of_WhileFree h_wf h_whf stack rfl
+
+-- We now introduce some simplification lemmas. Because of the dependent types involed
+-- in Part and for other reasons, we only do this for while-free programs.
+-- It is not sufficient for a program to be total, because this does not imply that all
+-- sub-programs are total, which is what we would need for simp lemmas to be clearly statable.
+
 def Operation.meteredEvalT (op : Operation) (stack : List Data) (h_wf : WFOp stack.length op)
-    (h_total : Op.Total op h_wf) : Data × ℕ × ℕ :=
-  (meteredEvalOp stack op h_wf).get (by simpa [Prog.Total] using h_total stack rfl)
+    (h_whf : Operation.WhileFree op) : Data × ℕ × ℕ :=
+  (meteredEvalOp stack op h_wf).get (by simp [h_whf])
 
 def Prog.meteredEvalT (body : Prog) (stack : List Data)
     (h_wf : WFProg stack.length body)
-    (h_total : body.Total h_wf) : Data × ℕ × ℕ :=
-  (meteredEvalProg body stack h_wf).get (by simpa [Prog.Total] using h_total stack rfl)
-
+    (h_whf : Prog.WhileFree body) : Data × ℕ × ℕ :=
+  (meteredEvalProg body stack h_wf).get (Prog_total_of_WhileFree h_wf h_whf stack rfl)
 
 @[simp]
-lemma Operation.meteredEvalT_empty {stack : List Data} {h_wf : WFOp stack.length .empty} {h_total : Op.Total .empty h_wf} :
-    Operation.meteredEvalT .empty stack h_wf h_total = (Data.empty, 1, 1) := by
+lemma Operation.meteredEvalT_empty {stack : List Data} {h_wf : WFOp stack.length .empty} :
+    Operation.meteredEvalT .empty stack h_wf (by simp) = (Data.empty, 1, 1) := by
   simp [Operation.meteredEvalT, meteredEvalOp]
 
 @[simp]
 lemma Operation.meteredEvalT_cons
     {stack : List Data}
-    {h_wf : WFOp stack.length (.cons h t)}
-    {h_total : Op.Total (.cons h t) h_wf} :
-    Operation.meteredEvalT (.cons h t) stack h_wf h_total =
+    {h_wf : WFOp stack.length (.cons h t)} :
+    Operation.meteredEvalT (.cons h t) stack h_wf (by simp) =
       (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList),
       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size,
       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size) := by
@@ -268,12 +293,12 @@ lemma Operation.meteredEvalT_cons
 @[simp]
 lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
     {h_wf : WFOp stack.length (.fold body initial list)}
-    {h_total : Op.Total (.fold body initial list) h_wf}
+    {h_whf : Operation.WhileFree (.fold body initial list)}
     (h_body_total : body.Total h_wf.2.2) :
-    Operation.meteredEvalT (.fold body initial list) stack h_wf h_total =
+    Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf =
       (
         List.foldl
-          (fun a x => (Prog.meteredEvalT body (x :: a :: stack) h_wf.2.2 h_body_total).1)
+          (fun a x => (Prog.meteredEvalT body (x :: a :: stack) h_wf.2.2 (by simpa using h_whf)).1)
           (stack[initial]'h_wf.2.1) (stack[list]'h_wf.1).asList,
         sorry,
         sorry
@@ -284,19 +309,18 @@ lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stac
 @[simp]
 lemma Prog.meteredEvalT_nil
     {stack : List Data}
-    {h_wf : WFProg stack.length []}
-    {h_total : Prog.Total [] h_wf} :
-    Prog.meteredEvalT [] stack h_wf h_total = (stack.head (by grind [WFProg]), 0, 0) := by
-  sorry
+    {h_wf : WFProg stack.length []} :
+    Prog.meteredEvalT [] stack h_wf (by simp) = (stack.head (by grind [WFProg]), 0, 0) := by
+  simp [Prog.meteredEvalT]
 
 @[simp]
 lemma Prog.meteredEvalT_cons
     {op : Operation} {rest : Prog} {stack : List Data}
     {h_wf : WFProg stack.length (op :: rest)}
-    {h_total : Prog.Total (op :: rest) h_wf} :
-    Prog.meteredEvalT (op :: rest) stack h_wf h_total =
-      let (r, opT, opS) := op.meteredEvalT stack h_wf.1 sorry
-      let (stack, t, s) := meteredEvalT rest (r :: stack) h_wf.2 sorry
+    {h_whf : Prog.WhileFree (op :: rest)} :
+    Prog.meteredEvalT (op :: rest) stack h_wf h_whf =
+      let (r, opT, opS) := op.meteredEvalT stack h_wf.1 h_whf.1
+      let (stack, t, s) := meteredEvalT rest (r :: stack) h_wf.2 h_whf.2
       (stack, opT + t, opS + s) := by
   sorry
 
@@ -487,12 +511,14 @@ lemma goMeteredFold_of_total {body : Prog} {stack : List Data}
 -- Solution: Get rid of Part
 
 lemma prog_reverse.semantics (x : Data) (xs : List Data) :
-    (prog_reverse.prog.meteredEvalT (x :: xs) (by simp; sorry) (by simp; sorry)).1 = Data.l (x.asList).reverse := by
-  unfold prog_reverse
-  simp
-  rw [Operation.meteredEvalT_fold (by simp)]
-  simp
-  sorry
+    (prog_reverse.prog.meteredEvalT (x :: xs) (by simp; sorry) (by simp [prog_reverse])).1 =
+      Data.l (x.asList).reverse := by
+  have h (xs : List Data) (init : Data) : xs.foldl (fun a x => Data.l (x :: a.asList)) init =
+      Data.l (xs.reverse ++ init.asList) := by
+    induction xs generalizing init with
+    | nil => simp
+    | cons x xs ih => simp [List.foldl, ih]
+  simp [prog_reverse, h]
 
 theorem ComputesInTimeAndSpace_reverse {α : Type} [DataEncode α]
   : ComputesInTimeAndSpace prog_reverse (List.reverse : List α → List α)
