@@ -107,6 +107,10 @@ mutual
     | n, op :: rest => WFOp n op ∧ WFProg (n + 1) rest
 end
 
+lemma WFProg_mono {n₁ n₂ : ℕ} {prog : Prog} (h_wf : WFProg n₁ prog) (h_le : n₁ ≤ n₂) : WFProg n₂ prog := by
+  sorry
+
+
 -- One could define a monadic builder-pattern that handles tape index allocation:
 -- def filter (a : TapeIndex) (predicate : TapeIndex → Build TapeIndex) : Build TapeIndex := do
 --   fold a (← empty) (fun child acc => do
@@ -192,19 +196,94 @@ mutual
 
 end
 
-@[simp]
-lemma goMeteredFold_nil (acc : Data) (stack : List Data) (h_wf : WFProg (stack.length + 2) body) :
-    goMeteredFold [] acc stack body h_wf = .some (acc, acc.size, acc.size) := by
-  simp [goMeteredFold]
+-- @[simp]
+-- lemma goMeteredFold_nil (acc : Data) (stack : List Data) (h_wf : WFProg (stack.length + 2) body) :
+--     goMeteredFold [] acc stack body h_wf = .some (acc, acc.size, acc.size) := by
+--   simp [goMeteredFold]
+
+-- @[simp]
+-- lemma goMeteredFold_cons (head : Data) (tail : List Data) (acc : Data) (stack : List Data)
+--     (h_wf : WFProg (stack.length + 2) body) :
+--     goMeteredFold (head :: tail) acc stack body h_wf =
+--       (meteredEvalProg body (head :: acc :: stack) h_wf).bind fun (acc', tBody, sBody) =>
+--         (goMeteredFold tail acc' stack body h_wf).map fun (r, t, s) =>
+--           (r, 1 + tBody + t, max sBody s) := by
+--   simp [goMeteredFold]
+
+def Op.Total (op : Operation) (h_wf : WFOp n op) : Prop :=
+  ∀ (stack : List Data) (h_len : stack.length = n),
+  (meteredEvalOp stack op (h_len ▸ h_wf)).Dom
+
+/-- A well-formed body is *total* at input length `n` if it terminates on every stack
+    of that length. This mirrors `WellFormedProgram.Total` but works on a raw `Prog`
+    paired with its well-formedness proof. -/
+def Prog.Total {n : ℕ} (body : Prog) (h_wf : WFProg n body) : Prop :=
+  ∀ (stack : List Data) (h_len : stack.length = n),
+    (meteredEvalProg body stack (h_len ▸ h_wf)).Dom
+
+mutual
+  @[simp]
+  def Operation.WhileFree (op : Operation) : Prop :=
+    match op with
+    | .while_ _ _ => False
+    | .fold b _ _ => Prog.WhileFree b
+    | _ => True
+  @[simp]
+  def Prog.WhileFree (body : Prog) : Prop :=
+    ∀ op ∈ body, Operation.WhileFree op
+end
 
 @[simp]
-lemma goMeteredFold_cons (head : Data) (tail : List Data) (acc : Data) (stack : List Data)
-    (h_wf : WFProg (stack.length + 2) body) :
-    goMeteredFold (head :: tail) acc stack body h_wf =
-      (meteredEvalProg body (head :: acc :: stack) h_wf).bind fun (acc', tBody, sBody) =>
-        (goMeteredFold tail acc' stack body h_wf).map fun (r, t, s) =>
-          (r, 1 + tBody + t, max sBody s) := by
-  simp [goMeteredFold]
+theorem Total_of_WhileFree {n : ℕ} {body : Prog}
+    (h_wf : WFProg n body) (h_whileFree : Prog.WhileFree body) :
+    Prog.Total body h_wf := by
+  sorry
+
+def Operation.meteredEvalT (op : Operation) (stack : List Data) (h_wf : WFOp stack.length op)
+    (h_total : Op.Total op h_wf) : Data × ℕ × ℕ :=
+  (meteredEvalOp stack op h_wf).get (by simpa [Prog.Total] using h_total stack rfl)
+
+def Prog.meteredEvalT (body : Prog) (stack : List Data)
+    (h_wf : WFProg stack.length body)
+    (h_total : body.Total h_wf) : Data × ℕ × ℕ :=
+  (meteredEvalProg body stack h_wf).get (by simpa [Prog.Total] using h_total stack rfl)
+
+
+@[simp]
+lemma Operation.meteredEvalT_empty {stack : List Data} {h_wf : WFOp stack.length .empty} {h_total : Op.Total .empty h_wf} :
+    Operation.meteredEvalT .empty stack h_wf h_total = (Data.empty, 1, 1) := by
+  simp [Operation.meteredEvalT, meteredEvalOp]
+
+@[simp]
+lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
+    {h_wf : WFOp stack.length (.fold body initial list)} {h_total : Op.Total (.fold body initial list) h_wf} :
+    Operation.meteredEvalT (.fold body initial list) stack h_wf h_total =
+      (
+        List.foldl (fun a x => Prog.meteredEvalT body (a :: x :: stack) sorry sorry) (stack[initial]'h_wf.2.1) (stack[list]'h_wf.1).asList,
+        sorry,
+        sorry
+      )
+      := by
+  simp [Operation.meteredEvalT, meteredEvalOp]
+
+@[simp]
+lemma Prog.meteredEvalT_nil
+    {stack : List Data}
+    {h_wf : WFProg stack.length []}
+    {h_total : Prog.Total [] h_wf} :
+    Prog.meteredEvalT [] stack h_wf h_total = (stack.head (by grind [WFProg]), 0, 0) := by
+  sorry
+
+@[simp]
+lemma Prog.meteredEvalT_cons
+    {op : Operation} {rest : Prog} {stack : List Data}
+    {h_wf : WFProg stack.length (op :: rest)}
+    {h_total : Prog.Total (op :: rest) h_wf} :
+    Prog.meteredEvalT (op :: rest) stack h_wf h_total =
+      let (r, opT, opS) := op.meteredEvalT stack h_wf.1 sorry
+      let (stack, t, s) := meteredEvalT rest (r :: stack) h_wf.2 sorry
+      (stack, opT + t, opS + s) := by
+  sorry
 
 structure WellFormedProgram (inputs : ℕ) where
   prog : Prog
@@ -219,8 +298,8 @@ def FunType (inputs : ℕ) : Type := match inputs with
 
 @[simp]
 def WellFormedProgram.eval {inputs : ℕ} (p : WellFormedProgram inputs)
-    (stack : List Data) (h_len : stack.length = inputs) : Part Data :=
-  (meteredEvalProg p.prog stack (by simpa [h_len] using p.h_wf)).map fun (d, _, _) => d
+    (stack : List Data) (h_len : stack.length ≥ inputs) : Part Data :=
+  (meteredEvalProg p.prog stack (by sorry)).map fun (d, _, _) => d
 
 @[simp]
 def WellFormedProgram.time {inputs : ℕ} (p : WellFormedProgram inputs)
@@ -232,10 +311,26 @@ def WellFormedProgram.space {inputs : ℕ} (p : WellFormedProgram inputs)
     (stack : List Data) (h_len : stack.length = inputs) : Part ℕ :=
   (meteredEvalProg p.prog stack (by simpa [h_len] using p.h_wf)).map fun (_, _, s) => s
 
-def WellFormedProgram.Total {inputs : ℕ} (p : WellFormedProgram inputs) : Prop :=
-  ∀ (stack : List Data) (h_len : stack.length = inputs), (p.eval stack h_len).Dom
+structure TotalProgram (inputs : ℕ) extends WellFormedProgram inputs where
+  h_total : toWellFormedProgram.prog.Total toWellFormedProgram.h_wf
 
-def WellFormedProgram.as_fun {inputs : ℕ} (p : WellFormedProgram inputs) (h_total : p.Total) :
+def TotalProgram.eval {inputs : ℕ} (p : TotalProgram inputs)
+    (stack : List Data) (h_len : stack.length ≥ inputs) : Data :=
+  (p.toWellFormedProgram.eval stack h_len).get (p.h_total stack sorry)
+
+/-- Unfolding lemma that lets `simp` "execute" a `TotalProgram` step-by-step: it
+    rewrites `p.eval stack h_len` into a form mentioning `meteredEvalProg` directly,
+    so the `@[simp]` equations for `meteredEvalProg`/`meteredEvalOp` together with
+    `Part.some_bind`, `Part.map_some`, `Part.get_some` can reduce the program. -/
+@[simp]
+theorem TotalProgram.eval_eq {inputs : ℕ} (p : TotalProgram inputs)
+    (stack : List Data) (h_len : stack.length ≥ inputs) :
+    p.eval stack h_len =
+      ((meteredEvalProg p.prog stack (by sorry)).get
+         (by simpa [WellFormedProgram.eval] using p.h_total stack sorry)).1 := by
+  simp [TotalProgram.eval, WellFormedProgram.eval]
+
+def TotalProgram.as_fun {inputs : ℕ} (p : TotalProgram inputs) :
     FunType inputs :=
   sorry
 
@@ -299,7 +394,7 @@ def RunsInTime {inputs : ℕ} (p : WellFormedProgram inputs) (t : ℕ → ℕ) :
 def ComputesInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
   (p : WellFormedProgram 1) (f : α → β) (t s : ℕ → ℕ) : Prop :=
   ∃ t₁ t₂ s₁ s₂,
-    (∀ x : α, p.eval [DataEncode.encode x] rfl = .some (DataEncode.encode (f x))) ∧
+    (∀ x : α, p.eval [DataEncode.encode x] sorry = .some (DataEncode.encode (f x))) ∧
     (∀ x : α, ∃ t' ≤ t₁ * (t (DataEncode.encode x).size) + t₂,
         p.time [DataEncode.encode x] rfl = .some t') ∧
     (∀ x : α, ∃ s' ≤ s₁ * (s (DataEncode.encode x).size) + s₂,
@@ -310,7 +405,7 @@ def ComputableInTimeAndSpace (α β : Type) [DataEncode α] [DataEncode β]
   ∃ (p : WellFormedProgram 1), ComputesInTimeAndSpace p f t s
 
 
-def prog_reverse : WellFormedProgram 1 := {
+def prog_reverse : TotalProgram 1 := {
   prog := [
     .empty,
     .fold [
@@ -318,7 +413,72 @@ def prog_reverse : WellFormedProgram 1 := {
     ] 0 1
   ],
   h_wf := by simp [WFProg, WFOp]
+  h_total := by simp
 }
+
+-- TODO continue here: Now we need a good lemma for goMeteredFold.
+
+/-- The `(result, time, space)` triple produced by a single execution of a total fold
+    body on `c :: acc :: stack`. Derived from `meteredEvalProg`, so no extra data is
+    needed beyond the body, its well-formedness, and a totality witness. -/
+def Prog.foldStep {body : Prog} {stack : List Data}
+    (h_wf : WFProg (stack.length + 2) body) (h_total : body.Total h_wf)
+    (c acc : Data) : Data × ℕ × ℕ :=
+  (meteredEvalProg body (c :: acc :: stack) h_wf).get
+    (h_total (c :: acc :: stack) (by simp))
+
+/-- Generic time cost of a metered fold whose body acts as a pure step
+    `(item, acc) ↦ acc'` with per-iteration time `stepTime item acc`. -/
+def foldTime (stepTime : Data → Data → ℕ) (step : Data → Data → Data)
+    : List Data → Data → ℕ
+  | [],      acc => acc.size
+  | x :: xs, acc => 1 + stepTime x acc + foldTime stepTime step xs (step x acc)
+
+/-- Generic space cost: max of per-iteration body space and the rest of the fold. -/
+def foldSpace (stepSpace : Data → Data → ℕ) (step : Data → Data → Data)
+    : List Data → Data → ℕ
+  | [],      acc => acc.size
+  | x :: xs, acc => max (stepSpace x acc) (foldSpace stepSpace step xs (step x acc))
+
+lemma Prog.meteredEvalProg_eq_foldStep {body : Prog} {stack : List Data}
+    (h_wf : WFProg (stack.length + 2) body) (h_total : body.Total h_wf)
+    (c acc : Data) :
+    meteredEvalProg body (c :: acc :: stack) h_wf =
+      .some (Prog.foldStep h_wf h_total c acc) :=
+  (Part.some_get _).symm
+
+/-- Simp form of `goMeteredFold_of_step`: a *total* body uniquely determines the fold
+    semantics, with no free `step`/`stepTime`/`stepSpace` variables for `simp` to
+    invent. The data result is exactly `List.foldl` over `Prog.foldStep`. -/
+@[simp]
+lemma goMeteredFold_of_total {body : Prog} {stack : List Data}
+    (h_wf : WFProg (stack.length + 2) body) (h_total : body.Total h_wf)
+    (xs : List Data) (acc : Data) :
+    goMeteredFold xs acc stack body h_wf = .some
+      (xs.foldl (fun a x => (Prog.foldStep h_wf h_total x a).1) acc,
+       foldTime (fun c a => (Prog.foldStep h_wf h_total c a).2.1)
+                (fun c a => (Prog.foldStep h_wf h_total c a).1) xs acc,
+       foldSpace (fun c a => (Prog.foldStep h_wf h_total c a).2.2)
+                 (fun c a => (Prog.foldStep h_wf h_total c a).1) xs acc) := by
+  induction xs generalizing acc with
+  | nil => simp [foldTime, foldSpace, goMeteredFold]
+  | cons x xs ih =>
+    simp [ih, foldTime, foldSpace, goMeteredFold]
+    rw [Prog.meteredEvalProg_eq_foldStep h_wf h_total]
+    simp_all
+
+-- TODO: summary of current problems: We canont re-write the stuff inside a
+-- `Part.bind` because that would change the type (although it is equal)
+-- Solution: Get rid of Part
+
+lemma prog_reverse.semantics (x : Data) (xs : List Data) :
+    (prog_reverse.prog.meteredEvalT (x :: xs) (by simp; sorry) (by simp; sorry)).1 = Data.l (x.asList).reverse := by
+  unfold prog_reverse
+  simp
+  rw [goMeteredFold_of_total _ _ x.asList Data.empty]
+
+
+  simp [prog_reverse, meteredEvalOp, Data.asList, List.reverse]
 
 theorem ComputesInTimeAndSpace_reverse {α : Type} [DataEncode α]
   : ComputesInTimeAndSpace prog_reverse (List.reverse : List α → List α)
