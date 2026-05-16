@@ -113,25 +113,6 @@ mutual
     | n, op :: rest => WFOp n op ∧ WFProg (n + 1) rest
 end
 
-lemma WFProg_mono {n₁ n₂ : ℕ} {prog : Prog} (h_wf : WFProg n₁ prog) (h_le : n₁ ≤ n₂) : WFProg n₂ prog := by
-  sorry
-
-
--- One could define a monadic builder-pattern that handles tape index allocation:
--- def filter (a : TapeIndex) (predicate : TapeIndex → Build TapeIndex) : Build TapeIndex := do
---   fold a (← empty) (fun child acc => do
---     ite (← predicate child)
---       (cons child acc)
---       (return acc))
-
-
--- TODO define space measure:
--- elementary operations incur the size of their output as additional space
--- fold incurs space of init plus the max of the space of the step function
--- this is the crucial point that allows us to build space-efficient algorithms:
--- We implicitly overwrite the old accumulator value even though there is no
--- explicit "overwrite" or "free" operation.
-
 abbrev dataTrue := Data.l [Data.l []]
 abbrev dataFalse := Data.l []
 
@@ -202,27 +183,10 @@ mutual
 
 end
 
--- @[simp]
--- lemma goMeteredFold_nil (acc : Data) (stack : List Data) (h_wf : WFProg (stack.length + 2) body) :
---     goMeteredFold [] acc stack body h_wf = .some (acc, acc.size, acc.size) := by
---   simp [goMeteredFold]
-
--- @[simp]
--- lemma goMeteredFold_cons (head : Data) (tail : List Data) (acc : Data) (stack : List Data)
---     (h_wf : WFProg (stack.length + 2) body) :
---     goMeteredFold (head :: tail) acc stack body h_wf =
---       (meteredEvalProg body (head :: acc :: stack) h_wf).bind fun (acc', tBody, sBody) =>
---         (goMeteredFold tail acc' stack body h_wf).map fun (r, t, s) =>
---           (r, 1 + tBody + t, max sBody s) := by
---   simp [goMeteredFold]
-
 def Operation.Total (op : Operation) (h_wf : WFOp n op) : Prop :=
   ∀ (stack : List Data) (h_len : stack.length = n),
   (meteredEvalOp stack op (h_len ▸ h_wf)).Dom
 
-/-- A well-formed body is *total* at input length `n` if it terminates on every stack
-    of that length. This mirrors `WellFormedProgram.Total` but works on a raw `Prog`
-    paired with its well-formedness proof. -/
 def Prog.Total {n : ℕ} (body : Prog) (h_wf : WFProg n body) : Prop :=
   ∀ (stack : List Data) (h_len : stack.length = n),
     (meteredEvalProg body stack (h_len ▸ h_wf)).Dom
@@ -323,6 +287,34 @@ lemma Prog.meteredEvalT_cons
       let (stack, t, s) := meteredEvalT rest (r :: stack) h_wf.2 h_whf.2
       (stack, opT + t, opS + s) := by
   sorry
+
+
+------------------------------------------------------------------------------
+-- Example program
+---------------------------------------------------------------------------
+
+def prog_reverse : Prog := [
+    .empty,
+    .fold [ .cons 0 1 ] 0 1
+  ]
+
+lemma prog_reverse.semantics (x : Data) (xs : List Data) :
+    (prog_reverse.meteredEvalT
+      (x :: xs)
+      (by simp [prog_reverse, WFProg, WFOp])
+      (by simp [prog_reverse])).1 =
+      Data.l (x.asList).reverse := by
+  have h (xs : List Data) (init : Data) : xs.foldl (fun a x => Data.l (x :: a.asList)) init =
+      Data.l (xs.reverse ++ init.asList) := by
+    induction xs generalizing init with
+    | nil => simp
+    | cons x xs ih => simp [List.foldl, ih]
+  simp [prog_reverse, h]
+
+
+-----------------------------------------------------------------------------------------
+--- The stuff below here still needs some work
+-----------------------------------------------------------------------------
 
 structure WellFormedProgram (inputs : ℕ) where
   prog : Prog
