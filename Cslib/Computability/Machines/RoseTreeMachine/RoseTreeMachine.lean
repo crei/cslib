@@ -53,6 +53,14 @@ lemma Data.asList_l : Data.l xs.asList = xs := by grind
 def Data.size : Data → ℕ
   | Data.l xs => 2 + (xs.map Data.size |>.sum)
 
+@[simp]
+lemma Data.size_empty : Data.empty.size = 2 := by simp [Data.empty, Data.size]
+
+@[simp]
+lemma Data.cons_size {h : Data} {t : List Data} :
+    (Data.l (h :: t)).size = h.size + (Data.l t).size := by
+  simp [Data.size, Nat.add_assoc, Nat.add_comm]
+
 abbrev TapeIndex := ℕ
 
 
@@ -285,6 +293,69 @@ lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stac
       := by
   sorry
 
+/-- Recursive form of the per-iteration accumulator threading used by `meteredEvalT_fold`.
+    Mirrors `goMeteredFold` directly, but on the `meteredEvalT` side: every body run
+    is a total `Data × ℕ × ℕ` (no `Part`). -/
+def Operation.foldRec (body : Prog) (stack : List Data)
+    (h_wf : WFProg (stack.length + 2) body)
+    (h_whf : Prog.WhileFree body) :
+    List Data → Data → Data × ℕ × ℕ
+  | [], acc => (acc, acc.size, acc.size)
+  | x :: rest, acc =>
+    let (acc', t, s) := Prog.meteredEvalT body (x :: acc :: stack) h_wf h_whf
+    let (r, t', s') := Operation.foldRec body stack h_wf h_whf rest acc'
+    (r, 1 + t + t', max s s')
+
+/-- Recursive analog of `Operation.meteredEvalT_fold`: instead of three `List.foldl`s,
+    express the fold operation's result by structural recursion on the list. -/
+lemma Operation.meteredEvalT_fold_rec
+    {body : Prog} {initial list : TapeIndex} {stack : List Data}
+    {h_wf : WFOp stack.length (.fold body initial list)}
+    {h_whf : Operation.WhileFree (.fold body initial list)} :
+    Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf =
+      Operation.foldRec body stack h_wf.2.2 (by simpa using h_whf)
+        (stack[list]'h_wf.1).asList (stack[initial]'h_wf.2.1) := by
+  sorry
+
+
+/-- Space bound for a fold operation. If the initial accumulator fits within `B`,
+    and for every accumulator with `acc.size ≤ B` the body uses space `≤ B` and
+    produces a new accumulator with size `≤ B`, then the entire fold uses space
+    `≤ B`. -/
+lemma fold_bounded_space {body : Prog} {initial list : TapeIndex} {stack : List Data}
+    {h_wf : WFOp stack.length (.fold body initial list)}
+    {h_whf : Operation.WhileFree (.fold body initial list)}
+    (B : ℕ)
+    (h_init : (stack[initial]'h_wf.2.1).size ≤ B)
+    (h_step : ∀ acc x, acc.size ≤ B → x ∈ (stack[list]'h_wf.1).asList →
+      let (acc', _, s) := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2 (by simpa using h_whf)
+      s ≤ B ∧ acc'.size ≤ B) :
+    (Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf).2.2 ≤ B := by
+  sorry
+
+/-- Induction principle for `Operation.meteredEvalT` on a `.fold` operation.
+    To prove `motive` of the final `(acc, time, space)` triple, the caller supplies:
+    * `h_init`: the motive holds on `(initial, 0, 0)`;
+    * `h_step`: for every iteration item `x ∈ list`, the motive is preserved by one
+      body invocation — old triple `(acc, t, s)` is taken to
+      `(r.1, t + 1 + r.2.1, max s r.2.2)` where `r` is the body's result;
+    * `h_finish`: from the motive on the post-loop triple `(acc, t, s)`, derive
+      the motive on the final adjusted triple `(acc, t + acc.size, max s acc.size)`,
+      which accounts for the `[]` base case of `goMeteredFold`. -/
+lemma Operation.meteredEvalT_fold_induction
+    {body : Prog} {initial list : TapeIndex} {stack : List Data}
+    {h_wf : WFOp stack.length (.fold body initial list)}
+    {h_whf : Operation.WhileFree (.fold body initial list)}
+    (motive : Data → ℕ → ℕ → Prop)
+    (h_init : motive (stack[initial]'h_wf.2.1) 0 0)
+    (h_step : ∀ acc t s x, x ∈ (stack[list]'h_wf.1).asList → motive acc t s →
+      let (r, t', s') := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2 (by simpa using h_whf)
+      motive r (t + 1 + t') (max s s'))
+    (h_finish : ∀ acc t s, motive acc t s → motive acc (t + acc.size) (max s acc.size)) :
+    let (r, t, s) := Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf
+    motive r t s := by
+  sorry
+
 @[simp]
 lemma Prog.meteredEvalT_nil
     {stack : List Data}
@@ -335,15 +406,49 @@ lemma prog_reverse.time (x : Data) (xs : List Data) :
   simp [prog_reverse]
   sorry
 
-lemma prog_reverse.space (x : Data) (xs : List Data) :
+lemma prog_reverse.space (list : Data) (xs : List Data) :
     (prog_reverse.meteredEvalT
-      (x :: xs)
+      (list :: xs)
       (by simp [prog_reverse, WFProg, WFOp])
-      (by simp [prog_reverse])).2.1 =
-      sorry := by
-  simp [prog_reverse]
+      (by simp [prog_reverse])).2.2 ≤ 8 * list.size + 8 := by
   sorry
+  -- have h (stack list : List Data) (acc : Data) :
+  --     (Operation.foldRec [.cons 0 1] stack sorry sorry list acc).2.2 ≤ 8 * (Data.l list).size := by
+  --   induction list with
+  --   | nil => simp [Operation.foldRec]
+  --   | cons x xs ih => sorry
+  -- simp only [prog_reverse, Prog.meteredEvalT_cons, Operation.meteredEvalT_empty,
+  --   Prog.meteredEvalT_nil, List.head_cons, add_zero, Prod.mk.eta, ge_iff_le]
+  -- rw [Operation.meteredEvalT_fold_rec]
+  -- simp
+  -- specialize h (Data.empty :: list :: xs) list.asList Data.empty
+  -- simp at h
+  -- grind
 
+-- TODO the successor function is not too easy, because
+-- we also need to concatenate at the end.
+-- so maybe it is easier to have some kind of fold-map-routine (i.e. a map that also has shared
+-- state in an accumulator)?
+-- where the "cons" is handeled by the fold-map routine?
+
+def prog_true : Prog := [
+    .empty,
+    .cons 0 0
+  ]
+
+def prog_bit_add : Prog := [
+    .empty,
+    .cons 0 1,
+    .cons 0 1,
+    .ite 0
+      [ .cons 0 1 ] -- if first bit is 1, add second bit to result
+      [ .head 1 ]     -- if first bit is 0, result is just second bit
+  ]
+
+def prog_succ : Prog := [
+    .call prog_true,
+    .fold [ .cons 0 1 ] 0 1
+  ]
 
 -----------------------------------------------------------------------------------------
 --- The stuff below here still needs some work
