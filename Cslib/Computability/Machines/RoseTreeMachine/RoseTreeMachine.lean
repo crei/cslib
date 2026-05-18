@@ -301,25 +301,16 @@ lemma Operation.meteredEvalT_empty {stack : List Data} {h_wf : WFOp stack.length
     Operation.meteredEvalT .empty stack h_wf (by simp) = (Data.empty, 1, 1) := by
   simp [Operation.meteredEvalT, meteredEvalOp]
 
-@[simp, scoped grind =]
-lemma Operation.meteredEvalT_cons_one
-    {h t : ℕ}
-    {stack : List Data}
-    {h_wf : WFOp stack.length (.cons h t)} :
-    (Operation.meteredEvalT (.cons h t) stack h_wf (by simp)).1 =
-      Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList) := by
-  simp [Operation.meteredEvalT, meteredEvalOp]
-
-@[simp, scoped grind =]
-lemma Operation.meteredEvalT_cons
-    {h t : ℕ}
-    {stack : List Data}
-    {h_wf : WFOp stack.length (.cons h t)} :
-    Operation.meteredEvalT (.cons h t) stack h_wf (by simp) =
-      (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList),
-      1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size,
-      1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size) := by
-  simp [Operation.meteredEvalT, meteredEvalOp]
+-- @[simp, scoped grind =]
+-- lemma Operation.meteredEvalT_cons
+--     {h t : ℕ}
+--     {stack : List Data}
+--     {h_wf : WFOp stack.length (.cons h t)} :
+--     Operation.meteredEvalT (.cons h t) stack h_wf (by simp) =
+--       (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList),
+--       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size,
+--       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size) := by
+--   simp [Operation.meteredEvalT, meteredEvalOp]
 
 @[simp, scoped grind =]
 lemma Operation.meteredEvalT_head
@@ -509,9 +500,8 @@ lemma Prog.meteredEvalT_cons
     {h_wf : WFProg stack.length (op :: rest)}
     {h_whf : Prog.WhileFree (op :: rest)} :
     Prog.meteredEvalT (op :: rest) stack h_wf h_whf =
-      let st := stack
-      let (r, opT, opS) := op.meteredEvalT st h_wf.1 h_whf.1
-      let (stack, t, s) := meteredEvalT rest (r :: st) h_wf.2 h_whf.2
+      let (r, opT, opS) := op.meteredEvalT stack h_wf.1 h_whf.1
+      let (stack, t, s) := meteredEvalT rest (r :: stack) h_wf.2 h_whf.2
       (stack, opT + t, opS + s) := by
   sorry
 
@@ -526,6 +516,12 @@ def Operation.evalData (op : Operation) (stack : List Data)
 def Prog.evalData (prog : Prog) (stack : List Data)
     (h_wf : WFProg stack.length prog) (h_whf : Prog.WhileFree prog) : Data :=
   (Prog.meteredEvalT prog stack h_wf h_whf).1
+
+/-- Bridge: the data component of `meteredEvalT` is exactly `evalData`. Used to
+    transport spec-based reasoning back to the original semantics statements. -/
+lemma Prog.meteredEvalT_fst_eq_evalData {p : Prog} {s : List Data}
+    {h_wf : WFProg s.length p} {h_whf : Prog.WhileFree p} :
+    (Prog.meteredEvalT p s h_wf h_whf).1 = Prog.evalData p s h_wf h_whf := rfl
 
 lemma Prog.evalData_nil {stack : List Data} {h_wf : WFProg stack.length []} :
     Prog.evalData [] stack h_wf (by simp) = stack.head (by grind [WFProg]) := by
@@ -594,13 +590,6 @@ theorem Prog.computes_cons {op : Operation} {rest : Prog}
   rw [h_rest (fop s h_wf.1 :: s) h_wf.2 h_whf.2]
 
 -- --------- Per-operation specs for `.cons`, `.head`, `.tail` ---------
-
-@[simp, grind .]
-theorem Operation.computes_cons_op (h t : ℕ) :
-    Operation.Computes (.cons h t)
-      (fun s h_wf => Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)) := by
-  intro s h_wf h_whf
-  simp [Operation.evalData, Operation.meteredEvalT_cons]
 
 @[simp, grind .]
 theorem Operation.computes_head (i : ℕ) :
@@ -692,16 +681,24 @@ type classes so that, for any program built from registered operations, the spec
 function and proof can be obtained by `inferInstance`. -/
 
 class Operation.HasComputes (op : Operation) where
-  spec : (s : List Data) → WFOp s.length op → Data
-  proof : Operation.Computes op spec
+  spec  : (s : List Data) → WFOp s.length op → Data
+  time  : (s : List Data) → WFOp s.length op → ℕ
+  space : (s : List Data) → WFOp s.length op → ℕ
+  proof : ∀ (s : List Data) (h_wf : WFOp s.length op) (h_whf : Operation.WhileFree op),
+    Operation.meteredEvalT op s h_wf h_whf = (spec s h_wf, time s h_wf, space s h_wf)
 
 class Prog.HasComputes (p : Prog) where
-  spec : (s : List Data) → WFProg s.length p → Data
-  proof : Prog.Computes p spec
+  spec  : (s : List Data) → WFProg s.length p → Data
+  time  : (s : List Data) → WFProg s.length p → ℕ
+  space : (s : List Data) → WFProg s.length p → ℕ
+  proof : ∀ (s : List Data) (h_wf : WFProg s.length p) (h_whf : Prog.WhileFree p),
+    Prog.meteredEvalT p s h_wf h_whf = (spec s h_wf, time s h_wf, space s h_wf)
 
 instance : Prog.HasComputes ([] : Prog) where
-  spec := fun s h_wf => s.head (by simp [WFProg] at h_wf; exact h_wf)
-  proof := Prog.computes_nil
+  spec  := fun s h_wf => s.head (by simp [WFProg] at h_wf; exact h_wf)
+  time  := fun _ _ => 0
+  space := fun _ _ => 0
+  proof := by intros s h_wf h_whf; simp [Prog.meteredEvalT_nil]
 
 instance {op : Operation} {rest : Prog}
     [hop : Operation.HasComputes op] [hrest : Prog.HasComputes rest] :
@@ -709,35 +706,65 @@ instance {op : Operation} {rest : Prog}
   spec := fun s h_wf =>
     let r := hop.spec s h_wf.1
     hrest.spec (r :: s) h_wf.2
-  proof := Prog.computes_cons hop.proof hrest.proof
+  time := fun s h_wf =>
+    let r := hop.spec s h_wf.1
+    hop.time s h_wf.1 + hrest.time (r :: s) h_wf.2
+  space := fun s h_wf =>
+    let r := hop.spec s h_wf.1
+    hop.space s h_wf.1 + hrest.space (r :: s) h_wf.2
+  proof := by
+    intros s h_wf h_whf
+    simp only [Prog.meteredEvalT_cons, hop.proof, hrest.proof]
 
 instance (h t : ℕ) : Operation.HasComputes (.cons h t) where
-  spec := fun s h_wf => Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)
-  proof := Operation.computes_cons_op h t
+  spec  := fun s h_wf => Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)
+  time  := fun s h_wf => 1 + (Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)).size
+  space := fun s h_wf => 1 + (Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)).size
+  proof := by simp [Operation.meteredEvalT, meteredEvalOp]
 
 instance (i : ℕ) : Operation.HasComputes (.head i) where
-  spec := fun s h_wf => (s[i]'h_wf).asList.headD Data.empty
-  proof := Operation.computes_head i
+  spec  := fun s h_wf => (s[i]'h_wf).asList.headD Data.empty
+  time  := fun s h_wf => 1 + ((s[i]'h_wf).asList.headD Data.empty).size
+  space := fun s h_wf => 1 + ((s[i]'h_wf).asList.headD Data.empty).size
+  proof := by simp [Operation.meteredEvalT, meteredEvalOp]
 
 instance (i : ℕ) : Operation.HasComputes (.tail i) where
-  spec := fun s h_wf => Data.l (s[i]'h_wf).asList.tail
-  proof := Operation.computes_tail i
+  spec  := fun s h_wf => Data.l (s[i]'h_wf).asList.tail
+  time  := fun s h_wf => 1 + (s[i]'h_wf).size
+  space := fun s h_wf => 1 + (Data.l (s[i]'h_wf).asList.tail).size
+  proof := by simp [Operation.meteredEvalT, meteredEvalOp]
 
 instance : Operation.HasComputes .empty where
-  spec := fun _ _ => Data.empty
-  proof := Operation.computes_empty
+  spec  := fun _ _ => Data.empty
+  time  := fun _ _ => 1
+  space := fun _ _ => 1
+  proof := by simp [Operation.meteredEvalT, meteredEvalOp]
 
 instance (i j : ℕ) : Operation.HasComputes (.eq i j) where
   spec := fun s h_wf =>
     if (s[i]'h_wf.1) == (s[j]'h_wf.2) then dataTrue else dataFalse
-  proof := Operation.computes_eq i j
+  time  := fun s h_wf =>
+    1 + min (s[i]'h_wf.1).size (s[j]'h_wf.2).size
+  space := fun _ _ => 1
+  proof := by
+    intros s h_wf h_whf
+    simp [Operation.meteredEvalT, meteredEvalOp]
 
 instance {i : ℕ} {then_ else_ : List Operation}
     [ht : Prog.HasComputes then_] [he : Prog.HasComputes else_] :
     Operation.HasComputes (.ifEmpty i then_ else_) where
   spec := fun s h_wf =>
     if (s[i]'h_wf.1) == Data.empty then ht.spec s h_wf.2.1 else he.spec s h_wf.2.2
-  proof := Operation.computes_ifEmpty ht.proof he.proof
+  time := fun s h_wf =>
+    1 + (if (s[i]'h_wf.1) == Data.empty then ht.time s h_wf.2.1 else he.time s h_wf.2.2)
+  space := fun s h_wf =>
+    if (s[i]'h_wf.1) == Data.empty then ht.space s h_wf.2.1 else he.space s h_wf.2.2
+  proof := by
+    intros s h_wf h_whf
+    rw [Operation.meteredEvalT_ifEmpty]
+    by_cases h : (s[i]'h_wf.1) == Data.empty
+    · simp [h, ht.proof s h_wf.2.1 h_whf.1]
+    · simp [h, he.proof s h_wf.2.2 h_whf.2]
 
 instance {body : Prog} {idxs : List TapeIndex}
     [hb : Prog.HasComputes body] :
@@ -746,21 +773,51 @@ instance {body : Prog} {idxs : List TapeIndex}
     hb.spec
       (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
       (by simpa using h_wf.2)
-  proof := Operation.computes_call hb.proof
+  time := fun s h_wf =>
+    hb.time
+      (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
+      (by simpa using h_wf.2)
+  space := fun s h_wf =>
+    hb.space
+      (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
+      (by simpa using h_wf.2)
+  proof := by
+    intros s h_wf h_whf
+    rw [Operation.meteredEvalT_call, hb.proof]
 
 /-- One-liner: extract the data result of any auto-resolvable program. -/
 abbrev Prog.run (p : Prog) [h : Prog.HasComputes p]
     (s : List Data) (h_wf : WFProg s.length p) : Data :=
   h.spec s h_wf
 
--- --------- Simp lemmas exposing each instance's spec ---------
--- These are all `rfl`: each instance's `spec` field is *definitionally* its RHS.
+-- --------- Bridge: `meteredEvalT` reduces to the triple of HasComputes fields ---------
+
+/-- The bridge: any `meteredEvalT` of a program with a `HasComputes` instance
+    rewrites to `(spec, time, space)`. Each projection (`.1`, `.2.1`, `.2.2`)
+    then reduces independently along its own simp chain. -/
+@[simp] lemma Prog.HasComputes.meteredEvalT_eq {p : Prog} [h : Prog.HasComputes p]
+    {s : List Data} {h_wf : WFProg s.length p} {h_whf : Prog.WhileFree p} :
+    Prog.meteredEvalT p s h_wf h_whf = (h.spec s h_wf, h.time s h_wf, h.space s h_wf) :=
+  h.proof s h_wf h_whf
+
+@[simp] lemma Operation.HasComputes.meteredEvalT_eq {op : Operation}
+    [h : Operation.HasComputes op]
+    {s : List Data} {h_wf : WFOp s.length op} {h_whf : Operation.WhileFree op} :
+    Operation.meteredEvalT op s h_wf h_whf = (h.spec s h_wf, h.time s h_wf, h.space s h_wf) :=
+  h.proof s h_wf h_whf
+
+-- --------- Simp lemmas exposing each instance's spec/time/space ---------
+-- These are all `rfl`: each instance's field is *definitionally* its RHS.
 -- We expose them as `simp` lemmas so that `simp [...]` can unfold the chain
 -- compositionally without needing the instances themselves to be reducible.
 
 @[simp] lemma Prog.HasComputes.spec_nil :
     (Prog.HasComputes.spec (p := ([] : Prog))) =
       fun s h_wf => s.head (by simp [WFProg] at h_wf; exact h_wf) := rfl
+@[simp] lemma Prog.HasComputes.time_nil :
+    (Prog.HasComputes.time (p := ([] : Prog))) = fun _ _ => 0 := rfl
+@[simp] lemma Prog.HasComputes.space_nil :
+    (Prog.HasComputes.space (p := ([] : Prog))) = fun _ _ => 0 := rfl
 
 @[simp] lemma Prog.HasComputes.spec_cons {op : Operation} {rest : Prog}
     [hop : Operation.HasComputes op] [hrest : Prog.HasComputes rest] :
@@ -768,26 +825,67 @@ abbrev Prog.run (p : Prog) [h : Prog.HasComputes p]
       fun s h_wf =>
         let r := hop.spec s h_wf.1
         hrest.spec (r :: s) h_wf.2 := rfl
+@[simp] lemma Prog.HasComputes.time_cons {op : Operation} {rest : Prog}
+    [hop : Operation.HasComputes op] [hrest : Prog.HasComputes rest] :
+    (Prog.HasComputes.time (p := op :: rest)) =
+      fun s h_wf =>
+        let r := hop.spec s h_wf.1
+        hop.time s h_wf.1 + hrest.time (r :: s) h_wf.2 := rfl
+@[simp] lemma Prog.HasComputes.space_cons {op : Operation} {rest : Prog}
+    [hop : Operation.HasComputes op] [hrest : Prog.HasComputes rest] :
+    (Prog.HasComputes.space (p := op :: rest)) =
+      fun s h_wf =>
+        let r := hop.spec s h_wf.1
+        hop.space s h_wf.1 + hrest.space (r :: s) h_wf.2 := rfl
 
 @[simp] lemma Operation.HasComputes.spec_cons (h t : ℕ) :
     (Operation.HasComputes.spec (op := .cons h t)) =
       fun s h_wf => Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList) := rfl
+@[simp] lemma Operation.HasComputes.time_cons (h t : ℕ) :
+    (Operation.HasComputes.time (op := .cons h t)) =
+      fun s h_wf => 1 + (Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)).size := rfl
+@[simp] lemma Operation.HasComputes.space_cons (h t : ℕ) :
+    (Operation.HasComputes.space (op := .cons h t)) =
+      fun s h_wf => 1 + (Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)).size := rfl
 
 @[simp] lemma Operation.HasComputes.spec_head (i : ℕ) :
     (Operation.HasComputes.spec (op := .head i)) =
       fun s h_wf => (s[i]'h_wf).asList.headD Data.empty := rfl
+@[simp] lemma Operation.HasComputes.time_head (i : ℕ) :
+    (Operation.HasComputes.time (op := .head i)) =
+      fun s h_wf => 1 + ((s[i]'h_wf).asList.headD Data.empty).size := rfl
+@[simp] lemma Operation.HasComputes.space_head (i : ℕ) :
+    (Operation.HasComputes.space (op := .head i)) =
+      fun s h_wf => 1 + ((s[i]'h_wf).asList.headD Data.empty).size := rfl
 
 @[simp] lemma Operation.HasComputes.spec_tail (i : ℕ) :
     (Operation.HasComputes.spec (op := .tail i)) =
       fun s h_wf => Data.l (s[i]'h_wf).asList.tail := rfl
+@[simp] lemma Operation.HasComputes.time_tail (i : ℕ) :
+    (Operation.HasComputes.time (op := .tail i)) =
+      fun s h_wf => 1 + (s[i]'h_wf).size := rfl
+@[simp] lemma Operation.HasComputes.space_tail (i : ℕ) :
+    (Operation.HasComputes.space (op := .tail i)) =
+      fun s h_wf => 1 + (Data.l (s[i]'h_wf).asList.tail).size := rfl
 
 @[simp] lemma Operation.HasComputes.spec_empty :
     (Operation.HasComputes.spec (op := .empty)) = fun _ _ => Data.empty := rfl
+@[simp] lemma Operation.HasComputes.time_empty :
+    (Operation.HasComputes.time (op := .empty)) = fun _ _ => 1 := rfl
+@[simp] lemma Operation.HasComputes.space_empty :
+    (Operation.HasComputes.space (op := .empty)) = fun _ _ => 1 := rfl
 
 @[simp] lemma Operation.HasComputes.spec_eq (i j : ℕ) :
     (Operation.HasComputes.spec (op := .eq i j)) =
       fun s h_wf =>
         if (s[i]'h_wf.1) == (s[j]'h_wf.2) then dataTrue else dataFalse := rfl
+@[simp] lemma Operation.HasComputes.time_eq (i j : ℕ) :
+    (Operation.HasComputes.time (op := .eq i j)) =
+      fun s h_wf =>
+        1 + min (s[i]'h_wf.1).size (s[j]'h_wf.2).size := rfl
+@[simp] lemma Operation.HasComputes.space_eq (i j : ℕ) :
+    (Operation.HasComputes.space (op := .eq i j)) =
+      fun _ _ => 1 := rfl
 
 @[simp] lemma Operation.HasComputes.spec_ifEmpty {i : ℕ} {then_ else_ : List Operation}
     [ht : Prog.HasComputes then_] [he : Prog.HasComputes else_] :
@@ -795,6 +893,18 @@ abbrev Prog.run (p : Prog) [h : Prog.HasComputes p]
       fun s h_wf =>
         if (s[i]'h_wf.1) == Data.empty then ht.spec s h_wf.2.1
         else he.spec s h_wf.2.2 := rfl
+@[simp] lemma Operation.HasComputes.time_ifEmpty {i : ℕ} {then_ else_ : List Operation}
+    [ht : Prog.HasComputes then_] [he : Prog.HasComputes else_] :
+    (Operation.HasComputes.time (op := .ifEmpty i then_ else_)) =
+      fun s h_wf =>
+        1 + (if (s[i]'h_wf.1) == Data.empty then ht.time s h_wf.2.1
+             else he.time s h_wf.2.2) := rfl
+@[simp] lemma Operation.HasComputes.space_ifEmpty {i : ℕ} {then_ else_ : List Operation}
+    [ht : Prog.HasComputes then_] [he : Prog.HasComputes else_] :
+    (Operation.HasComputes.space (op := .ifEmpty i then_ else_)) =
+      fun s h_wf =>
+        if (s[i]'h_wf.1) == Data.empty then ht.space s h_wf.2.1
+        else he.space s h_wf.2.2 := rfl
 
 @[simp] lemma Operation.HasComputes.spec_call {body : Prog} {idxs : List TapeIndex}
     [hb : Prog.HasComputes body] :
@@ -803,22 +913,44 @@ abbrev Prog.run (p : Prog) [h : Prog.HasComputes p]
         hb.spec
           (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
           (by simpa using h_wf.2) := rfl
+@[simp] lemma Operation.HasComputes.time_call {body : Prog} {idxs : List TapeIndex}
+    [hb : Prog.HasComputes body] :
+    (Operation.HasComputes.time (op := .call body idxs)) =
+      fun s h_wf =>
+        hb.time
+          (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
+          (by simpa using h_wf.2) := rfl
+@[simp] lemma Operation.HasComputes.space_call {body : Prog} {idxs : List TapeIndex}
+    [hb : Prog.HasComputes body] :
+    (Operation.HasComputes.space (op := .call body idxs)) =
+      fun s h_wf =>
+        hb.space
+          (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
+          (by simpa using h_wf.2) := rfl
 
 -- --------- Worked example using automation ---------
 
-/-- Same as the previous example, but now the spec function and its proof are
-    synthesised by type-class resolution; only the goal statement is written by hand. -/
-example : Prog.Computes [Operation.head 0, Operation.tail 0]
-    (Prog.HasComputes.spec (p := [Operation.head 0, Operation.tail 0])) :=
-  Prog.HasComputes.proof
+/-- Same as the previous example, but now the spec function, time, space functions and the
+    bridging proof are all synthesised by type-class resolution; only the goal statement
+    is written by hand. -/
+example (s : List Data) (h_wf : WFProg s.length [Operation.head 0, Operation.tail 0])
+    (h_whf : Prog.WhileFree [Operation.head 0, Operation.tail 0]) :
+    Prog.meteredEvalT [Operation.head 0, Operation.tail 0] s h_wf h_whf
+      = (Prog.HasComputes.spec s h_wf,
+         Prog.HasComputes.time s h_wf,
+         Prog.HasComputes.space s h_wf) :=
+  Prog.HasComputes.proof _ _ _
 
 /-- A slightly larger program: take head of s[0], take tail of the new top, then
-    cons those two. Spec is derived automatically. -/
-example : Prog.Computes
-    [Operation.head 0, Operation.tail 0, Operation.cons 0 1]
-    (Prog.HasComputes.spec
-      (p := [Operation.head 0, Operation.tail 0, Operation.cons 0 1])) :=
-  Prog.HasComputes.proof
+    cons those two. Spec, cost and proof are derived automatically. -/
+example (s : List Data)
+    (h_wf : WFProg s.length [Operation.head 0, Operation.tail 0, Operation.cons 0 1])
+    (h_whf : Prog.WhileFree [Operation.head 0, Operation.tail 0, Operation.cons 0 1]) :
+    Prog.meteredEvalT [Operation.head 0, Operation.tail 0, Operation.cons 0 1] s h_wf h_whf
+      = (Prog.HasComputes.spec s h_wf,
+         Prog.HasComputes.time s h_wf,
+         Prog.HasComputes.space s h_wf) :=
+  Prog.HasComputes.proof _ _ _
 
 class DataEncode (α : Type) where
   encode : α → Data
@@ -962,31 +1094,6 @@ abbrev stackTape_cons : Prog := [
   .ifEmpty 0 [ .ifEmpty 1 [ .empty ] [ .cons 0 1 ] ] [ .cons 0 1 ]
 ]
 
-omit [Inhabited Symbol] [Fintype Symbol] in
-@[simp]
-lemma stackTape_cons.semantics
-    (x : Option Symbol) (xs : Turing.StackTape Symbol) {stack : List Data} :
-    (stackTape_cons.meteredEvalT (DataEncode.encode x :: DataEncode.encode xs :: stack)
-      (by simp [stackTape_cons, WFProg, WFOp]) (by simp [stackTape_cons])).1 =
-      DataEncode.encode (xs.cons x) := by
-  have h_encode_stackTape (xs : Turing.StackTape Symbol) :
-    DataEncode.encode xs = DataEncode.encode (xs.toList) := by simp [DataEncode.encode]
-  match x with
-  | none =>
-    by_cases h_tail : xs.toList = []
-    · have : xs = Turing.StackTape.nil := Turing.StackTape.ext _ _ (by simp [h_tail])
-      simp [stackTape_cons, h_encode_stackTape, this]
-      sorry
-    · have h_empty : ¬ (DataEncode.encode xs == Data.empty) := by
-        sorry
-      simp [stackTape_cons, h_empty]
-      simp [h_encode_stackTape]
-      -- TODO just some StackTape encoding stuff left to solve here.
-      sorry
-  | some x =>
-    simp [stackTape_cons, h_encode_stackTape]
-    simp [DataEncode.encode]
-
 -- def move_left (t : BiTape Symbol) : BiTape Symbol :=
 --   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
 
@@ -1014,16 +1121,10 @@ lemma snd.evalData_eq {α β : Type} [DataEncode α] [DataEncode β]
       (by simp [snd, WFProg, WFOp]) (by simp [snd]) =
       DataEncode.encode y := by
   show Prog.evalData [Operation.tail 0, Operation.head 0] _ _ _ = _
-  rw [Prog.HasComputes.proof
-    (p := [Operation.tail 0, Operation.head 0])]
+  rw [← Prog.meteredEvalT_fst_eq_evalData,
+      Prog.HasComputes.proof (p := [Operation.tail 0, Operation.head 0])]
   simp [Prog.HasComputes.spec, Operation.HasComputes.spec,
     DataEncode.encode, Data.asList]
-
-/-- Bridge: the data component of `meteredEvalT` is exactly `evalData`. Used to
-    transport spec-based reasoning back to the original semantics statements. -/
-lemma Prog.meteredEvalT_fst_eq_evalData {p : Prog} {s : List Data}
-    {h_wf : WFProg s.length p} {h_whf : Prog.WhileFree p} :
-    (Prog.meteredEvalT p s h_wf h_whf).1 = Prog.evalData p s h_wf h_whf := rfl
 
 /-- Instance for the named program `snd`: routed via `inferInstanceAs` since
     `snd` is a `def`, not an `abbrev`. -/
@@ -1041,7 +1142,10 @@ lemma stackTape_cons.spec_eq (head : Option Symbol) (tail : Turing.StackTape Sym
       [DataEncode.encode head, DataEncode.encode tail] h_wf =
       DataEncode.encode (tail.cons head)
       := by
-  simp
+  simp only [Prog.HasComputes.spec_cons, Operation.HasComputes.spec_ifEmpty, List.getElem_cons_zero,
+    DataEncode_Option_empty, Option.isNone_iff_eq_none, List.getElem_cons_succ,
+    Operation.HasComputes.spec_empty, Prog.HasComputes.spec_nil, List.head_cons,
+    Operation.HasComputes.spec_cons]
   -- only encoding and stackTape business left.
   sorry
 
@@ -1077,7 +1181,8 @@ lemma tape_move_left.evalData_eq {Symbol : Type} [Inhabited Symbol] [Fintype Sym
     Prog.HasComputes.spec (p := tape_move_left)
       (DataEncode.encode t :: stack) (by simp) := by
   show Prog.evalData _ _ _ _ = _
-  rw [Prog.HasComputes.proof (p := tape_move_left)]
+  rw [← Prog.meteredEvalT_fst_eq_evalData,
+      Prog.HasComputes.proof (p := tape_move_left)]
 
 @[simp]
 lemma tape_move_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
