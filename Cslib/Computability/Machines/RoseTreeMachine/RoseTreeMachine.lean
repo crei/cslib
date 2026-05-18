@@ -360,7 +360,23 @@ lemma Operation.meteredEvalT_ifEmpty
   · simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp, h_empty]
   · simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp, h_empty]
 
+-- @[scoped grind =]
+-- lemma Operation.meteredEvalT_call_single
+--     {stack : List Data}
+--     {body : Prog}
+--     {i : TapeIndex}
+--     {h_wf : WFOp stack.length (.call body [i])}
+--     {h_whf : WhileFree (.call body [i])} :
+--     Operation.meteredEvalT (.call body [i]) stack h_wf h_whf =
+--       Prog.meteredEvalT body
+--         [stack[i]'(by simpa using h_wf.1 i)]
+--         h_wf.2
+--         h_whf := by
+--   sorry
 
+
+-- this is not @simp because we do not want to unfold calls, they should have
+-- their own specific simp lemmas
 @[simp, scoped grind =]
 lemma Operation.meteredEvalT_call
     {stack : List Data}
@@ -493,10 +509,316 @@ lemma Prog.meteredEvalT_cons
     {h_wf : WFProg stack.length (op :: rest)}
     {h_whf : Prog.WhileFree (op :: rest)} :
     Prog.meteredEvalT (op :: rest) stack h_wf h_whf =
-      let (r, opT, opS) := op.meteredEvalT stack h_wf.1 h_whf.1
-      let (stack, t, s) := meteredEvalT rest (r :: stack) h_wf.2 h_whf.2
+      let st := stack
+      let (r, opT, opS) := op.meteredEvalT st h_wf.1 h_whf.1
+      let (stack, t, s) := meteredEvalT rest (r :: st) h_wf.2 h_whf.2
       (stack, opT + t, opS + s) := by
   sorry
+
+-- ========================= Data-only evaluation =========================
+
+/-- Data-only evaluation of a single operation (discards time/space). -/
+def Operation.evalData (op : Operation) (stack : List Data)
+    (h_wf : WFOp stack.length op) (h_whf : Operation.WhileFree op) : Data :=
+  (Operation.meteredEvalT op stack h_wf h_whf).1
+
+/-- Data-only evaluation of a program (discards time/space). -/
+def Prog.evalData (prog : Prog) (stack : List Data)
+    (h_wf : WFProg stack.length prog) (h_whf : Prog.WhileFree prog) : Data :=
+  (Prog.meteredEvalT prog stack h_wf h_whf).1
+
+lemma Prog.evalData_nil {stack : List Data} {h_wf : WFProg stack.length []} :
+    Prog.evalData [] stack h_wf (by simp) = stack.head (by grind [WFProg]) := by
+  simp [Prog.evalData, Prog.meteredEvalT_nil]
+
+/-- Step lemma for `evalData`. The intermediate result `r` is `let`-bound so that
+    repeated chaining keeps the goal linear in size. -/
+lemma Prog.evalData_cons {op : Operation} {rest : Prog} {stack : List Data}
+    {h_wf : WFProg stack.length (op :: rest)} {h_whf : Prog.WhileFree (op :: rest)} :
+    Prog.evalData (op :: rest) stack h_wf h_whf =
+      let r := Operation.evalData op stack h_wf.1 h_whf.1
+      Prog.evalData rest (r :: stack) h_wf.2 h_whf.2 := by
+  simp [Prog.evalData, Operation.evalData]
+
+-- ========================= Hoare-style specs (Option A) =========================
+
+/-! ## Compositional specifications
+
+`Operation.Computes op f` (resp. `Prog.Computes p f`) says: whenever `op` (resp. `p`)
+runs on a well-formed, while-free stack `s`, the resulting data equals `f s h_wf`.
+The function `f` is allowed to depend on the well-formedness proof so that it can
+write `s[i]'_` directly.
+
+Why this exists: a naive `simp` chain that unfolds every step of an `n`-operation
+program produces a goal where intermediate stacks are duplicated `O(n²)` times.
+With `Computes`, each step is summarised once by its own `f`, and composition
+(`computes_cons`) chains them via `let`-bindings in the spec function — the
+proof of the composite program never instantiates a giant inlined stack term. -/
+
+/-- A specification for a single operation. -/
+def Operation.Computes (op : Operation)
+    (f : (s : List Data) → WFOp s.length op → Data) : Prop :=
+  ∀ (s : List Data) (h_wf : WFOp s.length op) (h_whf : Operation.WhileFree op),
+    Operation.evalData op s h_wf h_whf = f s h_wf
+
+/-- A specification for a program. -/
+def Prog.Computes (p : Prog)
+    (f : (s : List Data) → WFProg s.length p → Data) : Prop :=
+  ∀ (s : List Data) (h_wf : WFProg s.length p) (h_whf : Prog.WhileFree p),
+    Prog.evalData p s h_wf h_whf = f s h_wf
+
+/-- The empty program returns the top of the stack. -/
+@[simp, grind .]
+theorem Prog.computes_nil :
+    Prog.Computes ([] : Prog)
+      (fun s h_wf => s.head (by simp [WFProg] at h_wf; exact h_wf)) := by
+  intro s h_wf h_whf
+  simp [Prog.evalData, Prog.meteredEvalT_nil]
+
+/-- Sequencing rule. The composite program `op :: rest` runs `fop` on the input
+    stack, pushes the result, and then runs `frest` on the extended stack.
+    The intermediate value appears once via a `let` binding — no duplication. -/
+@[simp, grind .]
+theorem Prog.computes_cons {op : Operation} {rest : Prog}
+    {fop : (s : List Data) → WFOp s.length op → Data}
+    {frest : (s : List Data) → WFProg s.length rest → Data}
+    (h_op : Operation.Computes op fop)
+    (h_rest : Prog.Computes rest frest) :
+    Prog.Computes (op :: rest)
+      (fun s h_wf =>
+        let r := fop s h_wf.1
+        frest (r :: s) h_wf.2) := by
+  intro s h_wf h_whf
+  rw [Prog.evalData_cons]
+  rw [h_op s h_wf.1 h_whf.1]
+  rw [h_rest (fop s h_wf.1 :: s) h_wf.2 h_whf.2]
+
+-- --------- Per-operation specs for `.cons`, `.head`, `.tail` ---------
+
+@[simp, grind .]
+theorem Operation.computes_cons_op (h t : ℕ) :
+    Operation.Computes (.cons h t)
+      (fun s h_wf => Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)) := by
+  intro s h_wf h_whf
+  simp [Operation.evalData, Operation.meteredEvalT_cons]
+
+@[simp, grind .]
+theorem Operation.computes_head (i : ℕ) :
+    Operation.Computes (.head i)
+      (fun s h_wf => (s[i]'h_wf).asList.headD Data.empty) := by
+  intro s h_wf h_whf
+  simp [Operation.evalData, Operation.meteredEvalT_head]
+
+@[simp, grind .]
+theorem Operation.computes_tail (i : ℕ) :
+    Operation.Computes (.tail i)
+      (fun s h_wf => Data.l (s[i]'h_wf).asList.tail) := by
+  intro s h_wf h_whf
+  simp [Operation.evalData, Operation.meteredEvalT_tail]
+
+@[simp, grind .]
+theorem Operation.computes_empty :
+    Operation.Computes .empty (fun _ _ => Data.empty) := by
+  intro s h_wf h_whf
+  simp [Operation.evalData, Operation.meteredEvalT_empty]
+
+@[simp, grind .]
+theorem Operation.computes_eq (i j : ℕ) :
+    Operation.Computes (.eq i j)
+      (fun s h_wf =>
+        if (s[i]'h_wf.1) == (s[j]'h_wf.2) then dataTrue else dataFalse) := by
+  intro s h_wf h_whf
+  simp [Operation.evalData, Operation.meteredEvalT, meteredEvalOp]
+
+@[simp, grind .]
+theorem Operation.computes_ifEmpty {i : ℕ} {then_ else_ : List Operation}
+    {f_then : (s : List Data) → WFProg s.length then_ → Data}
+    {f_else : (s : List Data) → WFProg s.length else_ → Data}
+    (h_then : Prog.Computes then_ f_then)
+    (h_else : Prog.Computes else_ f_else) :
+    Operation.Computes (.ifEmpty i then_ else_)
+      (fun s h_wf =>
+        if (s[i]'h_wf.1) == Data.empty then f_then s h_wf.2.1 else f_else s h_wf.2.2) := by
+  intro s h_wf h_whf
+  unfold Operation.evalData
+  rw [Operation.meteredEvalT_ifEmpty]
+  by_cases h : (s[i]'h_wf.1) == Data.empty
+  · simp only [h, if_true]
+    have := h_then s h_wf.2.1 h_whf.1
+    simp [Prog.evalData] at this
+    simp [this]
+  · simp only [h]
+    have := h_else s h_wf.2.2 h_whf.2
+    simp [Prog.evalData] at this
+    simp [this]
+
+@[simp, grind .]
+theorem Operation.computes_call {body : Prog} {idxs : List TapeIndex}
+    {f_body : (s : List Data) → WFProg s.length body → Data}
+    (h_body : Prog.Computes body f_body) :
+    Operation.Computes (.call body idxs)
+      (fun s h_wf =>
+        f_body
+          (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
+          (by simpa using h_wf.2)) := by
+  intro s h_wf h_whf
+  unfold Operation.evalData
+  rw [Operation.meteredEvalT_call]
+  exact h_body _ _ _
+
+-- --------- Worked example: a small two-step program ---------
+
+/-- Example: `[.head 0, .tail 0]` first takes the head of `s[0]`, pushes it, then
+    takes the tail of the new top (which is the freshly-pushed head). The
+    intermediate result appears once, as the `let`-bound `r`. -/
+example : Prog.Computes [Operation.head 0, Operation.tail 0]
+    (fun s h_wf =>
+      let r := (s[0]'(by
+        rcases h_wf with ⟨h1, _⟩; exact h1)).asList.headD Data.empty
+      Data.l r.asList.tail) := by
+  intro s h_wf h_whf
+  -- grind -- [Prog.computes_cons, Operation.computes_head, Operation.computes_tail, Prog.computes_nil]
+  have h := Prog.computes_cons (Operation.computes_head 0)
+    (Prog.computes_cons (Operation.computes_tail 0) Prog.computes_nil)
+  exact h s h_wf h_whf
+
+-- ========================= Automation via type-class resolution =========================
+
+/-! ## Automatic spec synthesis
+
+The composition pattern `Prog.computes_cons (op_spec) (Prog.computes_cons ... Prog.computes_nil)`
+is mechanical and entirely determined by the program structure. We expose it via
+type classes so that, for any program built from registered operations, the spec
+function and proof can be obtained by `inferInstance`. -/
+
+class Operation.HasComputes (op : Operation) where
+  spec : (s : List Data) → WFOp s.length op → Data
+  proof : Operation.Computes op spec
+
+class Prog.HasComputes (p : Prog) where
+  spec : (s : List Data) → WFProg s.length p → Data
+  proof : Prog.Computes p spec
+
+instance : Prog.HasComputes ([] : Prog) where
+  spec := fun s h_wf => s.head (by simp [WFProg] at h_wf; exact h_wf)
+  proof := Prog.computes_nil
+
+instance {op : Operation} {rest : Prog}
+    [hop : Operation.HasComputes op] [hrest : Prog.HasComputes rest] :
+    Prog.HasComputes (op :: rest) where
+  spec := fun s h_wf =>
+    let r := hop.spec s h_wf.1
+    hrest.spec (r :: s) h_wf.2
+  proof := Prog.computes_cons hop.proof hrest.proof
+
+instance (h t : ℕ) : Operation.HasComputes (.cons h t) where
+  spec := fun s h_wf => Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList)
+  proof := Operation.computes_cons_op h t
+
+instance (i : ℕ) : Operation.HasComputes (.head i) where
+  spec := fun s h_wf => (s[i]'h_wf).asList.headD Data.empty
+  proof := Operation.computes_head i
+
+instance (i : ℕ) : Operation.HasComputes (.tail i) where
+  spec := fun s h_wf => Data.l (s[i]'h_wf).asList.tail
+  proof := Operation.computes_tail i
+
+instance : Operation.HasComputes .empty where
+  spec := fun _ _ => Data.empty
+  proof := Operation.computes_empty
+
+instance (i j : ℕ) : Operation.HasComputes (.eq i j) where
+  spec := fun s h_wf =>
+    if (s[i]'h_wf.1) == (s[j]'h_wf.2) then dataTrue else dataFalse
+  proof := Operation.computes_eq i j
+
+instance {i : ℕ} {then_ else_ : List Operation}
+    [ht : Prog.HasComputes then_] [he : Prog.HasComputes else_] :
+    Operation.HasComputes (.ifEmpty i then_ else_) where
+  spec := fun s h_wf =>
+    if (s[i]'h_wf.1) == Data.empty then ht.spec s h_wf.2.1 else he.spec s h_wf.2.2
+  proof := Operation.computes_ifEmpty ht.proof he.proof
+
+instance {body : Prog} {idxs : List TapeIndex}
+    [hb : Prog.HasComputes body] :
+    Operation.HasComputes (.call body idxs) where
+  spec := fun s h_wf =>
+    hb.spec
+      (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
+      (by simpa using h_wf.2)
+  proof := Operation.computes_call hb.proof
+
+/-- One-liner: extract the data result of any auto-resolvable program. -/
+abbrev Prog.run (p : Prog) [h : Prog.HasComputes p]
+    (s : List Data) (h_wf : WFProg s.length p) : Data :=
+  h.spec s h_wf
+
+-- --------- Simp lemmas exposing each instance's spec ---------
+-- These are all `rfl`: each instance's `spec` field is *definitionally* its RHS.
+-- We expose them as `simp` lemmas so that `simp [...]` can unfold the chain
+-- compositionally without needing the instances themselves to be reducible.
+
+@[simp] lemma Prog.HasComputes.spec_nil :
+    (Prog.HasComputes.spec (p := ([] : Prog))) =
+      fun s h_wf => s.head (by simp [WFProg] at h_wf; exact h_wf) := rfl
+
+@[simp] lemma Prog.HasComputes.spec_cons {op : Operation} {rest : Prog}
+    [hop : Operation.HasComputes op] [hrest : Prog.HasComputes rest] :
+    (Prog.HasComputes.spec (p := op :: rest)) =
+      fun s h_wf =>
+        let r := hop.spec s h_wf.1
+        hrest.spec (r :: s) h_wf.2 := rfl
+
+@[simp] lemma Operation.HasComputes.spec_cons (h t : ℕ) :
+    (Operation.HasComputes.spec (op := .cons h t)) =
+      fun s h_wf => Data.l ((s[h]'h_wf.1) :: (s[t]'h_wf.2).asList) := rfl
+
+@[simp] lemma Operation.HasComputes.spec_head (i : ℕ) :
+    (Operation.HasComputes.spec (op := .head i)) =
+      fun s h_wf => (s[i]'h_wf).asList.headD Data.empty := rfl
+
+@[simp] lemma Operation.HasComputes.spec_tail (i : ℕ) :
+    (Operation.HasComputes.spec (op := .tail i)) =
+      fun s h_wf => Data.l (s[i]'h_wf).asList.tail := rfl
+
+@[simp] lemma Operation.HasComputes.spec_empty :
+    (Operation.HasComputes.spec (op := .empty)) = fun _ _ => Data.empty := rfl
+
+@[simp] lemma Operation.HasComputes.spec_eq (i j : ℕ) :
+    (Operation.HasComputes.spec (op := .eq i j)) =
+      fun s h_wf =>
+        if (s[i]'h_wf.1) == (s[j]'h_wf.2) then dataTrue else dataFalse := rfl
+
+@[simp] lemma Operation.HasComputes.spec_ifEmpty {i : ℕ} {then_ else_ : List Operation}
+    [ht : Prog.HasComputes then_] [he : Prog.HasComputes else_] :
+    (Operation.HasComputes.spec (op := .ifEmpty i then_ else_)) =
+      fun s h_wf =>
+        if (s[i]'h_wf.1) == Data.empty then ht.spec s h_wf.2.1
+        else he.spec s h_wf.2.2 := rfl
+
+@[simp] lemma Operation.HasComputes.spec_call {body : Prog} {idxs : List TapeIndex}
+    [hb : Prog.HasComputes body] :
+    (Operation.HasComputes.spec (op := .call body idxs)) =
+      fun s h_wf =>
+        hb.spec
+          (idxs.attach.map (fun ⟨i, hi⟩ => s[i]'(h_wf.1 i hi)))
+          (by simpa using h_wf.2) := rfl
+
+-- --------- Worked example using automation ---------
+
+/-- Same as the previous example, but now the spec function and its proof are
+    synthesised by type-class resolution; only the goal statement is written by hand. -/
+example : Prog.Computes [Operation.head 0, Operation.tail 0]
+    (Prog.HasComputes.spec (p := [Operation.head 0, Operation.tail 0])) :=
+  Prog.HasComputes.proof
+
+/-- A slightly larger program: take head of s[0], take tail of the new top, then
+    cons those two. Spec is derived automatically. -/
+example : Prog.Computes
+    [Operation.head 0, Operation.tail 0, Operation.cons 0 1]
+    (Prog.HasComputes.spec
+      (p := [Operation.head 0, Operation.tail 0, Operation.cons 0 1])) :=
+  Prog.HasComputes.proof
 
 class DataEncode (α : Type) where
   encode : α → Data
@@ -636,7 +958,7 @@ lemma tape_write.semantics (t : Turing.BiTape Symbol) (a : Option Symbol) {stack
   simp [tape_write, Turing.BiTape.write]
   rfl
 
-def stackTape_cons : Prog := [
+abbrev stackTape_cons : Prog := [
   .ifEmpty 0 [ .ifEmpty 1 [ .empty ] [ .cons 0 1 ] ] [ .cons 0 1 ]
 ]
 
@@ -682,29 +1004,59 @@ lemma snd.semantics {α β : Type} [DataEncode α] [DataEncode β]
   simp [snd]
   grind
 
-def tape_left : Prog := [ .call snd [0], .head 0 ]
+/-- Data-only semantics of `snd`, proved via the `HasComputes` automation: instance
+    search assembles the spec function from per-operation specs for `.tail` and `.head`,
+    and `HasComputes.proof` discharges the equality. No simp chain through the
+    full `(Data × ℕ × ℕ)` triple, hence no `O(n²)` blowup. -/
+lemma snd.evalData_eq {α β : Type} [DataEncode α] [DataEncode β]
+    {stack : List Data} {x : α} {y : β} :
+    Prog.evalData snd (DataEncode.encode (x, y) :: stack)
+      (by simp [snd, WFProg, WFOp]) (by simp [snd]) =
+      DataEncode.encode y := by
+  show Prog.evalData [Operation.tail 0, Operation.head 0] _ _ _ = _
+  rw [Prog.HasComputes.proof
+    (p := [Operation.tail 0, Operation.head 0])]
+  simp [Prog.HasComputes.spec, Operation.HasComputes.spec,
+    DataEncode.encode, Data.asList]
+
+/-- Bridge: the data component of `meteredEvalT` is exactly `evalData`. Used to
+    transport spec-based reasoning back to the original semantics statements. -/
+lemma Prog.meteredEvalT_fst_eq_evalData {p : Prog} {s : List Data}
+    {h_wf : WFProg s.length p} {h_whf : Prog.WhileFree p} :
+    (Prog.meteredEvalT p s h_wf h_whf).1 = Prog.evalData p s h_wf h_whf := rfl
+
+/-- Instance for the named program `snd`: routed via `inferInstanceAs` since
+    `snd` is a `def`, not an `abbrev`. -/
+instance instHasComputesSnd : Prog.HasComputes snd :=
+  inferInstanceAs (Prog.HasComputes [Operation.tail 0, Operation.head 0])
+
+@[simp] lemma snd.spec_eq :
+    (Prog.HasComputes.spec (p := snd)) =
+      (Prog.HasComputes.spec (p := [Operation.tail 0, Operation.head 0])) := rfl
 
 @[simp]
-lemma tape_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
-    (tape_left.meteredEvalT (DataEncode.encode t :: stack)
-      (by simp [tape_left, snd, WFProg, WFOp]) (by simp [tape_left, snd])).1 =
-      DataEncode.encode t.left := by
-  simp [tape_left]
+lemma stackTape_cons.spec_eq (head : Option Symbol) (tail : Turing.StackTape Symbol)
+      (h_wf : WFProg [DataEncode.encode head, DataEncode.encode tail].length stackTape_cons) :
+    (Prog.HasComputes.spec (p := stackTape_cons))
+      [DataEncode.encode head, DataEncode.encode tail] h_wf =
+      DataEncode.encode (tail.cons head)
+      := by
+  simp
+  -- only encoding and stackTape business left.
   sorry
 
-
-
-def tape_move_left : Prog := [
+abbrev tape_move_left : Prog := [
   .head 0, -- t.head
   .call [ .call snd [0], .call snd [0] ] [1], -- t.right
   .call stackTape_cons [1, 0], -- StackTape.cons t.head t.right
-  .call [ .call tape_left [0], .tail 0 ] [3], -- t.left.tail
-  .call [ .call tape_left [0], .head 0 ] [4], -- t.left.head
-  -- .call [ .tail 0 ] [0], -- t.left.tail
-  -- .call [ .call snd [3], .head 0, .head 0 ] [4], -- t.left.head
-  -- .cons 1 2,
-  -- .cons 1 0
+  .call [ .call snd [0], .head 0, .tail 0 ] [3], -- t.left.tail
+  .call [ .call snd [0], .head 0, .head 0 ] [4], -- t.left.head
+  .cons 1 2,
+  .cons 1 0
 ]
+
+instance instHasComputesTapeMoveLeft : Prog.HasComputes tape_move_left :=
+  inferInstanceAs (Prog.HasComputes tape_move_left)
 
 @[simp]
 lemma tape_move_left_whf : Prog.WhileFree tape_move_left := by
@@ -714,26 +1066,37 @@ lemma tape_move_left_whf : Prog.WhileFree tape_move_left := by
 lemma tape_move_left_wf (n : ℕ) (h_le : 0 < n) : WFProg n tape_move_left := by
   simp [tape_move_left, snd, stackTape_cons, WFProg, WFOp, h_le]
 
+/-- Data-only semantics of `tape_move_left`, derived by `HasComputes` automation.
+    Each step's contribution appears once (as a `let`-bound name in the spec
+    function), so the proof term does not duplicate the stack `O(n²)` times. -/
+lemma tape_move_left.evalData_eq {Symbol : Type} [Inhabited Symbol] [Fintype Symbol]
+    [DataEncode Symbol]
+    (t : Turing.BiTape Symbol) {stack : List Data} :
+    Prog.evalData tape_move_left (DataEncode.encode t :: stack)
+      (by simp) (by simp [tape_move_left, snd, stackTape_cons]) =
+    Prog.HasComputes.spec (p := tape_move_left)
+      (DataEncode.encode t :: stack) (by simp) := by
+  show Prog.evalData _ _ _ _ = _
+  rw [Prog.HasComputes.proof (p := tape_move_left)]
+
 @[simp]
 lemma tape_move_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
-    (tape_move_left.meteredEvalT (DataEncode.encode t :: stack) (by simp) (by simp)).1 =
+    (tape_move_left.meteredEvalT (DataEncode.encode t :: stack) (by simp)
+      (by simp [tape_move_left, snd, stackTape_cons])).1 =
       DataEncode.encode (Turing.BiTape.move_left t)
         := by
-  have encode_bitape : DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
-    simp [DataEncode.encode]
-  have encode_stacktape_tail (st : Turing.StackTape Symbol) :
-      Data.l (DataEncode.encode st).asList.tail = DataEncode.encode st.tail := by
-    rw [show DataEncode.encode st = DataEncode.encode (st.toList) by simp [DataEncode.encode]]
-    rw [DataEncode_list_tail, Data.asList_l]
-    sorry -- StackList stuff
-  have encode_stacktape_head (st : Turing.StackTape Symbol) :
-      Data.l (DataEncode.encode st).asList.tail = DataEncode.encode st.tail := by
-    rw [show DataEncode.encode st = DataEncode.encode (st.toList) by simp [DataEncode.encode]]
-    rw [DataEncode_list_tail, Data.asList_l]
-    sorry -- StackList stuff
-  simp [tape_move_left, encode_bitape, encode_stacktape_tail, -Operation.meteredEvalT_call]
-  -- TODO how can we prevent the expression size to explode during simp?
+  -- Step 1: switch from `meteredEvalT.1` to `evalData`, then apply the
+  -- `HasComputes`-derived spec equality. After this, the LHS is
+  -- `HasComputes.spec (p := tape_move_left) ...`.
+  rw [Prog.meteredEvalT_fst_eq_evalData, tape_move_left.evalData_eq]
+  -- Step 2: unfold the spec chain WITHOUT eliminating let-bindings (`zeta := false`).
+  -- Each intermediate result of the program becomes a `have r := ...` binder
+  -- in the goal, so the goal size is linear in the program length rather
+  -- than `O(n²)`. The per-program `.spec_eq` lemmas bridge the named-def
+  -- instances to their underlying list-literal instances.
+  simp
   sorry
+
 
 
 -- def put : Data → Prog
