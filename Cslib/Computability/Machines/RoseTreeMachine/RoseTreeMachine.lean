@@ -113,9 +113,10 @@ inductive Operation where
   | fold   : (List Operation) → TapeIndex → TapeIndex → Operation
   -- while tape i is nonempty, run body b with stack extended by acc (the current value of tape i)
   | while_ : TapeIndex → (List Operation) → Operation
-  -- call executes a sub-program and returns its stack top. This is not strictly needed, but
-  -- makes it easier to write programs.
-  | call : (List Operation) → Operation
+  -- call executes a sub-program on a swapped / copied stack and returns its stack top.
+  -- This is not strictly needed, but makes it easier to write programs.
+  -- Note that the subprogram only has access to the provided stack indices.
+  | call : (List Operation) → (List TapeIndex) → Operation
 deriving Repr
 
 abbrev Prog := List Operation
@@ -133,7 +134,7 @@ mutual
     | .ifEmpty i t e  => i < n ∧ WFProg n t ∧ WFProg n e
     | .fold b i l => l < n ∧ i < n ∧ WFProg (n + 2) b
     | .while_ i b => i < n ∧ WFProg (n + 1) b
-    | .call b => WFProg n b
+    | .call b stack => (∀ i ∈ stack, i < n) ∧ WFProg stack.length b
 
   /-- `WFProg n p` states that `p` is well-formed given an initial stack of size `n`.
       Since each operation pushes exactly one value, the k-th operation (0-indexed) sees
@@ -188,7 +189,7 @@ mutual
             if d'.asList.head? == .some dataTrue then rec (d', t', s')
             else .some (Data.l d'.asList.tail, t', s')
       (Part.fix F (init, 0, 0)).map fun (r, t, s) => (r, 1 + t, init.size + s)
-    | .call body => meteredEvalProg body stack h_wf
+    | .call body idxs => goCall body idxs stack [] h_wf.1 h_wf.2
 
   /-- Metered analogue of `goFold`: walks the items, threading the accumulator and accumulating
       `(sum of (1 + body_time), max of body_space)` across iterations. -/
@@ -200,6 +201,17 @@ mutual
       (meteredEvalProg body (c :: acc :: stack) h_wf).bind fun (acc', tBody, sBody) =>
         (goMeteredFold cs acc' stack body h_wf).map fun (r, t, s) =>
           (r, 1 + tBody + t, max sBody s)
+
+  @[simp]
+  def goCall (body : Prog) (idxs : List TapeIndex) (stack copiedStack : List Data)
+      (h_idxs : ∀ i ∈ idxs, i < stack.length)
+      (h_wf : WFProg (idxs.length + copiedStack.length) body) :
+      Part (Data × ℕ × ℕ) :=
+    match idxs with
+    | [] => meteredEvalProg body copiedStack (by simpa using h_wf)
+    | i :: idxs' =>
+      have : i < stack.length := h_idxs i (by simp)
+      goCall body idxs' stack (copiedStack ++ [stack[i]]) (by grind) (by grind)
 
   @[simp]
   def meteredEvalProg (prog : Prog) (stack : List Data) (h_wf : WFProg stack.length prog) :
@@ -228,7 +240,7 @@ mutual
     | .ifEmpty _ a b => Prog.WhileFree a ∧ Prog.WhileFree b
     | .while_ _ _ => False
     | .fold b _ _ => Prog.WhileFree b
-    | .call p => Prog.WhileFree p
+    | .call p _ => Prog.WhileFree p
     | _ => True
   @[simp]
   def Prog.WhileFree (body : Prog) : Prop :=
@@ -273,12 +285,21 @@ def Prog.meteredEvalT (body : Prog) (stack : List Data)
     (h_whf : Prog.WhileFree body) : Data × ℕ × ℕ :=
   (meteredEvalProg body stack h_wf).get (Prog_total_of_WhileFree h_wf h_whf stack rfl)
 
-@[simp]
+@[simp, scoped grind =]
 lemma Operation.meteredEvalT_empty {stack : List Data} {h_wf : WFOp stack.length .empty} :
     Operation.meteredEvalT .empty stack h_wf (by simp) = (Data.empty, 1, 1) := by
   simp [Operation.meteredEvalT, meteredEvalOp]
 
-@[simp]
+@[simp, scoped grind =]
+lemma Operation.meteredEvalT_cons_one
+    {h t : ℕ}
+    {stack : List Data}
+    {h_wf : WFOp stack.length (.cons h t)} :
+    (Operation.meteredEvalT (.cons h t) stack h_wf (by simp)).1 =
+      Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList) := by
+  simp [Operation.meteredEvalT, meteredEvalOp]
+
+@[simp, scoped grind =]
 lemma Operation.meteredEvalT_cons
     {h t : ℕ}
     {stack : List Data}
@@ -289,7 +310,7 @@ lemma Operation.meteredEvalT_cons
       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size) := by
   simp [Operation.meteredEvalT, meteredEvalOp]
 
-@[simp]
+@[simp, scoped grind =]
 lemma Operation.meteredEvalT_head
     {i : ℕ}
     {stack : List Data}
@@ -300,7 +321,7 @@ lemma Operation.meteredEvalT_head
       1 + (stack[i].asList.headD Data.empty).size) := by
   simp [Operation.meteredEvalT, meteredEvalOp]
 
-@[simp]
+@[simp, scoped grind =]
 lemma Operation.meteredEvalT_tail
     {i : ℕ}
     {stack : List Data}
@@ -311,7 +332,7 @@ lemma Operation.meteredEvalT_tail
       1 + (Data.l stack[i].asList.tail).size) := by
   simp [Operation.meteredEvalT, meteredEvalOp]
 
-@[simp]
+@[simp, scoped grind =]
 lemma Operation.meteredEvalT_ifEmpty
     {i : ℕ}
     {stack : List Data}
@@ -329,7 +350,7 @@ lemma Operation.meteredEvalT_ifEmpty
   · simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp, h_empty]
 
 
-@[simp]
+@[simp, scoped grind =]
 lemma Operation.meteredEvalT_call
     {stack : List Data}
     {p : List Operation}
@@ -338,7 +359,7 @@ lemma Operation.meteredEvalT_call
     Operation.meteredEvalT (.call p) stack h_wf h_whf = Prog.meteredEvalT p stack h_wf h_whf := by
   simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp]
 
-@[simp]
+@[simp, scoped grind =]
 lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
     {h_wf : WFOp stack.length (.fold body initial list)}
     {h_whf : Operation.WhileFree (.fold body initial list)}
@@ -432,14 +453,25 @@ lemma Operation.meteredEvalT_fold_induction
     motive r t s := by
   sorry
 
-@[simp]
+@[simp, scoped grind =]
 lemma Prog.meteredEvalT_nil
     {stack : List Data}
     {h_wf : WFProg stack.length []} :
     Prog.meteredEvalT [] stack h_wf (by simp) = (stack.head (by grind [WFProg]), 0, 0) := by
   simp [Prog.meteredEvalT]
 
-@[simp]
+@[simp, scoped grind =]
+lemma Prog.meteredEvalT_cons_one
+    {op : Operation} {rest : Prog} {stack : List Data}
+    {h_wf : WFProg stack.length (op :: rest)}
+    {h_whf : Prog.WhileFree (op :: rest)} :
+    (Prog.meteredEvalT (op :: rest) stack h_wf h_whf).1 =
+      let s := stack
+      let r := (op.meteredEvalT s h_wf.1 h_whf.1).1
+      (meteredEvalT rest (r :: s) h_wf.2 h_whf.2).1 := by
+  sorry
+
+@[simp, scoped grind =]
 lemma Prog.meteredEvalT_cons
     {op : Operation} {rest : Prog} {stack : List Data}
     {h_wf : WFProg stack.length (op :: rest)}
@@ -478,7 +510,7 @@ instance (α : Type) [DataEncode α] : DataEncode (Option α) where
     | some x => Data.l [DataEncode.encode x]
   h_inj := by sorry
 
-@[simp]
+@[simp, scoped grind =]
 lemma DataEncode_Option_empty {α : Type} [DataEncode α] (x : Option α) :
   (DataEncode.encode x == Data.empty) = x.isNone := by sorry
 
@@ -615,32 +647,52 @@ lemma stackTape_cons.semantics
 -- def move_left (t : BiTape Symbol) : BiTape Symbol :=
 --   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
 
+def snd : Prog := [ .tail 0, .head 0 ]
+
+@[simp]
+lemma snd.semantics {α β : Type} [DataEncode α] [DataEncode β]
+    {stack : List Data} {x : α} {y : β} :
+    (snd.meteredEvalT ((DataEncode.encode (x, y)) :: stack)
+      (by simp [snd, WFProg, WFOp]) (by simp [snd])).1 =
+      DataEncode.encode y := by
+  simp [snd]
+
 def tape_move_left : Prog := [
   .head 0, -- t.head
   .call [ .tail 1, .tail 0 ], -- t.right
-  .call stackTape_cons, -- StackTape.cons t.head t.right
-  .call [ .tail 3, .head 0, .tail 0 ], -- t.left.tail
-  .call [ .tail 3, .head 0, .head 0 ], -- t.left.head
-  .cons 1 2,
-  .cons 1 0
+  -- .call stackTape_cons, -- StackTape.cons t.head t.right
+  -- .call [ .tail 3, .head 0, .tail 0 ], -- t.left.tail
+  -- .call [ .tail 3, .head 0, .head 0 ], -- t.left.head
+  -- .cons 1 2,
+  -- .cons 1 0
 ]
 
 @[simp]
 lemma tape_move_left_whf : Prog.WhileFree tape_move_left := by
-  simp [tape_move_left, stackTape_cons]
+  simp [tape_move_left]
 
 @[simp]
 lemma tape_move_left_wf (n : ℕ) (h_le : 0 < n) : WFProg n tape_move_left := by
-  simp [tape_move_left, WFProg, WFOp, stackTape_cons, h_le]
+  simp [tape_move_left, WFProg, WFOp, h_le]
 
--- @[simp]
--- lemma tape_move_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
---     (tape_move_left.meteredEvalT (DataEncode.encode t :: stack) (by simp) (by simp)).1 =
---       DataEncode.encode (Turing.BiTape.move_left t) := by
---   unfold tape_move_left
---   simp
+@[simp]
+lemma tape_move_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
+    (tape_move_left.meteredEvalT (DataEncode.encode t :: stack) (by simp) (by simp)).1 =
+      DataEncode.encode (Turing.BiTape.move_left t) := by
+  unfold tape_move_left
+  set input := DataEncode.encode t
+  simp only [Prog.meteredEvalT_cons, Prog.meteredEvalT_nil]
+  simp [Operation.meteredEvalT_head]
+  simp only [input]
+  rw [List.tail_cons]
+  simp [DataEncode.encode]
+  rw [List.tail_cons]
+  simp only [List.tail_cons, input]
 
---   sorry
+  -- it gets exponential because of the ".1" and because "stack" is repeated multiple times!
+  -- simp only [List.getElem_cons_zero]
+
+  sorry
 
 
 -- def put : Data → Prog
