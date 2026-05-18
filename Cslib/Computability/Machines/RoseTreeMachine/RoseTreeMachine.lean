@@ -3,6 +3,8 @@ import Mathlib.Control.Fix
 import Mathlib.Tactic
 import Std
 
+import Cslib.Computability.Machines.SingleTapeTuring.Basic
+
 -- This is a proposal to define a machine model and related time and space measure
 -- such that it is linearly space- and polynomially time-related to multi-tape Turing machines.
 
@@ -39,6 +41,11 @@ inductive Data where
 deriving Repr, BEq
 
 abbrev Data.empty := Data.l []
+
+-- TODO not sure why this is needed
+@[simp]
+lemma Data_beq (x : Data) : (x == x) := by sorry
+
 
 abbrev Data.asList
   | Data.l xs => xs
@@ -86,7 +93,7 @@ inductive Operation where
   -- compare two tapes, returning non-empty if equal, empty otherwise
   | eq     : TapeIndex → TapeIndex → Operation
   -- branch on tape i: if empty then then_ else else_
-  | ite    : TapeIndex → (List Operation) → (List Operation) → Operation
+  | ifEmpty : TapeIndex → (List Operation) → (List Operation) → Operation
   -- fold over the children of tape l with initial accumulator tape i and body program b
   | fold   : (List Operation) → TapeIndex → TapeIndex → Operation
   -- while tape i is nonempty, run body b with stack extended by acc (the current value of tape i)
@@ -108,7 +115,7 @@ mutual
     | .head i     => i < n
     | .tail i     => i < n
     | .eq i j     => i < n ∧ j < n
-    | .ite i t e  => i < n ∧ WFProg n t ∧ WFProg n e
+    | .ifEmpty i t e  => i < n ∧ WFProg n t ∧ WFProg n e
     | .fold b i l => l < n ∧ i < n ∧ WFProg (n + 2) b
     | .while_ i b => i < n ∧ WFProg (n + 1) b
     | .call b => WFProg n b
@@ -143,8 +150,8 @@ mutual
       (if stack[i]'h_wf.1 == stack[j]'h_wf.2 then dataTrue else dataFalse,
       1 + (min (stack[i]'h_wf.1).size (stack[j]'h_wf.2).size),
       1)
-    | .ite i then_ else_ =>
-      (if stack[i]'h_wf.1 == dataTrue then
+    | .ifEmpty i then_ else_ =>
+      (if stack[i]'h_wf.1 == Data.empty then
         meteredEvalProg then_ stack h_wf.2.1
       else
         meteredEvalProg else_ stack h_wf.2.2).map (fun (r, t, s) => (r, 1 + t, s))
@@ -203,7 +210,7 @@ mutual
   @[simp]
   def Operation.WhileFree (op : Operation) : Prop :=
     match op with
-    | .ite _ a b => Prog.WhileFree a ∧ Prog.WhileFree b
+    | .ifEmpty _ a b => Prog.WhileFree a ∧ Prog.WhileFree b
     | .while_ _ _ => False
     | .fold b _ _ => Prog.WhileFree b
     | .call p => Prog.WhileFree p
@@ -238,6 +245,10 @@ theorem Dom_meteredEvalOp_of_WhileFree {op : Operation} {stack : List Data}
 -- It is not sufficient for a program to be total, because this does not imply that all
 -- sub-programs are total, which is what we would need for simp lemmas to be clearly statable.
 
+-- Note that you do not want to unfold or simplify Operation.meteredEvalT, because it introduces
+-- the proof of termination, which blocks simp and rw rules. Because of that, we have
+-- simp lemmas for each operation below.
+
 def Operation.meteredEvalT (op : Operation) (stack : List Data) (h_wf : WFOp stack.length op)
     (h_whf : Operation.WhileFree op) : Data × ℕ × ℕ :=
   (meteredEvalOp stack op h_wf).get (by simp [h_whf])
@@ -254,6 +265,7 @@ lemma Operation.meteredEvalT_empty {stack : List Data} {h_wf : WFOp stack.length
 
 @[simp]
 lemma Operation.meteredEvalT_cons
+    {h t : ℕ}
     {stack : List Data}
     {h_wf : WFOp stack.length (.cons h t)} :
     Operation.meteredEvalT (.cons h t) stack h_wf (by simp) =
@@ -261,6 +273,45 @@ lemma Operation.meteredEvalT_cons
       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size,
       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size) := by
   simp [Operation.meteredEvalT, meteredEvalOp]
+
+@[simp]
+lemma Operation.meteredEvalT_head
+    {i : ℕ}
+    {stack : List Data}
+    {h_wf : WFOp stack.length (.head i)} :
+    Operation.meteredEvalT (.head i) stack h_wf (by simp) =
+      (stack[i].asList.headD Data.empty,
+      1 + (stack[i].asList.headD Data.empty).size,
+      1 + (stack[i].asList.headD Data.empty).size) := by
+  simp [Operation.meteredEvalT, meteredEvalOp]
+
+@[simp]
+lemma Operation.meteredEvalT_tail
+    {i : ℕ}
+    {stack : List Data}
+    {h_wf : WFOp stack.length (.tail i)} :
+    Operation.meteredEvalT (.tail i) stack h_wf (by simp) =
+      (Data.l stack[i].asList.tail,
+      1 + (Data.l stack[i].asList.tail).size,
+      1 + (Data.l stack[i].asList.tail).size) := by
+  simp [Operation.meteredEvalT, meteredEvalOp]
+
+@[simp]
+lemma Operation.meteredEvalT_ifEmpty
+    {i : ℕ}
+    {stack : List Data}
+    {then_ else_ : List Operation}
+    {h_wf : WFOp stack.length (.ifEmpty i then_ else_)}
+    {h_whf : WhileFree (.ifEmpty i then_ else_)} :
+    Operation.meteredEvalT (.ifEmpty i then_ else_) stack h_wf h_whf =
+      let (r, t, s) := if stack[i]'h_wf.1 == Data.empty then
+        Prog.meteredEvalT then_ stack h_wf.2.1 h_whf.1
+      else
+        Prog.meteredEvalT else_ stack h_wf.2.2 h_whf.2
+      (r, 1 + t, s) := by
+  by_cases h_empty : stack[i]'h_wf.1 == Data.empty
+  · simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp, h_empty]
+  · simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp, h_empty]
 
 @[simp]
 lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
@@ -374,8 +425,55 @@ lemma Prog.meteredEvalT_cons
       (stack, opT + t, opS + s) := by
   sorry
 
+class DataEncode (α : Type) where
+  encode : α → Data
+  h_inj : encode.Injective
 
-------------------------------------------------------------------------------
+instance : DataEncode Bool where
+  encode b := if b then dataTrue else dataFalse
+  h_inj := by intros a b h_eq; grind
+
+instance (α : Type) [DataEncode α] : DataEncode (List α) where
+  encode xs := Data.l (xs.map DataEncode.encode)
+  h_inj := by sorry
+
+@[simp, grind =]
+lemma DataEncode_list_nil {α : Type} [DataEncode α] :
+  DataEncode.encode ([] : List α) = Data.l [] := by
+  simp [DataEncode.encode]
+
+@[simp, grind =]
+lemma DataEncode_list_eq_nil_iff_nil {α : Type} [DataEncode α] (xs : List α) :
+  DataEncode.encode xs = Data.empty ↔ xs = [] := by
+  simp [DataEncode.encode]
+
+instance (α : Type) [DataEncode α] : DataEncode (Option α) where
+  encode := fun
+    | none => Data.l []
+    | some x => Data.l [DataEncode.encode x]
+  h_inj := by sorry
+
+@[simp]
+lemma DataEncode_Option_empty {α : Type} [DataEncode α] (x : Option α):
+  (DataEncode.encode x == Data.empty) = x.isNone := by sorry
+
+instance (α β : Type) [DataEncode α] [DataEncode β] : DataEncode (α × β) where
+  encode := fun (a, b) => Data.l [DataEncode.encode a, DataEncode.encode b]
+  h_inj := by sorry
+
+instance : DataEncode ℕ where
+  encode x := DataEncode.encode (Nat.bits x)
+  h_inj := by sorry
+
+----------------------------------------------------------------
+---- Function view
+--------------------------------------------------------
+
+def FunType (inputs : ℕ) : Type := match inputs with
+  | 0 => Data
+  | n + 1 => Data → FunType n
+
+--------------------------------------------------------------------
 -- Example program
 ---------------------------------------------------------------------------
 
@@ -431,24 +529,190 @@ lemma prog_reverse.space (list : Data) (xs : List Data) :
 -- state in an accumulator)?
 -- where the "cons" is handeled by the fold-map routine?
 
-def prog_true : Prog := [
+--------------------------------------------------------------------
+---------------- Universal Turing Machine (simulation of a SingleTapeTM)
+---------------------------------------------------------------------------
+
+variable [Inhabited Symbol] [Fintype Symbol] [DataEncode Symbol]
+
+public instance : DataEncode (Turing.StackTape Symbol) where
+  encode t := DataEncode.encode t.toList
+  h_inj := by sorry
+
+public instance : DataEncode (Turing.BiTape Symbol) where
+  encode t := DataEncode.encode (t.head, t.left, t.right)
+  h_inj := by sorry
+
+def tape_write : Prog := [
+  .tail 1,
+  .cons 1 0
+]
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+@[simp]
+lemma tape_write.semantics (t : Turing.BiTape Symbol) (a : Option Symbol) {stack : List Data} :
+    (tape_write.meteredEvalT (DataEncode.encode a :: DataEncode.encode t :: stack)
+      (by simp [tape_write, WFProg, WFOp]) (by simp [tape_write])).1 =
+      DataEncode.encode (t.write a) := by
+  simp [tape_write, Turing.BiTape.write]
+  rfl
+
+-- /-- Prepend an `Option` to the `StackTape` -/
+-- @[scoped grind]
+-- def cons (x : Option Symbol) (xs : StackTape Symbol) : StackTape Symbol :=
+--   match x, xs with
+--   | none, ⟨[], _⟩ => ⟨[], by grind⟩
+--   | none, ⟨hd :: tl, hl⟩ => ⟨none :: hd :: tl, by grind⟩
+--   | some a, ⟨l, hl⟩ => ⟨some a :: l, by grind⟩
+
+def stackTape_cons : Prog := [
+  .ifEmpty 0 [ .ifEmpty 1 [ .empty ] [ .cons 0 1 ] ] [ .cons 0 1 ]
+]
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+@[simp]
+lemma stackTape_cons.semantics
+    (x : Option Symbol) (xs : Turing.StackTape Symbol) {stack : List Data} :
+    (stackTape_cons.meteredEvalT (DataEncode.encode x :: DataEncode.encode xs :: stack)
+      (by simp [stackTape_cons, WFProg, WFOp]) (by simp [stackTape_cons])).1 =
+      DataEncode.encode (xs.cons x) := by
+  have h_encode_stackTape (xs : Turing.StackTape Symbol) :
+    DataEncode.encode xs = DataEncode.encode (xs.toList) := by simp [DataEncode.encode]
+  match x with
+  | none =>
+    by_cases h_tail : xs.toList = []
+    · have : xs = Turing.StackTape.nil := Turing.StackTape.ext _ _ (by simp [h_tail])
+      simp [stackTape_cons, h_encode_stackTape, this]
+    · have h_empty : ¬ (DataEncode.encode xs == Data.empty) := by
+        sorry
+      simp [stackTape_cons, h_empty]
+      simp [h_encode_stackTape]
+      -- TODO just some StackTape encoding stuff left to solve here.
+      sorry
+  | some x =>
+    simp [stackTape_cons, h_encode_stackTape]
+    simp [DataEncode.encode]
+
+-- def move_left (t : BiTape Symbol) : BiTape Symbol :=
+--   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
+
+def tape_move_left : Prog := [
+  .head 0, -- head
+  .tail 1, -- (left, right)
+  .head 0, -- left
+  .tail 1, -- right
+
+
+def tape_optionMove
+
+def put : Data → Prog
+  | Data.l [] => [ .empty ]
+  | Data.l (head :: tail) => [
+      .call (put (Data.l tail)),
+      .call (put head),
+      .cons 0 1
+    ]
+
+--------------------- IDEAS ---------------------------------
+-- Complexity:
+-- If a program is loop-free (no .while, no .fold), then both its space and time complexity
+-- is linear in the sum of the sizes of its inputs (determined by the smallest well-formedness
+-- parameter)
+------------------------------------
+
+
+@[simp]
+lemma put_wf {i : ℕ} {d : Data} : WFProg i (put d) := by sorry
+
+@[simp]
+lemma put_whf {d : Data} : Prog.WhileFree (put d) := by sorry
+
+@[simp]
+lemma put_semantics {stack : List Data} {d : Data} :
+    ((put d).meteredEvalT stack (by simp) (by simp)).1 = d := by sorry
+
+def copy (slot : ℕ) : Prog := [ .tail slot, .head (slot + 1), .cons 0 1 ]
+
+@[simp]
+lemma copy_wf {i slot : ℕ} (h_lt : slot < i) : WFProg i (copy slot) := by
+  simp [copy, WFProg, WFOp, h_lt]
+
+@[simp]
+lemma copy_whf {slot : ℕ} : Prog.WhileFree (copy slot) := by simp [copy]
+
+@[simp]
+lemma copy_semantics {stack : List Data} {slot : ℕ} (h_lt : slot < stack.length) :
+    ((copy slot).meteredEvalT stack (by simp [h_lt]) (by simp)).1 = stack[slot] := by
+  simp [copy, Operation.meteredEvalT, meteredEvalOp]
+  sorry
+
+--- Runs `condition` on every element in the list and returns the first return value that
+--- is non-empty.
+def find? (condition : Prog) : Prog := [
     .empty,
-    .cons 0 0
+    .fold [
+      -- element: 0, acc: 1
+      .ite 1 (copy 1) [.call condition],
+    ] 1 0
   ]
 
-def prog_bit_add : Prog := [
-    .empty,
-    .cons 0 1,
-    .cons 0 1,
-    .ite 0
-      [ .cons 0 1 ] -- if first bit is 1, add second bit to result
-      [ .head 1 ]     -- if first bit is 0, result is just second bit
+@[simp]
+lemma find?_semantics (condition : Prog) {stack : List Data} {slot : ℕ} (h_lt : slot < stack.length) :
+    ((copy slot).meteredEvalT stack (by simp [h_lt]) (by simp)).1 = stack[slot] := by
+  simp [copy, Operation.meteredEvalT, meteredEvalOp]
+  sorry
+
+def get_symbol : Prog := [
+    .head 0
   ]
 
-def prog_succ : Prog := [
-    .call prog_true,
-    .fold [ .cons 0 1 ] 0 1
-  ]
+public instance (α : Type) [StrEnc α] (k : ℕ) : StrEnc (Vector α k) where
+  toData v := StrEnc.toData v.toList
+
+public instance : StrEnc (MultiCell (k : ℕ)) where
+  toData mc := StrEnc.toData (mc.cells, mc.isLeftEnd, mc.isRightEnd)
+
+/-
+Outline of UTM:
+while the current state is not None:
+- for each tape, find the head position on the multi-tape
+  and copy the current symbol to an aux tape.
+- now the aux tape contains the symbols in the correct order.
+- copy the current state to the aux tape.
+- the contents of the aux tape is exactly the input to the
+  transition function
+- "evaluate the transition function" by iterating through its
+  table and storing the result on another tape
+- execute the actions for each of the tapes:
+  - find the head. update the symbol, update the head marking
+    according to the move action
+    (potentially extend the tape to the left or right)
+- update the current state
+-/
+
+/- sub-routines we need:
+- move to the first element of a list that satisfies a condition:
+  tm₁ tm₂ tm₃: For each item in the list: if tm₁ outputs true on an aux tape, run tm₂.
+  if it never outputs true, run tm₃
+- evaluate a function given by a list of input-output pairs
+- update an element in a list, whose encoding size must be the same
+- extend a list to the right
+-/
+
+/-- The encoding of the given tapes as a list of `MultiCell`s. -/
+def encodeTapes (k : ℕ) (tapes : Fin k → BiTape Char) (shifts : Fin k → ℤ) : List (MultiCell k) :=
+  sorry
+
+def getHeadSymbol (k : ℕ) (tapeIdx : ℕ) (mt out aux : Fin k) : MultiTapeTM k Char :=
+  -- Find the cell where the tapeIdx-th tape has the head
+  find_list mt aux (atPath [0, tapeIdx, 1] mt (copyEnc mt aux))
+    -- copy the symbol to out
+    (atPath [0, tapeIdx, 0] mt (copy_to_list mt out))
+    -- otherwise do nothing (because we know there is a head marker)
+    (noop)
+
+
+
 
 -----------------------------------------------------------------------------------------
 --- The stuff below here still needs some work
@@ -530,27 +794,6 @@ def WellFormedProgram.append {in₁ in₁ : ℕ}
     WellFormedProgram in₁ :=
   { prog := p₁.prog ++ p₂.prog, h_wf := by sorry }
 
-class DataEncode (α : Type) where
-  encode : α → Data
-  h_inj : encode.Injective
-
-instance : DataEncode Bool where
-  encode b := if b then dataTrue else dataFalse
-  h_inj := by intros a b h_eq; grind
-
-instance (α : Type) [DataEncode α] : DataEncode (List α) where
-  encode xs := Data.l (xs.map DataEncode.encode)
-  h_inj := by sorry
-
-instance (α : Type) [DataEncode α] : DataEncode (Option α) where
-  encode := fun
-    | none => Data.l []
-    | some x => Data.l [DataEncode.encode x]
-  h_inj := by sorry
-
-instance : DataEncode ℕ where
-  encode x := DataEncode.encode (Nat.bits x)
-  h_inj := by sorry
 
 def RunsInSpace {inputs : ℕ} (p : WellFormedProgram inputs) (s : ℕ → ℕ) : Prop :=
   ∃ s₁ s₂, ∀ x, (h_l : x.length = inputs) → ∃ s' ≤ s₁ * (s (Data.l x).size) + s₂,
