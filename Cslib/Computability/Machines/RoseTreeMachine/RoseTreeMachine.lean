@@ -1,10 +1,19 @@
-import Mathlib.Data.Part
-import Mathlib.Control.Fix
-import Mathlib.Tactic
-import Std
+/-
+Copyright (c) 2026 Christian Reitwiessner. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Christian Reitwiessner
+-/
 
-import Cslib.Computability.Machines.SingleTapeTuring.Basic
+module
 
+public import Mathlib.Data.Part
+public import Mathlib.Control.Fix
+public import Std
+
+public import Cslib.Computability.Machines.SingleTapeTuring.Basic
+public import Mathlib.Data.Nat.Bits
+
+/-!
 -- This is a proposal to define a machine model and related time and space measure
 -- such that it is linearly space- and polynomially time-related to multi-tape Turing machines.
 
@@ -26,8 +35,14 @@ import Cslib.Computability.Machines.SingleTapeTuring.Basic
 -- (3) if we have a built-in `fold` operation, we should be able to implement the required
 --     operations at linear space overhead, because the fold operation implicitly re-uses the
 --     space used by the accumulator.
+-/
+
+@[expose] public section
 
 
+namespace Turing
+
+namespace RoseTreeMachine
 
 -- ================= Data structure
 
@@ -50,7 +65,6 @@ abbrev Data.empty := Data.l []
 abbrev Data.asList
   | Data.l xs => xs
 
-@[simp]
 lemma Data.asList_empty : Data.empty.asList = [] := by simp [Data.empty]
 
 @[simp]
@@ -67,6 +81,7 @@ lemma Data.size_empty : Data.empty.size = 2 := by simp [Data.empty, Data.size]
 lemma Data.cons_size {h : Data} {t : List Data} :
     (Data.l (h :: t)).size = h.size + (Data.l t).size := by
   simp [Data.size, Nat.add_assoc, Nat.add_comm]
+  sorry
 
 abbrev TapeIndex := ℕ
 
@@ -1461,3 +1476,7 @@ lemma tape_move_left_wf (n : ℕ) (h_le : 0 < n) : WFProg n tape_move_left := by
 
 -- #eval funFalse.prog
 -- #eval funTrue.prog
+
+end RoseTreeMachine
+
+end Turing
