@@ -67,17 +67,18 @@ abbrev Data.asList
 
 lemma Data.asList_empty : Data.empty.asList = [] := by simp [Data.empty]
 
-@[simp]
+@[simp, grind =]
 lemma Data.asList_l : Data.l xs.asList = xs := by grind
+
 
 --- Encoding length of d.
 def Data.size : Data → ℕ
   | Data.l xs => 2 + (xs.map Data.size |>.sum)
 
-@[simp]
+@[simp, grind =]
 lemma Data.size_empty : Data.empty.size = 2 := by simp [Data.empty, Data.size]
 
-@[simp]
+@[simp, grind =]
 lemma Data.cons_size {h : Data} {t : List Data} :
     (Data.l (h :: t)).size = h.size + (Data.l t).size := by
   simp [Data.size, Nat.add_assoc, Nat.add_comm]
@@ -134,7 +135,7 @@ mutual
     | .ifEmpty i t e  => i < n ∧ WFProg n t ∧ WFProg n e
     | .fold b i l => l < n ∧ i < n ∧ WFProg (n + 2) b
     | .while_ i b => i < n ∧ WFProg (n + 1) b
-    | .call b stack => (∀ i ∈ stack, i < n) ∧ WFProg stack.length b
+    | .call b idxs => (∀ i ∈ idxs, i < n) ∧ WFProg idxs.length b
 
   /-- `WFProg n p` states that `p` is well-formed given an initial stack of size `n`.
       Since each operation pushes exactly one value, the k-th operation (0-indexed) sees
@@ -161,7 +162,7 @@ mutual
       .some (result, 1 + result.size, 1 + result.size)
     | .tail i =>
       let result := Data.l stack[i].asList.tail
-      .some (result, 1 + result.size, 1 + result.size)
+      .some (result, 1 + stack[i].size, 1 + result.size)
     | .eq i j => .some
       (if stack[i]'h_wf.1 == stack[j]'h_wf.2 then dataTrue else dataFalse,
       1 + (min (stack[i]'h_wf.1).size (stack[j]'h_wf.2).size),
@@ -189,7 +190,9 @@ mutual
             if d'.asList.head? == .some dataTrue then rec (d', t', s')
             else .some (Data.l d'.asList.tail, t', s')
       (Part.fix F (init, 0, 0)).map fun (r, t, s) => (r, 1 + t, init.size + s)
-    | .call body idxs => goCall body idxs stack [] h_wf.1 h_wf.2
+    | .call body idxs => goCall body idxs stack [] h_wf.1 (by simpa using h_wf.2)
+    -- cost of copying?
+  termination_by (sizeOf op, 0, 0)
 
   /-- Metered analogue of `goFold`: walks the items, threading the accumulator and accumulating
       `(sum of (1 + body_time), max of body_space)` across iterations. -/
@@ -201,8 +204,12 @@ mutual
       (meteredEvalProg body (c :: acc :: stack) h_wf).bind fun (acc', tBody, sBody) =>
         (goMeteredFold cs acc' stack body h_wf).map fun (r, t, s) =>
           (r, 1 + tBody + t, max sBody s)
+  -- Primary key `sizeOf body` decreases when entering goMeteredFold from meteredEvalOp .fold
+  -- (body is a strict subterm of the .fold op), enabling the secondary key `sizeOf items`
+  -- to be runtime data without breaking the well-founded ordering.
+  termination_by (sizeOf body, sizeOf items, 0)
 
-  @[simp]
+  @[simp, grind =]
   def goCall (body : Prog) (idxs : List TapeIndex) (stack copiedStack : List Data)
       (h_idxs : ∀ i ∈ idxs, i < stack.length)
       (h_wf : WFProg (idxs.length + copiedStack.length) body) :
@@ -212,8 +219,11 @@ mutual
     | i :: idxs' =>
       have : i < stack.length := h_idxs i (by simp)
       goCall body idxs' stack (copiedStack ++ [stack[i]]) (by grind) (by grind)
+  -- Same lexicographic strategy as goMeteredFold: primary key `sizeOf body` lets us cross
+  -- function boundaries; secondary key `sizeOf idxs` handles goCall's own recursion.
+  termination_by (sizeOf body, 0, sizeOf idxs)
 
-  @[simp]
+  @[simp, grind =]
   def meteredEvalProg (prog : Prog) (stack : List Data) (h_wf : WFProg stack.length prog) :
       Part (Data × ℕ × ℕ) :=
     match prog with
@@ -222,6 +232,7 @@ mutual
       let (r, opTime, opSpace) ← meteredEvalOp stack op h_wf.1
       let (r, time, space) ← meteredEvalProg rest (r :: stack) h_wf.2
       (r, opTime + time, opSpace + space)
+  termination_by (sizeOf prog, 0, 0)
 
 end
 
@@ -328,7 +339,7 @@ lemma Operation.meteredEvalT_tail
     {h_wf : WFOp stack.length (.tail i)} :
     Operation.meteredEvalT (.tail i) stack h_wf (by simp) =
       (Data.l stack[i].asList.tail,
-      1 + (Data.l stack[i].asList.tail).size,
+      1 + stack[i].size,
       1 + (Data.l stack[i].asList.tail).size) := by
   simp [Operation.meteredEvalT, meteredEvalOp]
 
@@ -353,11 +364,16 @@ lemma Operation.meteredEvalT_ifEmpty
 @[simp, scoped grind =]
 lemma Operation.meteredEvalT_call
     {stack : List Data}
-    {p : List Operation}
-    {h_wf : WFOp stack.length (.call p)}
-    {h_whf : WhileFree (.call p)} :
-    Operation.meteredEvalT (.call p) stack h_wf h_whf = Prog.meteredEvalT p stack h_wf h_whf := by
-  simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp]
+    {body : Prog}
+    {idxs : List TapeIndex}
+    {h_wf : WFOp stack.length (.call body idxs)}
+    {h_whf : WhileFree (.call body idxs)} :
+    Operation.meteredEvalT (.call body idxs) stack h_wf h_whf =
+      Prog.meteredEvalT body
+        (idxs.attach.map (fun ⟨i, hi⟩ => stack[i]'(h_wf.1 i hi)))
+        (by simpa using h_wf.2)
+        h_whf := by
+  sorry
 
 @[simp, scoped grind =]
 lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
@@ -502,6 +518,11 @@ lemma DataEncode_list_nil {α : Type} [DataEncode α] :
 @[simp, grind =]
 lemma DataEncode_list_eq_nil_iff_nil {α : Type} [DataEncode α] (xs : List α) :
   DataEncode.encode xs = Data.empty ↔ xs = [] := by
+  simp [DataEncode.encode]
+
+@[simp, scoped grind =]
+lemma DataEncode_list_tail {α : Type} [DataEncode α] (xs : List α) :
+  (DataEncode.encode xs).asList.tail = (DataEncode.encode xs.tail).asList := by
   simp [DataEncode.encode]
 
 instance (α : Type) [DataEncode α] : DataEncode (Option α) where
@@ -653,45 +674,65 @@ def snd : Prog := [ .tail 0, .head 0 ]
 lemma snd.semantics {α β : Type} [DataEncode α] [DataEncode β]
     {stack : List Data} {x : α} {y : β} :
     (snd.meteredEvalT ((DataEncode.encode (x, y)) :: stack)
-      (by simp [snd, WFProg, WFOp]) (by simp [snd])).1 =
-      DataEncode.encode y := by
+      (by simp [snd, WFProg, WFOp]) (by simp [snd])) =
+      (DataEncode.encode y,
+        2 + ((DataEncode.encode y).size + (DataEncode.encode (x, y)).size),
+        4 + 2 * (DataEncode.encode y).size)
+      := by
   simp [snd]
+  grind
+
+def tape_left : Prog := [ .call snd [0], .head 0 ]
+
+@[simp]
+lemma tape_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
+    (tape_left.meteredEvalT (DataEncode.encode t :: stack)
+      (by simp [tape_left, snd, WFProg, WFOp]) (by simp [tape_left, snd])).1 =
+      DataEncode.encode t.left := by
+  simp [tape_left]
+  sorry
+
+
 
 def tape_move_left : Prog := [
   .head 0, -- t.head
-  .call [ .tail 1, .tail 0 ], -- t.right
-  -- .call stackTape_cons, -- StackTape.cons t.head t.right
-  -- .call [ .tail 3, .head 0, .tail 0 ], -- t.left.tail
-  -- .call [ .tail 3, .head 0, .head 0 ], -- t.left.head
+  .call [ .call snd [0], .call snd [0] ] [1], -- t.right
+  .call stackTape_cons [1, 0], -- StackTape.cons t.head t.right
+  .call [ .call tape_left [0], .tail 0 ] [3], -- t.left.tail
+  .call [ .call tape_left [0], .head 0 ] [4], -- t.left.head
+  -- .call [ .tail 0 ] [0], -- t.left.tail
+  -- .call [ .call snd [3], .head 0, .head 0 ] [4], -- t.left.head
   -- .cons 1 2,
   -- .cons 1 0
 ]
 
 @[simp]
 lemma tape_move_left_whf : Prog.WhileFree tape_move_left := by
-  simp [tape_move_left]
+  simp [tape_move_left, snd, stackTape_cons]
 
 @[simp]
 lemma tape_move_left_wf (n : ℕ) (h_le : 0 < n) : WFProg n tape_move_left := by
-  simp [tape_move_left, WFProg, WFOp, h_le]
+  simp [tape_move_left, snd, stackTape_cons, WFProg, WFOp, h_le]
 
 @[simp]
 lemma tape_move_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
     (tape_move_left.meteredEvalT (DataEncode.encode t :: stack) (by simp) (by simp)).1 =
-      DataEncode.encode (Turing.BiTape.move_left t) := by
-  unfold tape_move_left
-  set input := DataEncode.encode t
-  simp only [Prog.meteredEvalT_cons, Prog.meteredEvalT_nil]
-  simp [Operation.meteredEvalT_head]
-  simp only [input]
-  rw [List.tail_cons]
-  simp [DataEncode.encode]
-  rw [List.tail_cons]
-  simp only [List.tail_cons, input]
-
-  -- it gets exponential because of the ".1" and because "stack" is repeated multiple times!
-  -- simp only [List.getElem_cons_zero]
-
+      DataEncode.encode (Turing.BiTape.move_left t)
+        := by
+  have encode_bitape : DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
+    simp [DataEncode.encode]
+  have encode_stacktape_tail (st : Turing.StackTape Symbol) :
+      Data.l (DataEncode.encode st).asList.tail = DataEncode.encode st.tail := by
+    rw [show DataEncode.encode st = DataEncode.encode (st.toList) by simp [DataEncode.encode]]
+    rw [DataEncode_list_tail, Data.asList_l]
+    sorry -- StackList stuff
+  have encode_stacktape_head (st : Turing.StackTape Symbol) :
+      Data.l (DataEncode.encode st).asList.tail = DataEncode.encode st.tail := by
+    rw [show DataEncode.encode st = DataEncode.encode (st.toList) by simp [DataEncode.encode]]
+    rw [DataEncode_list_tail, Data.asList_l]
+    sorry -- StackList stuff
+  simp [tape_move_left, encode_bitape, encode_stacktape_tail, -Operation.meteredEvalT_call]
+  -- TODO how can we prevent the expression size to explode during simp?
   sorry
 
 
