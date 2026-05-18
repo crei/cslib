@@ -290,76 +290,6 @@ def Prog.meteredEvalT (body : Prog) (stack : List Data)
   (meteredEvalProg body stack h_wf).get (Prog_total_of_WhileFree h_wf h_whf stack rfl)
 
 @[simp, scoped grind =]
-lemma Operation.meteredEvalT_empty {stack : List Data} {h_wf : WFOp stack.length .empty} :
-    Operation.meteredEvalT .empty stack h_wf (by simp) = (Data.empty, 1, 1) := by
-  simp [Operation.meteredEvalT, meteredEvalOp]
-
--- @[simp, scoped grind =]
--- lemma Operation.meteredEvalT_cons
---     {h t : ℕ}
---     {stack : List Data}
---     {h_wf : WFOp stack.length (.cons h t)} :
---     Operation.meteredEvalT (.cons h t) stack h_wf (by simp) =
---       (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList),
---       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size,
---       1 + (Data.l (stack[h]'h_wf.1 :: (stack[t]'h_wf.2).asList)).size) := by
---   simp [Operation.meteredEvalT, meteredEvalOp]
-
--- @[simp, scoped grind =]
--- lemma Operation.meteredEvalT_head
---     {i : ℕ}
---     {stack : List Data}
---     {h_wf : WFOp stack.length (.head i)} :
---     Operation.meteredEvalT (.head i) stack h_wf (by simp) =
---       (stack[i].asList.headD Data.empty,
---       1 + (stack[i].asList.headD Data.empty).size,
---       1 + (stack[i].asList.headD Data.empty).size) := by
---   simp [Operation.meteredEvalT, meteredEvalOp]
-
--- @[simp, scoped grind =]
--- lemma Operation.meteredEvalT_tail
---     {i : ℕ}
---     {stack : List Data}
---     {h_wf : WFOp stack.length (.tail i)} :
---     Operation.meteredEvalT (.tail i) stack h_wf (by simp) =
---       (Data.l stack[i].asList.tail,
---       1 + stack[i].size,
---       1 + (Data.l stack[i].asList.tail).size) := by
---   simp [Operation.meteredEvalT, meteredEvalOp]
-
--- @[simp, scoped grind =]
--- lemma Operation.meteredEvalT_ifEmpty
---     {i : ℕ}
---     {stack : List Data}
---     {then_ else_ : List Operation}
---     {h_wf : WFOp stack.length (.ifEmpty i then_ else_)}
---     {h_whf : WhileFree (.ifEmpty i then_ else_)} :
---     Operation.meteredEvalT (.ifEmpty i then_ else_) stack h_wf h_whf =
---       let (r, t, s) := if stack[i]'h_wf.1 == Data.empty then
---         Prog.meteredEvalT then_ stack h_wf.2.1 h_whf.1
---       else
---         Prog.meteredEvalT else_ stack h_wf.2.2 h_whf.2
---       (r, 1 + t, s) := by
---   by_cases h_empty : stack[i]'h_wf.1 == Data.empty
---   · simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp, h_empty]
---   · simp [Operation.meteredEvalT, Prog.meteredEvalT, meteredEvalOp, h_empty]
-
--- this is not @simp because we do not want to unfold calls, they should have
--- their own specific simp lemmas
-lemma Operation.meteredEvalT_call
-    {stack : List Data}
-    {body : Prog}
-    {idxs : List TapeIndex}
-    {h_wf : WFOp stack.length (.call body idxs)}
-    {h_whf : WhileFree (.call body idxs)} :
-    Operation.meteredEvalT (.call body idxs) stack h_wf h_whf =
-      Prog.meteredEvalT body
-        (idxs.attach.map (fun ⟨i, hi⟩ => stack[i]'(h_wf.1 i hi)))
-        (by simpa using h_wf.2)
-        h_whf := by
-  sorry
-
-@[simp, scoped grind =]
 lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
     {h_wf : WFOp stack.length (.fold body initial list)}
     {h_whf : Operation.WhileFree (.fold body initial list)}
@@ -464,43 +394,12 @@ lemma Prog.meteredEvalT_cons
       (stack, opT + t, opS + s) := by
   sorry
 
--- ========================= Data-only evaluation =========================
-
-/-- Data-only evaluation of a single operation (discards time/space). -/
-def Operation.evalData (op : Operation) (stack : List Data)
-    (h_wf : WFOp stack.length op) (h_whf : Operation.WhileFree op) : Data :=
-  (Operation.meteredEvalT op stack h_wf h_whf).1
-
-/-- Data-only evaluation of a program (discards time/space). -/
-def Prog.evalData (prog : Prog) (stack : List Data)
-    (h_wf : WFProg stack.length prog) (h_whf : Prog.WhileFree prog) : Data :=
-  (Prog.meteredEvalT prog stack h_wf h_whf).1
-
-/-- Bridge: the data component of `meteredEvalT` is exactly `evalData`. Used to
-    transport spec-based reasoning back to the original semantics statements. -/
-lemma Prog.meteredEvalT_fst_eq_evalData {p : Prog} {s : List Data}
-    {h_wf : WFProg s.length p} {h_whf : Prog.WhileFree p} :
-    (Prog.meteredEvalT p s h_wf h_whf).1 = Prog.evalData p s h_wf h_whf := rfl
-
-lemma Prog.evalData_nil {stack : List Data} {h_wf : WFProg stack.length []} :
-    Prog.evalData [] stack h_wf (by simp) = stack.head (by grind [WFProg]) := by
-  simp [Prog.evalData, Prog.meteredEvalT]
-
-/-- Step lemma for `evalData`. The intermediate result `r` is `let`-bound so that
-    repeated chaining keeps the goal linear in size. -/
-lemma Prog.evalData_cons {op : Operation} {rest : Prog} {stack : List Data}
-    {h_wf : WFProg stack.length (op :: rest)} {h_whf : Prog.WhileFree (op :: rest)} :
-    Prog.evalData (op :: rest) stack h_wf h_whf =
-      let r := Operation.evalData op stack h_wf.1 h_whf.1
-      Prog.evalData rest (r :: stack) h_wf.2 h_whf.2 := by
-  simp [Prog.evalData, Operation.evalData]
-
--- ========================= Hoare-style specs (Option A) =========================
+-- ========================= Compositional specifications =========================
 
 /-! ## Compositional specifications
 
 `Operation.Computes op f` (resp. `Prog.Computes p f`) says: whenever `op` (resp. `p`)
-runs on a well-formed, while-free stack `s`, the resulting data equals `f s h_wf`.
+is while-free and runs on a suitable stack `s`, the resulting data equals `f s h_wf`.
 The function `f` is allowed to depend on the well-formedness proof so that it can
 write `s[i]'_` directly.
 
@@ -514,39 +413,13 @@ proof of the composite program never instantiates a giant inlined stack term. -/
 def Operation.Computes (op : Operation)
     (f : (s : List Data) → WFOp s.length op → Data) : Prop :=
   ∀ (s : List Data) (h_wf : WFOp s.length op) (h_whf : Operation.WhileFree op),
-    Operation.evalData op s h_wf h_whf = f s h_wf
+    (Operation.meteredEvalT op s h_wf h_whf).1 = f s h_wf
 
 /-- A specification for a program. -/
 def Prog.Computes (p : Prog)
     (f : (s : List Data) → WFProg s.length p → Data) : Prop :=
   ∀ (s : List Data) (h_wf : WFProg s.length p) (h_whf : Prog.WhileFree p),
-    Prog.evalData p s h_wf h_whf = f s h_wf
-
--- /-- The empty program returns the top of the stack. -/
--- @[simp, grind .]
--- theorem Prog.computes_nil :
---     Prog.Computes ([] : Prog)
---       (fun s h_wf => s.head (by simp [WFProg] at h_wf; exact h_wf)) := by
---   intro s h_wf h_whf
---   simp [Prog.evalData, Prog.meteredEvalT]
-
--- /-- Sequencing rule. The composite program `op :: rest` runs `fop` on the input
---     stack, pushes the result, and then runs `frest` on the extended stack.
---     The intermediate value appears once via a `let` binding — no duplication. -/
--- @[simp, grind .]
--- theorem Prog.computes_cons {op : Operation} {rest : Prog}
---     {fop : (s : List Data) → WFOp s.length op → Data}
---     {frest : (s : List Data) → WFProg s.length rest → Data}
---     (h_op : Operation.Computes op fop)
---     (h_rest : Prog.Computes rest frest) :
---     Prog.Computes (op :: rest)
---       (fun s h_wf =>
---         let r := fop s h_wf.1
---         frest (r :: s) h_wf.2) := by
---   intro s h_wf h_whf
---   rw [Prog.evalData_cons]
---   rw [h_op s h_wf.1 h_whf.1]
---   rw [h_rest (fop s h_wf.1 :: s) h_wf.2 h_whf.2]
+    (Prog.meteredEvalT p s h_wf h_whf).1 = f s h_wf
 
 -- ========================= Automation via type-class resolution =========================
 
@@ -660,7 +533,9 @@ instance {body : Prog} {idxs : List TapeIndex}
       (by simpa using h_wf.2)
   proof := by
     intros s h_wf h_whf
-    rw [Operation.meteredEvalT_call, hb.proof]
+    simp [Operation.meteredEvalT, meteredEvalOp]
+    sorry
+
 
 /-- One-liner: extract the data result of any auto-resolvable program. -/
 abbrev Prog.run (p : Prog) [h : Prog.HasComputes p]
@@ -946,13 +821,13 @@ abbrev stackTape_cons : Prog := [
 -- def move_left (t : BiTape Symbol) : BiTape Symbol :=
 --   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
 
-def snd : Prog := [ .tail 0, .head 0 ]
+abbrev snd : Prog := [ .tail 0, .head 0 ]
 
 @[simp]
 lemma snd.semantics {α β : Type} [DataEncode α] [DataEncode β]
     {stack : List Data} {x : α} {y : β} :
     (snd.meteredEvalT ((DataEncode.encode (x, y)) :: stack)
-      (by simp [snd, WFProg, WFOp]) (by simp [snd])) =
+      (by simp [WFProg, WFOp]) (by simp)) =
       (DataEncode.encode y,
         2 + ((DataEncode.encode y).size + (DataEncode.encode (x, y)).size),
         4 + 2 * (DataEncode.encode y).size)
@@ -966,19 +841,10 @@ lemma snd.semantics {α β : Type} [DataEncode α] [DataEncode β]
     full `(Data × ℕ × ℕ)` triple, hence no `O(n²)` blowup. -/
 lemma snd.evalData_eq {α β : Type} [DataEncode α] [DataEncode β]
     {stack : List Data} {x : α} {y : β} :
-    Prog.evalData snd (DataEncode.encode (x, y) :: stack)
-      (by simp [snd, WFProg, WFOp]) (by simp [snd]) =
+    (Prog.meteredEvalT snd (DataEncode.encode (x, y) :: stack)
+      (by simp [WFProg, WFOp]) (by simp)).1 =
       DataEncode.encode y := by
-  show Prog.evalData [Operation.tail 0, Operation.head 0] _ _ _ = _
-  rw [← Prog.meteredEvalT_fst_eq_evalData,
-      Prog.HasComputes.proof (p := [Operation.tail 0, Operation.head 0])]
-  simp [Prog.HasComputes.spec, Operation.HasComputes.spec,
-    DataEncode.encode, Data.asList]
-
-/-- Instance for the named program `snd`: routed via `inferInstanceAs` since
-    `snd` is a `def`, not an `abbrev`. -/
-instance instHasComputesSnd : Prog.HasComputes snd :=
-  inferInstanceAs (Prog.HasComputes [Operation.tail 0, Operation.head 0])
+  simp
 
 @[simp] lemma snd.spec_eq :
     (Prog.HasComputes.spec (p := snd)) =
