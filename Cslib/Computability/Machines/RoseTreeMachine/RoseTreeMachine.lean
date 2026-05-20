@@ -275,17 +275,83 @@ mutual
     | op :: rest => Operation.WhileFree op ∧ Prog.WhileFree rest
 end
 
+/-- Helper: assemble totality of `op :: rest` from totality of `op` (the operation) and
+    totality of `rest` (the remaining program). -/
 @[simp]
-theorem Prog_total_of_WhileFree {n : ℕ} {body : Prog}
+lemma progConsCase {n : ℕ} {op : Operation} {rest : Prog}
+    (h_wf : WFProg n (op :: rest))
+    (h_op_total : Operation.Total op h_wf.1)
+    (h_rest_total : Prog.Total rest h_wf.2) :
+    Prog.Total (op :: rest) h_wf := by
+  intro stack h_len
+  subst h_len
+  simp only [meteredEvalProg]
+  exact Part.bind_dom.mpr ⟨h_op_total stack rfl,
+    Part.bind_dom.mpr ⟨h_rest_total _ (by simp), trivial⟩⟩
+
+@[simp]
+theorem Prog_total_of_WhileFree {n : ℕ} (body : Prog)
     (h_wf : WFProg n body) (h_whileFree : Prog.WhileFree body) :
     Prog.Total body h_wf := by
-  sorry
+  match body with
+  | [] => intro stack h_len; simp [meteredEvalProg]
+  | op :: rest =>
+    apply progConsCase _ _ (Prog_total_of_WhileFree rest h_wf.2 h_whileFree.2)
+    intro stack h_len
+    match op with
+    | .empty | .cons _ _ | .head _ | .tail _ | .eq _ _ =>
+      simp [meteredEvalOp]
+    | .ifEmpty i t e =>
+      have ht := Prog_total_of_WhileFree t h_wf.1.2.1 h_whileFree.1.1 stack h_len
+      have he := Prog_total_of_WhileFree e h_wf.1.2.2 h_whileFree.1.2 stack h_len
+      by_cases h : (stack[i]'(h_len ▸ h_wf.1.1)) = Data.empty <;> simp [meteredEvalOp, h, ht, he]
+    | .fold b init lst =>
+      simp only [meteredEvalOp]
+      subst h_len
+      suffices h : ∀ items acc, (goMeteredFold items acc stack b h_wf.1.2.2).Dom from h _ _
+      intro items
+      induction items with
+      | nil => simp [goMeteredFold]
+      | cons _ _ ih =>
+        intro acc
+        simp only [goMeteredFold]
+        have hb := Prog_total_of_WhileFree b h_wf.1.2.2 h_whileFree.1
+        exact Part.bind_dom.mpr ⟨hb _ (by simp), ih _⟩
+    | .while_ _ _ => exact absurd h_whileFree.1 (by simp)
+    | .call b idxs =>
+      simp only [meteredEvalOp]
+      have hb := Prog_total_of_WhileFree b (by simpa using h_wf.1.2) h_whileFree.1
+      have hrest := Prog_total_of_WhileFree rest h_wf.2 h_whileFree.2
+      subst h_len
+      suffices h : ∀ (idxs' : List TapeIndex) (copiedStack : List Data)
+          (h_idxs' : ∀ i ∈ idxs', i < stack.length)
+          (h_wf' : WFProg (idxs'.length + copiedStack.length) b)
+          (_ : ∀ (s : List Data) (hs : s.length = idxs'.length + copiedStack.length),
+            (meteredEvalProg b s (hs ▸ h_wf')).Dom),
+          (goCall b idxs' stack copiedStack h_idxs' h_wf').Dom by
+        have h_full := h idxs [] h_wf.1.1 (by simpa using h_wf.1.2)
+          (by intro s hs; simpa using hb s (by simpa using hs))
+        simpa using h_full
+      intro idxs' copiedStack h_idxs' h_wf' h_bdom
+      induction idxs' generalizing copiedStack with
+      | nil =>
+        simpa [goCall] using h_bdom copiedStack (by simp)
+      | cons i is ih =>
+        simp only [goCall]
+        apply ih
+        intro s hs
+        exact h_bdom s (by simp [hs]; omega)
 
 @[simp]
 theorem Op_total_of_WhileFree {n : ℕ} {op : Operation}
     (h_wf : WFOp n op) (h_whileFree : Operation.WhileFree op) :
     Operation.Total op h_wf := by
-  sorry
+  intro stack h_len
+  have h_wf_prog : WFProg n [op] := ⟨h_wf, by simp [WFProg]⟩
+  have h_whf_prog : Prog.WhileFree [op] := ⟨h_whileFree, by simp⟩
+  have h := Prog_total_of_WhileFree [op] h_wf_prog h_whf_prog stack h_len
+  simp only [meteredEvalProg] at h
+  exact (Part.bind_dom.mp h).1
 
 @[simp]
 theorem Dom_meteredEvalOp_of_WhileFree {op : Operation} {stack : List Data}
@@ -309,7 +375,7 @@ def Operation.meteredEvalT (op : Operation) (stack : List Data) (h_wf : WFOp sta
 def Prog.meteredEvalT (body : Prog) (stack : List Data)
     (h_wf : WFProg stack.length body)
     (h_whf : Prog.WhileFree body) : Data × ℕ × ℕ :=
-  (meteredEvalProg body stack h_wf).get (Prog_total_of_WhileFree h_wf h_whf stack rfl)
+  (meteredEvalProg body stack h_wf).get (Prog_total_of_WhileFree body h_wf h_whf stack rfl)
 
 @[simp, scoped grind =]
 lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
@@ -531,12 +597,15 @@ instance {i : ℕ} {then_ else_ : List Operation}
     if (s[i]'h_wf.1) == Data.empty then ht.space s h_wf.2.1 else he.space s h_wf.2.2
   proof := by
     intros s h_wf h_whf
-    simp [Operation.meteredEvalT, meteredEvalOp]
-    by_cases h : (s[i]'h_wf.1 = Data.empty)
-    · simp [h]
-      sorry
-    · simp [h]
-      sorry
+    simp only [Operation.meteredEvalT, meteredEvalOp]
+    split_ifs
+    · have := ht.proof s h_wf.2.1 h_whf.1
+      simp [Prog.meteredEvalT] at this
+      simp [this]
+    · have := he.proof s h_wf.2.2 h_whf.2
+      simp [Prog.meteredEvalT] at this
+      simp [this]
+
 
 instance {body : Prog} {idxs : List TapeIndex}
     [hb : Prog.HasComputes body] :
