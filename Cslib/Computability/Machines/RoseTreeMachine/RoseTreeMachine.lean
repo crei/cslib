@@ -85,7 +85,7 @@ abbrev Data.asList
 lemma Data.asList_empty : Data.empty.asList = [] := by simp [Data.empty]
 
 @[simp, grind =]
-lemma Data.asList_l : Data.l xs.asList = xs := by grind
+lemma Data.asList_l (xs : Data) : Data.l xs.asList = xs := by grind
 
 
 --- Encoding length of d.
@@ -817,6 +817,10 @@ instance (α β : Type) [DataEncode α] [DataEncode β] : DataEncode (α × β) 
   encode := fun (a, b) => Data.l [DataEncode.encode a, DataEncode.encode b]
   h_inj := by sorry
 
+lemma DataEncode_pair {α β : Type} [DataEncode α] [DataEncode β] (a : α) (b : β) :
+  DataEncode.encode (a, b) = Data.l [DataEncode.encode a, DataEncode.encode b] := by
+  simp [DataEncode.encode]
+
 instance : DataEncode ℕ where
   encode x := DataEncode.encode (Nat.bits x)
   h_inj := by sorry
@@ -915,7 +919,7 @@ abbrev stackTape_cons : Prog := [
 
 abbrev snd : Prog := [ .tail 0, .head 0 ]
 
-@[simp]
+
 lemma snd.semantics {α β : Type} [DataEncode α] [DataEncode β]
     {stack : List Data} {x : α} {y : β} :
     (snd.meteredEvalT ((DataEncode.encode (x, y)) :: stack)
@@ -960,7 +964,6 @@ lemma stackTape_cons.spec_eq (head : Option Symbol) (tail : Turing.StackTape Sym
 
 abbrev to_pair : Prog := [ .empty, .cons 2 0, .cons 2 0 ]
 
-@[simp]
 lemma to_pair.semantics {α β : Type} [DataEncode α] [DataEncode β]
     {stack : List Data} {x : α} {y : β} :
     (to_pair.meteredEvalT (DataEncode.encode x :: DataEncode.encode y :: stack)
@@ -979,7 +982,6 @@ abbrev tape_move_left : Prog := [
 ]
 
 
-@[simp]
 lemma tape_move_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
     (tape_move_left.meteredEvalT (DataEncode.encode t :: stack) (by simp [WFProg, WFOp])
       (by simp)).1 =
@@ -1004,11 +1006,17 @@ lemma tape_move_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
       by rcases st with ⟨_ | ⟨hd, tl⟩, hw⟩ <;>
           simp [Turing.StackTape.tail, Turing.StackTape.nil]
     simp [DataEncode.encode, this]
+  have h_encodeTuple (st : Turing.StackTape Symbol) :
+      (Option.map DataEncode.encode st.toList.head?).getD Data.empty =
+      DataEncode.encode st.head := by
+    rcases st with ⟨_ | ⟨hd, tl⟩, hw⟩ <;> simp [Turing.StackTape.head, DataEncode.encode]
   rw [Prog.HasComputes.proof (p := tape_move_left)]
   unfold Turing.BiTape.move_left
-  simp --
-  simp [encode_bt, encode_list_tail, -List.map_tail, h_head, h_tail]
-  -- simp [DataEncode.encode]
+  -- simp --
+  -- simp [encode_bt, encode_list_tail, -List.map_tail, h_head, h_tail]
+  -- simp [DataEncode_pair]
+  -- rw [Data.asList_l]
+  -- simp
   sorry
 
 -- def move_right (t : BiTape Symbol) : BiTape Symbol :=
@@ -1026,7 +1034,6 @@ abbrev tape_move_right : Prog := [
 ]
 
 
-@[simp]
 lemma tape_move_right.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
     (tape_move_right.meteredEvalT (DataEncode.encode t :: stack) (by simp [WFProg, WFOp])
       (by simp)).1 =
