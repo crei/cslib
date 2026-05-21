@@ -105,6 +105,32 @@ lemma Data.cons_size {h : Data} {t : List Data} :
   simp [Data.size]
   grind
 
+/-- Recursion principle for `Data` that exposes the list-of-children structure:
+    a `motive` is built from the empty case and a cons case that combines the
+    motive on the head child and on the tail list (viewed as a `Data`).
+    Lean's auto-generated `Data.rec` for the nested inductive only iterates once
+    through `List.rec`, leaving the recursive call on children to the user;
+    `Data.recL` performs both recursions and is the natural elimination principle
+    for definitions/proofs that need both IHs. -/
+@[elab_as_elim]
+def Data.recL {motive : Data → Sort*}
+    (nil : motive (Data.l []))
+    (cons : ∀ (x : Data) (xs : List Data),
+      motive x → motive (Data.l xs) → motive (Data.l (x :: xs))) :
+    ∀ d, motive d
+  | .l [] => nil
+  | .l (x :: xs) =>
+      cons x xs (Data.recL nil cons x) (Data.recL nil cons (.l xs))
+
+/-- Induction principle for `Data`, the `Prop`-valued companion to `Data.recL`. -/
+@[elab_as_elim]
+theorem Data.inductionL {motive : Data → Prop}
+    (nil : motive (Data.l []))
+    (cons : ∀ (x : Data) (xs : List Data),
+      motive x → motive (Data.l xs) → motive (Data.l (x :: xs)))
+    (d : Data) : motive d :=
+  Data.recL nil cons d
+
 abbrev TapeIndex := ℕ
 
 
@@ -484,7 +510,12 @@ lemma Prog.meteredEvalT_cons
       let (r, opT, opS) := op.meteredEvalT stack h_wf.1 h_whf.1
       let (stack, t, s) := meteredEvalT rest (r :: stack) h_wf.2 h_whf.2
       (stack, opT + t, opS + s) := by
-  sorry
+  rw [Prog.meteredEvalT, Part.get_eq_iff_mem]
+  unfold meteredEvalProg
+  simp only [Part.bind_eq_bind, Part.mem_bind_iff]
+  refine ⟨_, Part.get_mem (Dom_meteredEvalOp_of_WhileFree h_wf.1 h_whf.1),
+    _, Part.get_mem (Prog_total_of_WhileFree rest h_wf.2 h_whf.2 _ (by simp)), ?_⟩
+  simp [Operation.meteredEvalT, Prog.meteredEvalT]
 
 -- ========================= Compositional specifications =========================
 
@@ -829,45 +860,11 @@ instance : DataEncode ℕ where
   encode x := DataEncode.encode (Nat.bits x)
   h_inj := by sorry
 
---------------------------------
----------------- Universal Turing Machine (simulation of a SingleTapeTM)
----------------------------------------------------------------------------
 
-variable [Inhabited Symbol] [Fintype Symbol] [DataEncode Symbol]
+------------------------------------------------------
+----------- Tools
+-----------------------------------------------------------
 
-public instance : DataEncode (Turing.StackTape Symbol) where
-  encode t := DataEncode.encode t.toList
-  h_inj := by sorry
-
-public instance : DataEncode (Turing.BiTape Symbol) where
-  encode t := DataEncode.encode (t.head, t.left, t.right)
-  h_inj := by sorry
-
-omit [Inhabited Symbol] [Fintype Symbol] in
-lemma encode_biTape (t : Turing.BiTape Symbol) :
-    DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
-    simp [DataEncode.encode]
-
-def tape_write : Prog := [
-  .tail 1,
-  .cons 1 0
-]
-
-omit [Inhabited Symbol] [Fintype Symbol] in
-@[simp]
-lemma tape_write.semantics (t : Turing.BiTape Symbol) (a : Option Symbol) {stack : List Data} :
-    (tape_write.meteredEvalT (DataEncode.encode a :: DataEncode.encode t :: stack)
-      (by simp [tape_write, WFProg, WFOp]) (by simp [tape_write])).1 =
-      DataEncode.encode (t.write a) := by
-  simp [tape_write, Turing.BiTape.write]
-  rfl
-
-abbrev stackTape_cons : Prog := [
-  .ifEmpty 0 [ .ifEmpty 1 [ .empty ] [ .cons 0 1 ] ] [ .cons 0 1 ]
-]
-
--- def move_left (t : BiTape Symbol) : BiTape Symbol :=
---   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
 
 abbrev snd : Prog := [ .tail 0, .head 0 ]
 
@@ -897,6 +894,76 @@ lemma snd.evalData_eq {α β : Type} [DataEncode α] [DataEncode β]
 @[simp] lemma snd.spec_eq :
     (Prog.HasComputes.spec (p := snd)) =
       (Prog.HasComputes.spec (p := [Operation.tail 0, Operation.head 0])) := rfl
+
+def constant (a : Data) : Prog := match a with
+  | Data.l a => match a with
+    | [] => [ .empty ]
+    | x :: xs => [
+      .call (constant (Data.l xs)) [],
+      .call (constant x) [],
+      .cons 0 1 ]
+
+lemma constant_wf (a : Data) (n : ℕ) : WFProg n (constant a) := by
+  induction a using Data.inductionL generalizing n with
+  | nil => simp [constant, WFProg, WFOp]
+  | cons x xs ihx ihxs =>
+    simp [constant, WFProg, WFOp, ihx, ihxs]
+
+lemma constant_whf (a : Data) : Prog.WhileFree (constant a) := by
+  induction a using Data.inductionL with
+  | nil => simp [constant]
+  | cons x xs ihx ihxs =>
+    simp [constant, Prog.WhileFree, ihx, ihxs]
+
+lemma constant.semantics (a : Data) {stack : List Data} :
+    ((constant a).meteredEvalT stack (constant_wf _ _) (constant_whf _)).1 = a := by
+  induction a using Data.inductionL with
+  | nil => simp [constant]
+  | cons x xs ihx ihxs =>
+    simp [constant, ihx, ihxs, meteredEvalOp, meteredEvalProg]
+    sorry
+--------------------------------
+---------------- Universal Turing Machine (simulation of a SingleTapeTM)
+---------------------------------------------------------------------------
+
+variable [Inhabited Symbol] [Fintype Symbol] [DataEncode Symbol]
+
+public instance : DataEncode (Turing.StackTape Symbol) where
+  encode t := DataEncode.encode t.toList
+  h_inj := by sorry
+
+public instance : DataEncode (Turing.BiTape Symbol) where
+  encode t := DataEncode.encode (t.head, t.left, t.right)
+  h_inj := by sorry
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+lemma encode_biTape (t : Turing.BiTape Symbol) :
+    DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
+    simp [DataEncode.encode]
+
+def tape_write : Prog := [
+  .tail 1,
+  .cons 1 0
+]
+
+def tape_write' : Operation' :=
+  .cons [.load 0] [.tail [.load 1]]
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+@[simp]
+lemma tape_write.semantics (t : Turing.BiTape Symbol) (a : Option Symbol) {stack : List Data} :
+    (tape_write.meteredEvalT (DataEncode.encode a :: DataEncode.encode t :: stack)
+      (by simp [tape_write, WFProg, WFOp]) (by simp [tape_write])).1 =
+      DataEncode.encode (t.write a) := by
+  simp [tape_write, Turing.BiTape.write]
+  rfl
+
+abbrev stackTape_cons : Prog := [
+  .ifEmpty 0 [ .ifEmpty 1 [ .empty ] [ .cons 0 1 ] ] [ .cons 0 1 ]
+]
+
+-- def move_left (t : BiTape Symbol) : BiTape Symbol :=
+--   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
 
 omit [Inhabited Symbol] [Fintype Symbol] in
 @[simp]
@@ -964,38 +1031,49 @@ abbrev tape_move_right : Prog := [
 ]
 
 
+omit [Inhabited Symbol] [Fintype Symbol] in
 lemma tape_move_right.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
     (tape_move_right.meteredEvalT (DataEncode.encode t :: stack) (by simp [WFProg, WFOp])
       (by simp)).1 =
       DataEncode.encode (Turing.BiTape.move_right t)
         := by
-  have encode_st (st : Turing.StackTape Symbol) :
-    DataEncode.encode st = DataEncode.encode st.toList := by
-    simp [DataEncode.encode]
-  have encode_bt (t : Turing.BiTape Symbol) :
-    DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
-    simp [DataEncode.encode]
-  have encode_list_tail {α : Type} [DataEncode α] (xs : List α) :
-    (DataEncode.encode xs).asList.tail = (DataEncode.encode xs.tail).asList := by
-    simp [DataEncode.encode]
-  have h_head (st : Turing.StackTape Symbol) :
-      (Option.map DataEncode.encode st.toList.head?).getD Data.empty =
-      DataEncode.encode st.head := by
-    rcases st with ⟨_ | ⟨hd, tl⟩, hw⟩ <;> simp [Turing.StackTape.head, DataEncode.encode]
-  have h_tail (st : Turing.StackTape Symbol) :
-      DataEncode.encode st.toList.tail = DataEncode.encode st.tail := by
-    have : st.tail.toList = st.toList.tail :=
-      by rcases st with ⟨_ | ⟨hd, tl⟩, hw⟩ <;>
-          simp [Turing.StackTape.tail, Turing.StackTape.nil]
-    simp [DataEncode.encode, this]
   rw [Prog.HasComputes.proof (p := tape_move_right)]
   unfold Turing.BiTape.move_right
-  -- simp --
-  -- simp [encode_bt, encode_list_tail, -List.map_tail, h_head, h_tail]
-  -- simp [DataEncode.encode]
-  sorry
+  simp [DataEncode_pair, encode_biTape]
+  refine ⟨?_, ?_⟩
+  · rcases t.right with ⟨_ | ⟨hd, tl⟩, hw⟩ <;> simp [Turing.StackTape.head, DataEncode.encode]
+  · have : (t.right.tail).toList = (t.right.toList).tail :=
+      by rcases t.right with ⟨_ | ⟨hd, tl⟩, hw⟩ <;>
+        simp [Turing.StackTape.tail, Turing.StackTape.nil]
+    simp [DataEncode.encode, this]
 
+-- def optionMove : BiTape Symbol → Option Dir → BiTape Symbol
+--   | t, none => t
+--   | t, some d => t.move d
 
+instance : DataEncode Dir where
+  encode := fun
+    | Dir.left => Data.l [Data.empty]
+    | Dir.right => Data.l [Data.l []]
+  h_inj := by sorry
+
+abbrev tapeOptionMove : Prog := [
+  .ifEmpty 1
+    [ .call [] [0] ] -- none case: return t
+    [ .tail 1,
+      .call (constant (DataEncode.encode Dir.left)) [],
+      .eq 0 1, -- direction == left?
+      .ifEmpty 0
+       [ .call [] [0] ] -- right
+       [ .call (constant (DataEncode.encode Dir.left)) [], .eq 1 2, -- direction == left?
+         .ite 3 tape_move_left tape_move_right
+       ]
+
+    -- some case: move t according to direction
+      .call [ .call snd [2], .head 0 ] [3], -- direction
+      .ite 3 tape_move_left tape_move_right
+    ]
+]
 
 
 -- def put : Data → Prog
