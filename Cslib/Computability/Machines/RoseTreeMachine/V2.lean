@@ -215,9 +215,9 @@ def Prog.meteredEval (env : List Data) (p : Prog) : Part (Data × ℕ × ℕ) :=
           let t' := t + 1 + b_t
           let s' := max s b_s
           if r.asList.headD (Data.l []) != Data.l [] then
-            rec (Data.l r.asList.tail, t', s')
+            rec (r, t', s')
           else
-            .some (Data.l r.asList.tail, t', s')
+            .some (r, t', s')
     Part.fix F (Data.empty, 1, 1)
   termination_by (sizeOf p, 0)
 
@@ -400,6 +400,8 @@ lemma constant.semantics (a : Data) {n : ℕ} :
     ((constant a n).meteredEvalT (by simp) []).1 = a := by
   sorry
 
+def encConst {α : Type} [DataEncode α] (a : α) : PB := constant (DataEncode.encode a)
+
 def PB.ifEq (a b : PB) (then_ else_ : PB) : PB :=
   .elim (PB.eq a b)
     else_
@@ -414,6 +416,9 @@ def PB.fst (x : PB) : PB := head x
 
 -- Compute fun x => x.snd
 def PB.snd (x : PB) : PB := head (tail x)
+
+-- Compute x => Option.some x
+def PB.some (x : PB) : PB := cons x empty
 
 -- TODO for the semantics, the PBs could actually be typed...
 
@@ -436,7 +441,7 @@ lemma encode_biTape (t : Turing.BiTape Symbol) :
     DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
     simp [DataEncode.encode]
 
-def tape_write (t v : PB) : PB := PB.cons v t.tail
+def bitape_write (t v : PB) : PB := PB.cons v t.tail
 
 -- /-- Prepend an `Option` to the `StackTape` -/
 -- @[scoped grind]
@@ -511,6 +516,80 @@ def bitape_optionMove (t dir : PB) : PB :=
     t
     (fun d _ => bitape_move t d)
 
+instance (tm : SingleTapeTM Symbol) [DataEncode tm.State] :
+    DataEncode (Turing.SingleTapeTM.Cfg tm) where
+  encode cfg := DataEncode.encode (cfg.state, cfg.BiTape)
+  h_inj := by sorry
+
+-- Evaluate a function `f` at `arg` where the function is given as a graph.
+-- Returns `some y` for the first `x` in the graph such that `f x = y` and `none` otherwise.
+def eval_fun_graph (graph : PB) (arg : PB) : PB :=
+  PB.fold
+    (fun acc x =>
+      PB.ifEq acc .empty
+        (PB.ifEq x.fst arg (PB.some x.snd) PB.empty)
+        acc)
+    PB.empty graph
+
+
+def cfg_state (cfg : PB) : PB := cfg.fst
+def cfg_bitape (cfg : PB) : PB := cfg.snd
+
+/-- Evaluate the transition function. Returns `((wr, dir), q')`.
+ -- The return value is not wrapped inside an `Option` because the transition
+ -- function is assumed to be total. -/
+def eval_tr (tr : PB) (q c : PB) : PB :=
+  (eval_fun_graph (eval_fun_graph tr q).head c).head
+
+-- /-- The step function corresponding to a `SingleTapeTM`. -/
+-- @[simp]
+-- def step : tm.Cfg → Option tm.Cfg
+--   | ⟨none, _⟩ =>
+--     -- If in the halting state, there is no next configuration
+--     none
+--   | ⟨some q', t⟩ =>
+--     -- If in state q', perform look up in the transition function
+--     match tm.tr q' t.head with
+--     -- and enter a new configuration with state q'' (or none for halting)
+--     -- and tape updated according to the Stmt
+--     | ⟨⟨wr, dir⟩, q''⟩ => some ⟨q'', (t.write wr).optionMove dir⟩
+
+-- Compute the step function given a transition function (as its graph) and a configuration.
+-- Returns `Option Cfg`
+def singleTapeTM_step (tr : PB) (cfg : PB) : PB :=
+  PB.elim (cfg_state cfg)
+    PB.empty
+    (fun q' _ => PB.letIn (cfg_bitape cfg) (fun tape =>
+      PB.letIn (eval_tr tr q' tape.head) (fun tr_val =>
+        .some (to_pair
+          tr_val.snd
+          (bitape_optionMove (bitape_write tape tr_val.fst.fst) tr_val.fst.snd)))))
+
+def tm_main_loop (tr : PB) (cfg : PB) : PB :=
+  -- Note that `Cfg` is a pair of `Option State` and `BiTape`,
+  -- and the termination condition is that the first element of this pair is none.
+  -- This exactly matches our while loop termination condition.
+  PB.while_ (fun acc => PB.elim acc
+    -- accumulator is empty, initialize
+    cfg
+    -- accumulator is non-empty, run a single step. Ignore that the result is an option
+    (fun _ _ => (singleTapeTM_step tr acc).head))
+
+def string_to_tape (input : PB) : PB :=
+  to_pair input.head (to_pair .empty input.tail)
+
+def initial_config (q₀ : PB) (input : PB) : PB :=
+  to_pair (PB.some q₀) (string_to_tape input)
+
+/-- Turn the final config to an output, by taking the head and the right part of the tape. -/
+def final_config_to_output (cfg : PB) : PB := PB.cons (bitape_head cfg.snd) (bitape_right cfg.snd)
+
+/-- Implements a universal Single-Tape TM, assuming that the input contains the following:
+((initialState, transitionFunction), input).
+If it terminates, the output is the tape contents under the head and to its right. -/
+def universal_tm (input : PB) :=
+  final_config_to_output
+    (tm_main_loop input.fst.snd (initial_config input.fst.fst input.fst.snd))
 
 end RoseTreeMachine
 
