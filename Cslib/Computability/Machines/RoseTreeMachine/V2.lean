@@ -142,60 +142,111 @@ abbrev TapeIndex := ℕ
 -- once the inner program terminates. This is especially relevant for space complexity of
 -- loops since it allows us to re-use the space of one iteration for the next iteration.
 
-abbrev Var := ℕ
+def Var := ℕ
+deriving Repr
 
--- TODO the `Var → Prog` parts are probably not a good idea like this, because when translating
--- to a TM, they can depend "too much" on the variable - all they should be able to do is pass
--- the var on to `.var`. So maybe we need some kind of monadic structure.
-
+/-- Abstract syntax tree. Binders (`letin`, `elim`'s cons branch, `fold`'s body, `while_`'s body)
+are *implicit*: each binder extends `env` with one or more fresh values, and the bound
+variable(s) are referred to as `var k` where `k = env.length` at the binding site.
+For ergonomic construction with named binders use `PB` below. -/
 inductive Prog where
   | var (id : Var)
-  | letin (val : Prog) (rest : Var → Prog)
+  /-- `letin val rest`: evaluate `val`, append the result to `env`, then evaluate `rest`. -/
+  | letin (val : Prog) (rest : Prog)
   | empty
   | cons (h t : Prog)
-  | elim (v : Prog) (empty : Prog) (cons : Var → Var → Prog)
-  -- TODO not sure if we need eq, could do recursively via fold, but would need
-  -- arbitrary descent.
+  /-- `elim v em cs`: if `v` evaluates to `empty`, run `em`; otherwise destructure into
+      `head` and `tail` (both appended to `env`, in that order) and run `cs`. -/
+  | elim (v : Prog) (em : Prog) (cs : Prog)
   | eq (a b : Prog)
-  | fold (body : Var → Var → Prog) (init list : Prog)
+  /-- `fold body init list`: `init` and `list` produce starting accumulator and the input
+      list; `body` runs once per element with `env` extended by `[acc, x]`. -/
+  | fold (body : Prog) (init list : Prog)
+  /-- `while_ body`: body runs with `env` extended by the current accumulator. -/
   | while_ (body : Prog)
+deriving Repr
+
 
 /-- Evaluates `p` on `env` and returns the result, the time and the space consumption. -/
 def Prog.meteredEval (env : List Data) (p : Prog) : Part (Data × ℕ × ℕ) :=
   match p with
-  | .var id => .some (env[id]?.getD (Data.l []), 1, 1) -- TODO do we need to charge for copying?
+  | .var id => .some (env[(show ℕ from id)]?.getD (Data.l []), 1, 1)
   | .letin val rest => do
     let (v, t, s) ← val.meteredEval env
-    let id := env.length
-    let (r, t', s') ← (rest id).meteredEval (env ++ [v])
+    let (r, t', s') ← rest.meteredEval (env ++ [v])
     return (r, 1 + t + t', max s s')
   | .empty => .some (Data.empty, 1, 1)
   | .cons h t => do
     let (head, h_t, h_s) ← h.meteredEval env
     let (tail, t_t, t_s) ← t.meteredEval env
     return (Data.l (head :: tail.asList), 1 + h_t + t_t, max h_s t_s)
-  | .elim v em cons_ => do
+  | .elim v em cs => do
     let (v', t, s) ← v.meteredEval env
     match v' with
     | Data.l [] =>
       let (r, t', s') ← em.meteredEval env
       return (r, 1 + t + t', max s s')
     | Data.l (head :: tail) =>
-      let id := env.length
-      -- TODO charge for copying head and tail?
-      let (r, t', s') ← (cons_ id (id + 1)).meteredEval (env ++ [head, Data.l tail])
+      let (r, t', s') ← cs.meteredEval (env ++ [head, Data.l tail])
       return (r, 1 + t + t', max s s')
   | .eq a b => do
     let (a, a_t, a_s) ← a.meteredEval env
     let (b, b_t, b_s) ← b.meteredEval env
     (if a == b then Data.l [ Data.l [] ] else Data.l [], 1 + a_t + b_t, 1 + max a_s b_s)
-  | .fold body init list => do
-    -- Time: 1 + Σ_iterations (1 + body_time).
-    -- Space: init.size + max_iterations(body_space).
-    let (init, init_t, init_s) ← init.meteredEval env
-    sorry
-  | .while_ body => sorry
-  termination_by env.length + sizeOf p
+  | .fold _body _init _list => sorry
+  | .while_ _body => sorry
+  termination_by sizeOf p
+
+/-! ## Surface syntax with named binders
+
+The AST above is binder-implicit; to construct programs by hand we lift to
+`PB := Var → Prog`, a function from the current binder depth to a `Prog`. The
+smart constructors below thread the depth automatically so the user can write
+`letIn val (fun x => …)` with a real Lean binder for `x`.
+
+To turn a `PB` term into a concrete `Prog`, apply it at depth `0` via `PB.build`. -/
+
+/-- A program builder: given the current binder depth (i.e. the size of `env`
+at the point of insertion), produce a `Prog`. -/
+abbrev PB := ℕ → Prog
+
+namespace PB
+
+abbrev empty : PB := fun _ => .empty
+abbrev cons (h t : PB) : PB := fun n => .cons (h n) (t n)
+abbrev eq (a b : PB) : PB := fun n => .eq (a n) (b n)
+
+/-- `letIn val (fun x => body)`: bind the value of `val` as a fresh variable `x`
+visible in `body`. -/
+abbrev letIn (val : PB) (body : PB → PB) : PB := fun n =>
+  .letin (val n) (body (fun _ => .var n) (n + 1))
+
+/-- `elim v em (fun head tail => body)`: case-analyse the result of `v`. -/
+abbrev elim (v : PB) (em : PB) (cs : PB → PB → PB) : PB := fun n =>
+  .elim (v n) (em n) (cs (fun _ => .var n) (fun _ => .var (n + 1)) (n + 2))
+
+/-- `fold (fun acc x => body) init list`: run `body` for each element `x`
+threading accumulator `acc`. -/
+abbrev fold (body : PB → PB → PB) (init list : PB) : PB := fun n =>
+  .fold (body (fun _ => .var n) (fun _ => .var (n + 1)) (n + 2)) (init n) (list n)
+
+/-- `while_ (fun acc => body)`. -/
+abbrev while_ (body : PB → PB) : PB := fun n =>
+  .while_ (body (fun _ => .var n) (n + 1))
+
+/-- Close a builder into a concrete `Prog`. -/
+abbrev build (p : PB) : Prog := p 0
+
+end PB
+
+
+/-- Example: `tail x` returns the tail of the list bound at variable `x`, or `empty`
+    if `x` denotes the empty list. Built with `elim`: the empty branch yields `empty`,
+    the cons branch ignores the head and projects the bound tail. -/
+def Prog.tail (x : PB) : Prog := PB.build <|
+  PB.elim x PB.empty (fun _head tl => tl)
+
+#eval Prog.tail (fun _ => .var (0: ℕ))
 
 end RoseTreeMachine
 
