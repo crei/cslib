@@ -79,14 +79,18 @@ instance : LawfulBEq Data := inferInstance
 abbrev Data.empty := Data.l []
 
 
-abbrev Data.asList
+@[grind =]
+def Data.asList
   | Data.l xs => xs
 
-lemma Data.asList_empty : Data.empty.asList = [] := by simp [Data.empty]
+@[simp]
+lemma Data.asList_empty : Data.empty.asList = [] := by rfl
 
 @[simp, grind =]
-lemma Data.asList_l (xs : Data) : Data.l xs.asList = xs := by grind
+lemma Data.asList_l (d : Data) : Data.l d.asList = d := by simp [Data.asList]; grind
 
+@[simp, grind =]
+lemma Data.l_asList (xs : List Data) : (Data.l xs).asList = xs := by simp [Data.asList]
 
 --- Encoding length of d.
 def Data.size : Data → ℕ
@@ -377,36 +381,36 @@ def Prog.meteredEvalT (body : Prog) (stack : List Data)
     (h_whf : Prog.WhileFree body) : Data × ℕ × ℕ :=
   (meteredEvalProg body stack h_wf).get (Prog_total_of_WhileFree body h_wf h_whf stack rfl)
 
-@[simp, scoped grind =]
-lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
-    {h_wf : WFOp stack.length (.fold body initial list)}
-    {h_whf : Operation.WhileFree (.fold body initial list)}
-    (h_body_total : body.Total h_wf.2.2) :
-    Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf =
-      ( -- data: fold over accumulator
-        (stack[list]'h_wf.1).asList.foldl
-          (fun acc x => (Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
-            (by simpa using h_whf)).1)
-          (stack[initial]'h_wf.2.1),
-        -- time: thread (acc, time), then add final acc size
-        (let (a', t) := (stack[list]'h_wf.1).asList.foldl
-            (fun (acc, t) x =>
-              let (r, t', _) := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
-                (by simpa using h_whf)
-              (r, t + 1 + t'))
-            (stack[initial]'h_wf.2.1, 0);
-          t + a'.size),
-        -- space: thread (acc, max-space), then max with final acc size
-        (let (a', s) := (stack[list]'h_wf.1).asList.foldl
-            (fun (acc, s) x =>
-              let (r, _, s') := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
-                (by simpa using h_whf)
-              (r, max s s'))
-            (stack[initial]'h_wf.2.1, 0);
-          max s a'.size)
-      )
-      := by
-  sorry
+-- @[simp, scoped grind =]
+-- lemma Operation.meteredEvalT_fold {body : Prog} {initial list : TapeIndex} {stack : List Data}
+--     {h_wf : WFOp stack.length (.fold body initial list)}
+--     {h_whf : Operation.WhileFree (.fold body initial list)}
+--     (h_body_total : body.Total h_wf.2.2) :
+--     Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf =
+--       ( -- data: fold over accumulator
+--         (stack[list]'h_wf.1).asList.foldl
+--           (fun acc x => (Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
+--             (by simpa using h_whf)).1)
+--           (stack[initial]'h_wf.2.1),
+--         -- time: thread (acc, time), then add final acc size
+--         (let (a', t) := (stack[list]'h_wf.1).asList.foldl
+--             (fun (acc, t) x =>
+--               let (r, t', _) := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
+--                 (by simpa using h_whf)
+--               (r, t + 1 + t'))
+--             (stack[initial]'h_wf.2.1, 0);
+--           t + a'.size),
+--         -- space: thread (acc, max-space), then max with final acc size
+--         (let (a', s) := (stack[list]'h_wf.1).asList.foldl
+--             (fun (acc, s) x =>
+--               let (r, _, s') := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2
+--                 (by simpa using h_whf)
+--               (r, max s s'))
+--             (stack[initial]'h_wf.2.1, 0);
+--           max s a'.size)
+--       )
+--       := by
+--   sorry
 
 /-- Recursive form of the per-iteration accumulator threading used by `meteredEvalT_fold`.
     Mirrors `goMeteredFold` directly, but on the `meteredEvalT` side: every body run
@@ -421,55 +425,55 @@ def Operation.foldRec (body : Prog) (stack : List Data)
     let (r, t', s') := Operation.foldRec body stack h_wf h_whf rest acc'
     (r, 1 + t + t', max s s')
 
-/-- Recursive analog of `Operation.meteredEvalT_fold`: instead of three `List.foldl`s,
-    express the fold operation's result by structural recursion on the list. -/
-lemma Operation.meteredEvalT_fold_rec
-    {body : Prog} {initial list : TapeIndex} {stack : List Data}
-    {h_wf : WFOp stack.length (.fold body initial list)}
-    {h_whf : Operation.WhileFree (.fold body initial list)} :
-    Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf =
-      Operation.foldRec body stack h_wf.2.2 (by simpa using h_whf)
-        (stack[list]'h_wf.1).asList (stack[initial]'h_wf.2.1) := by
-  sorry
+-- /-- Recursive analog of `Operation.meteredEvalT_fold`: instead of three `List.foldl`s,
+--     express the fold operation's result by structural recursion on the list. -/
+-- lemma Operation.meteredEvalT_fold_rec
+--     {body : Prog} {initial list : TapeIndex} {stack : List Data}
+--     {h_wf : WFOp stack.length (.fold body initial list)}
+--     {h_whf : Operation.WhileFree (.fold body initial list)} :
+--     Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf =
+--       Operation.foldRec body stack h_wf.2.2 (by simpa using h_whf)
+--         (stack[list]'h_wf.1).asList (stack[initial]'h_wf.2.1) := by
+--   sorry
 
 
-/-- Space bound for a fold operation. If the initial accumulator fits within `B`,
-    and for every accumulator with `acc.size ≤ B` the body uses space `≤ B` and
-    produces a new accumulator with size `≤ B`, then the entire fold uses space
-    `≤ B`. -/
-lemma fold_bounded_space {body : Prog} {initial list : TapeIndex} {stack : List Data}
-    {h_wf : WFOp stack.length (.fold body initial list)}
-    {h_whf : Operation.WhileFree (.fold body initial list)}
-    (B : ℕ)
-    (h_init : (stack[initial]'h_wf.2.1).size ≤ B)
-    (h_step : ∀ acc x, acc.size ≤ B → x ∈ (stack[list]'h_wf.1).asList →
-      let (acc', _, s) := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2 (by simpa using h_whf)
-      s ≤ B ∧ acc'.size ≤ B) :
-    (Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf).2.2 ≤ B := by
-  sorry
+-- /-- Space bound for a fold operation. If the initial accumulator fits within `B`,
+--     and for every accumulator with `acc.size ≤ B` the body uses space `≤ B` and
+--     produces a new accumulator with size `≤ B`, then the entire fold uses space
+--     `≤ B`. -/
+-- lemma fold_bounded_space {body : Prog} {initial list : TapeIndex} {stack : List Data}
+--     {h_wf : WFOp stack.length (.fold body initial list)}
+--     {h_whf : Operation.WhileFree (.fold body initial list)}
+--     (B : ℕ)
+--     (h_init : (stack[initial]'h_wf.2.1).size ≤ B)
+--     (h_step : ∀ acc x, acc.size ≤ B → x ∈ (stack[list]'h_wf.1).asList →
+--       let (acc', _, s) := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2 (by simpa using h_whf)
+--       s ≤ B ∧ acc'.size ≤ B) :
+--     (Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf).2.2 ≤ B := by
+--   sorry
 
-/-- Induction principle for `Operation.meteredEvalT` on a `.fold` operation.
-    To prove `motive` of the final `(acc, time, space)` triple, the caller supplies:
-    * `h_init`: the motive holds on `(initial, 0, 0)`;
-    * `h_step`: for every iteration item `x ∈ list`, the motive is preserved by one
-      body invocation — old triple `(acc, t, s)` is taken to
-      `(r.1, t + 1 + r.2.1, max s r.2.2)` where `r` is the body's result;
-    * `h_finish`: from the motive on the post-loop triple `(acc, t, s)`, derive
-      the motive on the final adjusted triple `(acc, t + acc.size, max s acc.size)`,
-      which accounts for the `[]` base case of `goMeteredFold`. -/
-lemma Operation.meteredEvalT_fold_induction
-    {body : Prog} {initial list : TapeIndex} {stack : List Data}
-    {h_wf : WFOp stack.length (.fold body initial list)}
-    {h_whf : Operation.WhileFree (.fold body initial list)}
-    (motive : Data → ℕ → ℕ → Prop)
-    (h_init : motive (stack[initial]'h_wf.2.1) 0 0)
-    (h_step : ∀ acc t s x, x ∈ (stack[list]'h_wf.1).asList → motive acc t s →
-      let (r, t', s') := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2 (by simpa using h_whf)
-      motive r (t + 1 + t') (max s s'))
-    (h_finish : ∀ acc t s, motive acc t s → motive acc (t + acc.size) (max s acc.size)) :
-    let (r, t, s) := Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf
-    motive r t s := by
-  sorry
+-- /-- Induction principle for `Operation.meteredEvalT` on a `.fold` operation.
+--     To prove `motive` of the final `(acc, time, space)` triple, the caller supplies:
+--     * `h_init`: the motive holds on `(initial, 0, 0)`;
+--     * `h_step`: for every iteration item `x ∈ list`, the motive is preserved by one
+--       body invocation — old triple `(acc, t, s)` is taken to
+--       `(r.1, t + 1 + r.2.1, max s r.2.2)` where `r` is the body's result;
+--     * `h_finish`: from the motive on the post-loop triple `(acc, t, s)`, derive
+--       the motive on the final adjusted triple `(acc, t + acc.size, max s acc.size)`,
+--       which accounts for the `[]` base case of `goMeteredFold`. -/
+-- lemma Operation.meteredEvalT_fold_induction
+--     {body : Prog} {initial list : TapeIndex} {stack : List Data}
+--     {h_wf : WFOp stack.length (.fold body initial list)}
+--     {h_whf : Operation.WhileFree (.fold body initial list)}
+--     (motive : Data → ℕ → ℕ → Prop)
+--     (h_init : motive (stack[initial]'h_wf.2.1) 0 0)
+--     (h_step : ∀ acc t s x, x ∈ (stack[list]'h_wf.1).asList → motive acc t s →
+--       let (r, t', s') := Prog.meteredEvalT body (x :: acc :: stack) h_wf.2.2 (by simpa using h_whf)
+--       motive r (t + 1 + t') (max s s'))
+--     (h_finish : ∀ acc t s, motive acc t s → motive acc (t + acc.size) (max s acc.size)) :
+--     let (r, t, s) := Operation.meteredEvalT (.fold body initial list) stack h_wf h_whf
+--     motive r t s := by
+--   sorry
 
 @[simp, scoped grind =]
 lemma Prog.meteredEvalT_cons
@@ -825,64 +829,7 @@ instance : DataEncode ℕ where
   encode x := DataEncode.encode (Nat.bits x)
   h_inj := by sorry
 
---------------------------------------------------------------------
--- Example program
----------------------------------------------------------------------------
-
-def prog_reverse : Prog := [
-    .empty,
-    .fold [ .cons 0 1 ] 0 1
-  ]
-
-lemma prog_reverse.semantics (x : Data) (xs : List Data) :
-    (prog_reverse.meteredEvalT
-      (x :: xs)
-      (by simp [prog_reverse, WFProg, WFOp])
-      (by simp [prog_reverse])).1 =
-      Data.l (x.asList).reverse := by
-  have h (xs : List Data) (init : Data) : xs.foldl (fun a x => Data.l (x :: a.asList)) init =
-      Data.l (xs.reverse ++ init.asList) := by
-    induction xs generalizing init with
-    | nil => simp
-    | cons x xs ih => simp [List.foldl, ih]
-  simp [prog_reverse, h]
-
-lemma prog_reverse.time (x : Data) (xs : List Data) :
-    (prog_reverse.meteredEvalT
-      (x :: xs)
-      (by simp [prog_reverse, WFProg, WFOp])
-      (by simp [prog_reverse])).2 =
-      sorry := by
-  simp [prog_reverse]
-  sorry
-
-lemma prog_reverse.space (list : Data) (xs : List Data) :
-    (prog_reverse.meteredEvalT
-      (list :: xs)
-      (by simp [prog_reverse, WFProg, WFOp])
-      (by simp [prog_reverse])).2.2 ≤ 8 * list.size + 8 := by
-  sorry
-  -- have h (stack list : List Data) (acc : Data) :
-  --     (Operation.foldRec [.cons 0 1] stack sorry sorry list acc).2.2 ≤
-  --     8 * (Data.l list).size := by
-  --   induction list with
-  --   | nil => simp [Operation.foldRec]
-  --   | cons x xs ih => sorry
-  -- simp only [prog_reverse, Prog.meteredEvalT_cons, Operation.meteredEvalT_empty,
-  --   Prog.meteredEvalT_nil, List.head_cons, add_zero, Prod.mk.eta, ge_iff_le]
-  -- rw [Operation.meteredEvalT_fold_rec]
-  -- simp
-  -- specialize h (Data.empty :: list :: xs) list.asList Data.empty
-  -- simp at h
-  -- grind
-
--- TODO the successor function is not too easy, because
--- we also need to concatenate at the end.
--- so maybe it is easier to have some kind of fold-map-routine (i.e. a map that also has shared
--- state in an accumulator)?
--- where the "cons" is handeled by the fold-map routine?
-
---------------------------------------------------------------------
+--------------------------------
 ---------------- Universal Turing Machine (simulation of a SingleTapeTM)
 ---------------------------------------------------------------------------
 
@@ -895,6 +842,11 @@ public instance : DataEncode (Turing.StackTape Symbol) where
 public instance : DataEncode (Turing.BiTape Symbol) where
   encode t := DataEncode.encode (t.head, t.left, t.right)
   h_inj := by sorry
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+lemma encode_biTape (t : Turing.BiTape Symbol) :
+    DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
+    simp [DataEncode.encode]
 
 def tape_write : Prog := [
   .tail 1,
@@ -928,7 +880,7 @@ lemma snd.semantics {α β : Type} [DataEncode α] [DataEncode β]
         2 + ((DataEncode.encode y).size + (DataEncode.encode (x, y)).size),
         4 + 2 * (DataEncode.encode y).size)
       := by
-  simp [snd]
+  simp [snd, DataEncode.encode]
   grind
 
 /-- Data-only semantics of `snd`, proved via the `HasComputes` automation: instance
@@ -940,7 +892,7 @@ lemma snd.evalData_eq {α β : Type} [DataEncode α] [DataEncode β]
     (Prog.meteredEvalT snd (DataEncode.encode (x, y) :: stack)
       (by simp [WFProg, WFOp]) (by simp)).1 =
       DataEncode.encode y := by
-  simp
+  simp [DataEncode.encode]
 
 @[simp] lemma snd.spec_eq :
     (Prog.HasComputes.spec (p := snd)) =
@@ -981,43 +933,21 @@ abbrev tape_move_left : Prog := [
   .call to_pair [1, 0],
 ]
 
-
+omit [Inhabited Symbol] [Fintype Symbol] in
 lemma tape_move_left.semantics (t : Turing.BiTape Symbol) {stack : List Data} :
     (tape_move_left.meteredEvalT (DataEncode.encode t :: stack) (by simp [WFProg, WFOp])
       (by simp)).1 =
       DataEncode.encode (Turing.BiTape.move_left t)
         := by
-  have encode_st (st : Turing.StackTape Symbol) :
-    DataEncode.encode st = DataEncode.encode st.toList := by
-    simp [DataEncode.encode]
-  have encode_bt (t : Turing.BiTape Symbol) :
-    DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
-    simp [DataEncode.encode]
-  have encode_list_tail {α : Type} [DataEncode α] (xs : List α) :
-    (DataEncode.encode xs).asList.tail = (DataEncode.encode xs.tail).asList := by
-    simp [DataEncode.encode]
-  have h_head (st : Turing.StackTape Symbol) :
-      (Option.map DataEncode.encode st.toList.head?).getD Data.empty =
-      DataEncode.encode st.head := by
-    rcases st with ⟨_ | ⟨hd, tl⟩, hw⟩ <;> simp [Turing.StackTape.head, DataEncode.encode]
-  have h_tail (st : Turing.StackTape Symbol) :
-      DataEncode.encode st.toList.tail = DataEncode.encode st.tail := by
-    have : st.tail.toList = st.toList.tail :=
-      by rcases st with ⟨_ | ⟨hd, tl⟩, hw⟩ <;>
-          simp [Turing.StackTape.tail, Turing.StackTape.nil]
-    simp [DataEncode.encode, this]
-  have h_encodeTuple (st : Turing.StackTape Symbol) :
-      (Option.map DataEncode.encode st.toList.head?).getD Data.empty =
-      DataEncode.encode st.head := by
-    rcases st with ⟨_ | ⟨hd, tl⟩, hw⟩ <;> simp [Turing.StackTape.head, DataEncode.encode]
   rw [Prog.HasComputes.proof (p := tape_move_left)]
   unfold Turing.BiTape.move_left
-  -- simp --
-  -- simp [encode_bt, encode_list_tail, -List.map_tail, h_head, h_tail]
-  -- simp [DataEncode_pair]
-  -- rw [Data.asList_l]
-  -- simp
-  sorry
+  simp [DataEncode_pair, encode_biTape]
+  refine ⟨?_, ?_⟩
+  · rcases t.left with ⟨_ | ⟨hd, tl⟩, hw⟩ <;> simp [Turing.StackTape.head, DataEncode.encode]
+  · have : (t.left.tail).toList = (t.left.toList).tail :=
+      by rcases t.left with ⟨_ | ⟨hd, tl⟩, hw⟩ <;>
+        simp [Turing.StackTape.tail, Turing.StackTape.nil]
+    simp [DataEncode.encode, this]
 
 -- def move_right (t : BiTape Symbol) : BiTape Symbol :=
 --   ⟨t.right.head, StackTape.cons t.head t.left, t.right.tail⟩
