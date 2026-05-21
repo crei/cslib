@@ -13,6 +13,8 @@ public import Std
 public import Cslib.Computability.Machines.SingleTapeTuring.Basic
 public import Mathlib.Data.Nat.Bits
 
+set_option profiler true
+set_option profiler.threshold 100
 /-!
 -- This is a proposal to define a machine model and related time and space measure
 -- such that it is linearly space- and polynomially time-related to multi-tape Turing machines.
@@ -164,6 +166,31 @@ inductive Operation where
   -- Note that the subprogram only has access to the provided stack indices.
   | call : (List Operation) → (List TapeIndex) → Operation
 deriving Repr
+
+-- TODO maybe it is easier to "return" tapes by default, and make "store a tape" an explicit operation
+inductive Operation' where
+  -- read from the stack.
+  | load   : TapeIndex → Operation'
+  -- create a new tape initialized with `Data.l []`
+  | empty  : Operation'
+  -- cons tape h and tape t to a new tape (h :: t)
+  | cons   : (List Operation') → (List Operation') → Operation'
+  -- head of the data if it exists, or empty otherwise
+  | head   : (List Operation') → Operation'
+  -- tail of the data
+  | tail   : (List Operation') → Operation'
+  -- compare two tapes, returning non-empty if equal, empty otherwise
+  | eq     : (List Operation') → (List Operation') → Operation'
+  -- branch on tape i: if non-empty then then_ else else_
+  | ifNonEmpty : (List Operation') → (List Operation') → (List Operation') → Operation'
+  -- fold over the children of tape l with initial accumulator tape i and body program b
+  | fold   : (List Operation') → (List Operation') → (List Operation') → Operation'
+  -- TODO document
+  | while_ : (List Operation') → (List Operation') → Operation'
+  --- store the result of a program at the top of the stack.
+  | store : (List Operation) → Operation'
+deriving Repr
+
 
 abbrev Prog := List Operation
 
