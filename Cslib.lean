@@ -70,6 +70,8 @@ public import Cslib.Computability.Machines.MultiTapeTuring.UniversalTM
 public import Cslib.Computability.Machines.MultiTapeTuring.WhileCombinator
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
 public import Cslib.Computability.Machines.RoseTreeMachine.RoseTreeMachine
+public import Cslib.Computability.Machines.RoseTreeMachine.V2
+public import Cslib.Computability.Machines.RoseTreeMachine.V3
 public import Cslib.Computability.Machines.SingleTapeTuring.Basic
 public import Cslib.Computability.URM.Basic
 public import Cslib.Computability.URM.Computable

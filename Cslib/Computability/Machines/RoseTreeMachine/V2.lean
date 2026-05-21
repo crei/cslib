@@ -166,14 +166,15 @@ inductive Prog where
   | while_ (body : Prog)
 deriving Repr
 
-
 /-- Evaluates `p` on `env` and returns the result, the time and the space consumption. -/
 def Prog.meteredEval (env : List Data) (p : Prog) : Part (Data × ℕ × ℕ) :=
   match p with
+    -- TODO charge for copy?
   | .var id => .some (env[(show ℕ from id)]?.getD (Data.l []), 1, 1)
   | .letin val rest => do
     let (v, t, s) ← val.meteredEval env
     let (r, t', s') ← rest.meteredEval (env ++ [v])
+    -- TODO charge for copy?
     return (r, 1 + t + t', max s s')
   | .empty => .some (Data.empty, 1, 1)
   | .cons h t => do
@@ -193,18 +194,60 @@ def Prog.meteredEval (env : List Data) (p : Prog) : Part (Data × ℕ × ℕ) :=
     let (a, a_t, a_s) ← a.meteredEval env
     let (b, b_t, b_s) ← b.meteredEval env
     (if a == b then Data.l [ Data.l [] ] else Data.l [], 1 + a_t + b_t, 1 + max a_s b_s)
-  | .fold _body _init _list => sorry
-  | .while_ _body => sorry
-  termination_by sizeOf p
+  | .fold body init list => do
+    let (i, i_t, i_s) ← init.meteredEval env
+    let (l, l_t, l_s) ← list.meteredEval env
+    l.asList.foldlM
+      (fun (acc, t, s) el => do
+        let (acc', b_t, b_s) ← body.meteredEval (env ++ [acc, el])
+        return (acc', 1 + t + b_t, max s b_s))
+      (i, 1 + i_t + l_t, max i_s l_s)
+  | .while_ body =>
+    -- `body` is evaluated repeatedly with `env` extended by the current accumulator.
+    -- The result of `body` is expected to be a cons whose head is the "continue?" flag
+    -- (truthy = nonempty) and whose tail is the next accumulator.
+    -- The initial accumulator is `Data.empty`.
+    let F : ((Data × ℕ × ℕ) → Part (Data × ℕ × ℕ)) →
+            (Data × ℕ × ℕ) → Part (Data × ℕ × ℕ) :=
+      fun rec d_ts =>
+        let (acc, t, s) := d_ts
+        (body.meteredEval (env ++ [acc])).bind fun (r, b_t, b_s) =>
+          let t' := t + 1 + b_t
+          let s' := max s b_s
+          if r.asList.headD (Data.l []) != Data.l [] then
+            rec (Data.l r.asList.tail, t', s')
+          else
+            .some (Data.l r.asList.tail, t', s')
+    Part.fix F (Data.empty, 1, 1)
+  termination_by (sizeOf p, 0)
+
+
+def Prog.Total (p : Prog) : Prop := ∀ env, (p.meteredEval env).Dom
+
+@[simp]
+def Prog.WhileFree (p : Prog) : Prop :=
+  match p with
+  | .var _ => True
+  | .letin val rest => Prog.WhileFree val ∧ Prog.WhileFree rest
+  | .empty => True
+  | .cons h t => Prog.WhileFree h ∧ Prog.WhileFree t
+  | .elim v em cs => Prog.WhileFree v ∧ Prog.WhileFree em ∧ Prog.WhileFree cs
+  | .eq a b => Prog.WhileFree a ∧ Prog.WhileFree b
+  | .fold body init list => Prog.WhileFree body ∧ Prog.WhileFree init ∧ Prog.WhileFree list
+  | .while_ _ => False
+
+theorem total_of_whileFree (p : Prog) (h_wf : p.WhileFree) : p.Total := by sorry
+
+/-- Evaluation of while-free programs. Do not expand this, because `Part` is cumbersome to
+deal with. -/
+def Prog.meteredEvalT (p : Prog) (h_wf : p.WhileFree) (env : List Data) : Data × ℕ × ℕ :=
+  (p.meteredEval env).get (total_of_whileFree p h_wf env)
 
 /-! ## Surface syntax with named binders
 
-The AST above is binder-implicit; to construct programs by hand we lift to
-`PB := Var → Prog`, a function from the current binder depth to a `Prog`. The
-smart constructors below thread the depth automatically so the user can write
-`letIn val (fun x => …)` with a real Lean binder for `x`.
+Define convenience builder functions to allow binding the variables to names.
 
-To turn a `PB` term into a concrete `Prog`, apply it at depth `0` via `PB.build`. -/
+ -/
 
 /-- A program builder: given the current binder depth (i.e. the size of `env`
 at the point of insertion), produce a `Prog`. -/
@@ -212,41 +255,262 @@ abbrev PB := ℕ → Prog
 
 namespace PB
 
-abbrev empty : PB := fun _ => .empty
-abbrev cons (h t : PB) : PB := fun n => .cons (h n) (t n)
-abbrev eq (a b : PB) : PB := fun n => .eq (a n) (b n)
+@[simp]
+def empty : PB := fun _ => .empty
+@[simp]
+def cons (h t : PB) : PB := fun n => .cons (h n) (t n)
+@[simp]
+def eq (a b : PB) : PB := fun n => .eq (a n) (b n)
 
 /-- `letIn val (fun x => body)`: bind the value of `val` as a fresh variable `x`
 visible in `body`. -/
-abbrev letIn (val : PB) (body : PB → PB) : PB := fun n =>
+@[simp]
+def letIn (val : PB) (body : PB → PB) : PB := fun n =>
   .letin (val n) (body (fun _ => .var n) (n + 1))
 
 /-- `elim v em (fun head tail => body)`: case-analyse the result of `v`. -/
-abbrev elim (v : PB) (em : PB) (cs : PB → PB → PB) : PB := fun n =>
+@[simp]
+def elim (v : PB) (em : PB) (cs : PB → PB → PB) : PB := fun n =>
   .elim (v n) (em n) (cs (fun _ => .var n) (fun _ => .var (n + 1)) (n + 2))
 
 /-- `fold (fun acc x => body) init list`: run `body` for each element `x`
 threading accumulator `acc`. -/
-abbrev fold (body : PB → PB → PB) (init list : PB) : PB := fun n =>
+@[simp]
+def fold (body : PB → PB → PB) (init list : PB) : PB := fun n =>
   .fold (body (fun _ => .var n) (fun _ => .var (n + 1)) (n + 2)) (init n) (list n)
 
 /-- `while_ (fun acc => body)`. -/
-abbrev while_ (body : PB → PB) : PB := fun n =>
+@[simp]
+def while_ (body : PB → PB) : PB := fun n =>
   .while_ (body (fun _ => .var n) (n + 1))
 
 /-- Close a builder into a concrete `Prog`. -/
-abbrev build (p : PB) : Prog := p 0
+@[simp]
+def build (p : PB) : Prog := p 0
 
 end PB
 
+-------------------------------------
+--- Encoding of generic types into Data
+--------------------------------------
+
+class DataEncode (α : Type) where
+  encode : α → Data
+  h_inj : encode.Injective
+
+instance : DataEncode Bool where
+  encode b := if b then Data.l [ Data.l [] ] else Data.l []
+  h_inj := by intros a b h_eq; grind
+
+instance (α : Type) [DataEncode α] : DataEncode (List α) where
+  encode xs := Data.l (xs.map DataEncode.encode)
+  h_inj := by sorry
+
+@[simp, grind =]
+lemma DataEncode_list_nil {α : Type} [DataEncode α] :
+  DataEncode.encode ([] : List α) = Data.l [] := by
+  simp [DataEncode.encode]
+
+@[simp, grind =]
+lemma DataEncode_list_eq_nil_iff_nil {α : Type} [DataEncode α] (xs : List α) :
+  DataEncode.encode xs = Data.empty ↔ xs = [] := by
+  simp [DataEncode.encode]
+
+@[simp, scoped grind =]
+lemma DataEncode_list_tail {α : Type} [DataEncode α] (xs : List α) :
+  (DataEncode.encode xs).asList.tail = (DataEncode.encode xs.tail).asList := by
+  simp [DataEncode.encode]
+
+instance (α : Type) [DataEncode α] : DataEncode (Option α) where
+  encode := fun
+    | none => Data.l []
+    | some x => Data.l [DataEncode.encode x]
+  h_inj := by sorry
+
+@[simp]
+lemma DataEncode_Option_empty {α : Type} [DataEncode α] (x : Option α) :
+  (DataEncode.encode x == Data.empty) = x.isNone := by
+  cases x <;> simp [DataEncode.encode, Data.empty]
+
+instance (α β : Type) [DataEncode α] [DataEncode β] : DataEncode (α × β) where
+  encode := fun (a, b) => Data.l [DataEncode.encode a, DataEncode.encode b]
+  h_inj := by sorry
+
+lemma DataEncode_pair {α β : Type} [DataEncode α] [DataEncode β] (a : α) (b : β) :
+  DataEncode.encode (a, b) = Data.l [DataEncode.encode a, DataEncode.encode b] := by
+  simp [DataEncode.encode]
+
+instance : DataEncode ℕ where
+  encode x := DataEncode.encode (Nat.bits x)
+  h_inj := by sorry
+
+-------------------------------------------------------
+--- combinator semantics
+----------------------------------------------------
+
+@[simp]
+lemma meteredEvalT_var_val {env : List Data} {i : ℕ} :
+  ((Prog.var i).meteredEvalT (by simp) env).1 = env[i]?.getD (Data.l []) := by
+  simp [Prog.meteredEvalT, Prog.meteredEval]
+
+@[simp]
+lemma meteredEvalT_empty_val {env : List Data} :
+  ((Prog.empty).meteredEvalT (by simp) env).1 = Data.l [] := by
+  simp [Prog.meteredEvalT, Prog.meteredEval]
+
+lemma meteredEvalT_elim_val {env : List Data} {v em cs : Prog}
+    {h_wf : (Prog.elim v em cs).WhileFree} :
+  ((Prog.elim v em cs).meteredEvalT h_wf env).1 =
+    match ((v.meteredEvalT h_wf.1 env).1) with
+    | Data.l [] => ((em.meteredEvalT h_wf.2.1 env).1)
+    | Data.l (head :: tail) => ((cs.meteredEvalT h_wf.2.2 (env ++ [head, Data.l tail])).1) := by
+  sorry
+-------------------------------------------------------------------
+--- tools
+-------------------------------------------
+
+lemma list_getElem_length_add {α : Type} (xs ys : List α) (i : ℕ) (h_lt : i < ys.length) :
+  (xs ++ ys)[xs.length + i]'(by grind) = ys[i] := by
+  sorry
 
 /-- Example: `tail x` returns the tail of the list bound at variable `x`, or `empty`
     if `x` denotes the empty list. Built with `elim`: the empty branch yields `empty`,
     the cons branch ignores the head and projects the bound tail. -/
-def Prog.tail (x : PB) : Prog := PB.build <|
-  PB.elim x PB.empty (fun _head tl => tl)
+def PB.tail (x : PB) : PB := PB.elim x PB.empty (fun _head tl => tl)
+def PB.head (x : PB) : PB := PB.elim x PB.empty (fun hd _tl => hd)
 
-#eval Prog.tail (fun _ => .var (0: ℕ))
+lemma tail_semantics (x : PB) {env : List Data} {h_wf : (x env.length).WhileFree} :
+  ((PB.tail x (env.length)).meteredEvalT (by simp [PB.tail, h_wf]) env).1 =
+  Data.l ((x env.length).meteredEvalT h_wf env).1.asList.tail := by
+  simp [PB.tail, meteredEvalT_elim_val]
+  grind
+
+/-- Program that evaluates to the constant `a`. -/
+def constant (a : Data) : PB := match a with
+  | Data.l [] => PB.empty
+  | Data.l (x :: xs) => PB.cons (constant x) (constant (Data.l xs))
+
+@[simp]
+lemma constant_whileFree (a : Data) (n : ℕ) : (constant a n).WhileFree := by
+  induction a using Data.inductionL with
+  | nil => simp [constant]
+  | cons x xs ihx ihxs => simp [constant, ihx, ihxs]
+
+lemma constant.semantics (a : Data) {n : ℕ} :
+    ((constant a n).meteredEvalT (by simp) []).1 = a := by
+  sorry
+
+def PB.ifEq (a b : PB) (then_ else_ : PB) : PB :=
+  .elim (PB.eq a b)
+    else_
+    (fun _ _ => then_)
+
+------------------------------------------------------
+----------- Tools
+-----------------------------------------------------------
+
+
+def PB.fst (x : PB) : PB := head x
+
+-- Compute fun x => x.snd
+def PB.snd (x : PB) : PB := head (tail x)
+
+-- TODO for the semantics, the PBs could actually be typed...
+
+-------------------------------------------------------------------
+---------------- Universal Turing Machine (simulation of a SingleTapeTM)
+---------------------------------------------------------------------------
+
+variable [Inhabited Symbol] [Fintype Symbol] [DataEncode Symbol]
+
+public instance : DataEncode (Turing.StackTape Symbol) where
+  encode t := DataEncode.encode t.toList
+  h_inj := by sorry
+
+public instance : DataEncode (Turing.BiTape Symbol) where
+  encode t := DataEncode.encode (t.head, t.left, t.right)
+  h_inj := by sorry
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+lemma encode_biTape (t : Turing.BiTape Symbol) :
+    DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
+    simp [DataEncode.encode]
+
+def tape_write (t v : PB) : PB := PB.cons v t.tail
+
+-- /-- Prepend an `Option` to the `StackTape` -/
+-- @[scoped grind]
+-- def cons (x : Option Symbol) (xs : StackTape Symbol) : StackTape Symbol :=
+--   match x, xs with
+--   | none, ⟨[], _⟩ => ⟨[], by grind⟩
+--   | none, ⟨hd :: tl, hl⟩ => ⟨none :: hd :: tl, by grind⟩
+--   | some a, ⟨l, hl⟩ => ⟨some a :: l, by grind⟩
+
+def stackTape_cons (x st : PB) : PB :=
+  PB.elim x
+    (PB.elim st
+      PB.empty
+      (fun _ _ => PB.cons x st))
+    (fun _ _ => PB.cons x st)
+
+
+def to_pair (a b : PB) : PB := PB.cons a (PB.cons b PB.empty)
+
+--- The head component of the bitape
+def bitape_head (t : PB) : PB := t.fst
+--- The left component of the bitape
+def bitape_left (t : PB) : PB := t.snd.fst
+--- The right component of the bitape
+def bitape_right (t : PB) : PB := t.snd.snd
+
+-- def move_left (t : BiTape Symbol) : BiTape Symbol :=
+--   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
+
+def bitape_move_left (t : PB) : PB :=
+  to_pair (bitape_left t).head
+    (to_pair
+      (bitape_left t).tail
+      (stackTape_cons (bitape_head t) (bitape_right t)))
+
+-- def move_right (t : BiTape Symbol) : BiTape Symbol :=
+--   ⟨t.right.head, StackTape.cons t.head t.left, t.right.tail⟩
+
+def bitape_move_right (t : PB) : PB :=
+  to_pair (bitape_right t).head
+    (to_pair
+      (stackTape_cons (bitape_head t) (bitape_left t))
+      (bitape_right t).tail)
+
+instance : DataEncode Dir where
+  encode := fun
+    | Dir.left => DataEncode.encode true
+    | Dir.right => DataEncode.encode false
+  h_inj := by sorry
+
+-- /--
+-- Move the head to the left or right, shifting the tape underneath it.
+-- -/
+-- def move (t : BiTape Symbol) : Dir → BiTape Symbol
+--   | .left => t.move_left
+--   | .right => t.move_right
+
+def bitape_move (tape dir : PB) : PB :=
+  PB.ifEq dir (constant (DataEncode.encode Dir.left))
+    (bitape_move_left tape)
+    (bitape_move_right tape)
+
+-- /--
+-- Optionally perform a `move`, or do nothing if `none`.
+-- -/
+-- def optionMove : BiTape Symbol → Option Dir → BiTape Symbol
+--   | t, none => t
+--   | t, some d => t.move d
+
+def bitape_optionMove (t dir : PB) : PB :=
+  .elim dir
+    t
+    (fun d _ => bitape_move t d)
+
 
 end RoseTreeMachine
 
