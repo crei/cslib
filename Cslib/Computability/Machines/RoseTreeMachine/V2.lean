@@ -162,8 +162,9 @@ inductive Prog where
   /-- `fold body init list`: `init` and `list` produce starting accumulator and the input
       list; `body` runs once per element with `env` extended by `[acc, x]`. -/
   | fold (body : Prog) (init list : Prog)
-  /-- `while_ body`: body runs with `env` extended by the current accumulator. -/
-  | while_ (body : Prog)
+  /-- `while_ init body`: `init` produces the starting accumulator; `body` runs with
+      `env` extended by the current accumulator. -/
+  | while_ (init body : Prog)
 deriving Repr
 
 /-- Evaluates `p` on `env` and returns the result, the time and the space consumption. -/
@@ -202,23 +203,21 @@ def Prog.meteredEval (env : List Data) (p : Prog) : Part (Data × ℕ × ℕ) :=
         let (acc', b_t, b_s) ← body.meteredEval (env ++ [acc, el])
         return (acc', 1 + t + b_t, max s b_s))
       (i, 1 + i_t + l_t, max i_s l_s)
-  | .while_ body =>
-    -- `body` is evaluated repeatedly with `env` extended by the current accumulator.
-    -- The result of `body` is expected to be a cons whose head is the "continue?" flag
-    -- (truthy = nonempty) and whose tail is the next accumulator.
-    -- The initial accumulator is `Data.empty`.
+  | .while_ init body => do
+    let (i, i_t, i_s) ← init.meteredEval env
+    -- Real while loop: check the halt condition on the current accumulator first.
+    -- If `acc.asList.headD = []` (empty head), halt and return `acc`.
+    -- Otherwise run `body` on the accumulator and loop with its result.
     let F : ((Data × ℕ × ℕ) → Part (Data × ℕ × ℕ)) →
             (Data × ℕ × ℕ) → Part (Data × ℕ × ℕ) :=
       fun rec d_ts =>
         let (acc, t, s) := d_ts
-        (body.meteredEval (env ++ [acc])).bind fun (r, b_t, b_s) =>
-          let t' := t + 1 + b_t
-          let s' := max s b_s
-          if r.asList.headD (Data.l []) != Data.l [] then
-            rec (r, t', s')
-          else
-            .some (r, t', s')
-    Part.fix F (Data.empty, 1, 1)
+        if acc.asList.headD (Data.l []) = Data.l [] then
+          .some (acc, t, s)
+        else
+          (body.meteredEval (env ++ [acc])).bind fun (r, b_t, b_s) =>
+            rec (r, t + 1 + b_t, max s b_s)
+    Part.fix F (i, 1 + i_t, max 1 i_s)
   termination_by (sizeOf p, 0)
 
 ------------------------------------
@@ -264,6 +263,36 @@ lemma Prog.elim_eval {v em cs : Prog} {env : List Data} {dv : Data}
       | head :: tail => cs.eval (env ++ [head, Data.l tail]) := by
   sorry
 
+/-- The loop core of `while_`: starting from accumulator `acc` (a `Data`),
+halt and return `acc` if its `asList.headD` is empty; otherwise run `body` on
+`env ++ [acc]` and recurse on the result. -/
+noncomputable def Prog.whileFrom_eval (body : Prog) (env : List Data) : Data → Part Data :=
+  Part.fix fun rec acc =>
+    if acc.asList.headD (Data.l []) = Data.l [] then
+      Part.some acc
+    else
+      (body.eval (env ++ [acc])).bind rec
+
+/-- Halt-step unrolling for `whileFrom_eval`. -/
+lemma Prog.whileFrom_eval_halt {body : Prog} {env : List Data} {acc : Data}
+    (h_halt : acc.asList.headD (Data.l []) = Data.l []) :
+    Prog.whileFrom_eval body env acc = .some acc := by
+  sorry
+
+/-- Body-step unrolling for `whileFrom_eval`. -/
+lemma Prog.whileFrom_eval_step {body : Prog} {env : List Data} {acc : Data}
+    (h_step : acc.asList.headD (Data.l []) ≠ Data.l []) :
+    Prog.whileFrom_eval body env acc =
+      (body.eval (env ++ [acc])).bind (Prog.whileFrom_eval body env) := by
+  sorry
+
+/-- Pointwise (single-env) version for `while_`: the program evaluates `init`,
+then runs the loop body starting from that value. -/
+lemma Prog.while_eval {init body : Prog} {env : List Data} :
+    (Prog.while_ init body).eval env =
+      (init.eval env).bind (Prog.whileFrom_eval body env) := by
+  sorry
+
 def Prog.Total (p : Prog) : Prop := ∀ env, (p.meteredEval env).Dom
 
 @[simp]
@@ -276,7 +305,7 @@ def Prog.WhileFree (p : Prog) : Prop :=
   | .elim v em cs => Prog.WhileFree v ∧ Prog.WhileFree em ∧ Prog.WhileFree cs
   | .eq a b => Prog.WhileFree a ∧ Prog.WhileFree b
   | .fold body init list => Prog.WhileFree body ∧ Prog.WhileFree init ∧ Prog.WhileFree list
-  | .while_ _ => False
+  | .while_ _ _ => False
 
 theorem total_of_whileFree (p : Prog) (h_wf : p.WhileFree) : p.Total := by sorry
 
@@ -315,9 +344,9 @@ threading accumulator `acc`. -/
 def fold (body : PB → PB → PB) (init list : PB) : PB := fun n =>
   .fold (body (fun _ => .var n) (fun _ => .var (n + 1)) (n + 2)) (init n) (list n)
 
-/-- `while_ (fun acc => body)`. -/
-def while_ (body : PB → PB) : PB := fun n =>
-  .while_ (body (fun _ => .var n) (n + 1))
+/-- `while_ init (fun acc => body)`. -/
+def while_ (init : PB) (body : PB → PB) : PB := fun n =>
+  .while_ (init n) (body (fun _ => .var n) (n + 1))
 
 /-- Close a builder into a concrete `Prog`. -/
 def build (p : PB) : Prog := p 0
@@ -807,6 +836,72 @@ lemma PB.fold_computes_at {env : List Data} {init list : PB}
   simp only [hfoldl_succ]
   simpa [PB.atSlot, List.append_assoc] using h
 
+/-! ### Spec for `PB.while_`
+
+`PB.while_ init body` is a real while loop: it starts from `init`, checks the
+halt condition (`asList.headD = []`) on the current accumulator, and either
+returns it (halt) or runs `body` and loops with the body's result. -/
+
+/-- Generic iteration spec for `PB.while_`. The result is `f^[N] init` where
+`N` is the smallest iteration index whose encoding's `headD` is empty. -/
+lemma PB.while_computes_iter {α : Type} [DataEncode α]
+    {env : List Data} {p_init : PB} {body : PB → PB}
+    (f : α → α) (init : α)
+    (h_init : PB.computes_at env p_init (DataEncode.encode init))
+    (h_body : ∀ c, PB.computes_at_body₁ env (DataEncode.encode c) body
+        (DataEncode.encode (f c)))
+    (h_halts : ∃ n, (DataEncode.encode (f^[n] init)).asList.headD (Data.l []) = Data.l []) :
+    PB.computes_at env (PB.while_ p_init body) (DataEncode.encode (f^[Nat.find h_halts] init)) := by
+  intro ext
+  set n := env.length + ext.length with hn
+  set bd : Prog := body (fun _ => .var n) (n + 1) with bd_def
+  -- Unfold one level of `while_` at depth `n`.
+  change (Prog.while_ (p_init n) bd).eval (env ++ ext) = _
+  rw [Prog.while_eval]
+  rw [show (p_init n).eval (env ++ ext) = .some (DataEncode.encode init) by
+        simpa [hn] using h_init ext, Part.bind_some]
+  -- Reduce to a statement about `whileFrom_eval`.
+  set N := Nat.find h_halts with N_def
+  suffices ∀ k, k ≤ N →
+      Prog.whileFrom_eval bd (env ++ ext) (DataEncode.encode (f^[k] init))
+        = .some (DataEncode.encode (f^[N] init)) from this 0 (Nat.zero_le _)
+  intro k hk
+  -- Induct on the distance to `N`.
+  induction hd : N - k generalizing k with
+  | zero =>
+    have hkN : k = N := by omega
+    subst hkN
+    exact Prog.whileFrom_eval_halt (Nat.find_spec h_halts)
+  | succ m ih =>
+    have hkN : k < N := by omega
+    have h_not_halt :
+        (DataEncode.encode (f^[k] init)).asList.headD (Data.l []) ≠ Data.l [] :=
+      Nat.find_min h_halts hkN
+    rw [Prog.whileFrom_eval_step h_not_halt]
+    -- The body computes `f` at `f^[k] init`.
+    have h_body_eval : bd.eval ((env ++ ext) ++ [DataEncode.encode (f^[k] init)]) =
+        .some (DataEncode.encode (f (f^[k] init))) := by
+      have h := (h_body (f^[k] init) ext).here
+      simpa [bd_def, hn, PB.atSlot] using h
+    rw [h_body_eval, Part.bind_some]
+    rw [show f (f^[k] init) = f^[k+1] init from (Function.iterate_succ_apply' f k init).symm]
+    exact ih (k + 1) (by omega) (by omega)
+
+
+/-- `letIn` at a fixed env: the body hypothesis is packaged as `PB.computes_at_body₁`. -/
+lemma PB.letIn_computes_at {env : List Data} {val : PB} {body : PB → PB}
+    {dv dr : Data}
+    (hv : PB.computes_at env val dv)
+    (hbody : PB.computes_at_body₁ env dv body dr) :
+    PB.computes_at env (PB.letIn val body) dr := by
+  intro ext
+  show (Prog.letin (val (env.length + ext.length))
+      (body (fun _ => Prog.var (env.length + ext.length))
+        (env.length + ext.length + 1))).eval (env ++ ext) = .some dr
+  rw [Prog.letin_eval (hv ext)]
+  have h := (hbody ext).here
+  simpa [PB.atSlot] using h
+
 /-- `PB.tail` at a fixed env, derived directly from `PB.elim_*_computes_at`. -/
 lemma PB.tail_computes_at {env : List Data} {x : PB} {dx : Data}
     (hx : PB.computes_at env x dx) :
@@ -984,6 +1079,13 @@ lemma PB.optionElim_computes_some {α β : Type} [DataEncode α] [DataEncode β]
   apply PB.elim_cons_computes_at hx
   intro ext
   simpa [List.append_assoc] using (h_some ext).extend
+
+lemma PB.letIn_computes_at_encoded {α β : Type} [DataEncode α] [DataEncode β]
+    {env : List Data} {val : PB} {body : PB → PB} {v : α} {b : β}
+    (hv : val.computes_at_encoded env v)
+    (hbody : PB.computes_at_body₁_encoded env v body b) :
+    (PB.letIn val body).computes_at_encoded env b :=
+  PB.letIn_computes_at hv hbody
 
 /-- Encoded variant of `PB.fold_computes_at`: typed accumulator `a : α`, typed
 list elements of type `β`, and a typed step function `f : α → β → α`. The body
@@ -1321,15 +1423,74 @@ lemma eval_fun_graph_computes
     intro ext'
     simpa [List.append_assoc, step] using PB.elim_cons_head_var_computes_at.extend
 
+-- def graphOf {α β : Type} [Fintype α] (f : α → β) : List (α × β) :=
+--   Fintype.elems.toList.map (fun a => (a, f a))
+
+lemma eval_fun_graph_computes_of_fun
+    {α β : Type} [DataEncode α] [DataEncode β] [Fintype α]
+    {env : List Data} {p_graph p_arg : PB}
+    {a : α}
+    {f : α → β}
+    (h_graph : p_graph.computes_at_encoded env (Fintype.elems.toList.map (fun a => (a, f a))))
+    (h_arg : p_arg.computes_at_encoded env a) :
+    (eval_fun_graph p_graph p_arg).head.computes_at_encoded env (f a) := by
+  classical
+  have heq : ∀ (L : List α), a ∈ L →
+      ((L.map (fun a' => (a', f a'))).find?
+        (fun p => p.1 = a)).map (·.2) = some (f a) := by
+    intro L hmem
+    induction L with
+    | nil => exact absurd hmem (by simp)
+    | cons hd tl ih => grind
+  have h := eval_fun_graph_computes h_graph h_arg
+  rw [heq _ (Finset.mem_toList.mpr (Fintype.complete a))] at h
+  simpa [DataEncode.encode, Data.asList] using PB.head_computes_at h
 
 def cfg_state (cfg : PB) : PB := cfg.fst
 def cfg_bitape (cfg : PB) : PB := cfg.snd
+
+lemma cfg_state_computes [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
+    {env : List Data} {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
+    (h : p.computes_at_encoded env cfg) :
+    (cfg_state p).computes_at_encoded env cfg.state :=
+  PB.fst_computes_at_encoded (a := (cfg.state, cfg.BiTape)) h
+
+lemma cfg_bitape_computes [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
+    {env : List Data} {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
+    (h : p.computes_at_encoded env cfg) :
+    (cfg_bitape p).computes_at_encoded env cfg.BiTape :=
+  PB.snd_computes_at_encoded (a := (cfg.state, cfg.BiTape)) h
 
 /-- Evaluate the transition function. Returns `((wr, dir), q')`.
  -- The return value is not wrapped inside an `Option` because the transition
  -- function is assumed to be total. -/
 def eval_tr (tr : PB) (q c : PB) : PB :=
   (eval_fun_graph (eval_fun_graph tr q).head c).head
+
+instance : DataEncode (SingleTapeTM.Stmt Symbol) where
+  encode stmt := DataEncode.encode (stmt.symbol, stmt.movement)
+  h_inj := by sorry
+
+lemma eval_tr_computes {State : Type} [Fintype State] [DataEncode State]
+    [DecidableEq State] [Fintype Symbol]
+    {env : List Data} {p_tr p_q p_c : PB}
+    {tr : State → Option Symbol → SingleTapeTM.Stmt Symbol × Option State}
+    {q : State}
+    {c : Option Symbol}
+    (h_tr : p_tr.computes_at_encoded env
+      ((Fintype.elems : Finset State).toList.map (fun q' : State =>
+        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+          (fun c' : Option Symbol => (c', tr q' c'))))))
+    (h_q : p_q.computes_at_encoded env q)
+    (h_c : p_c.computes_at_encoded env c) :
+    (eval_tr p_tr p_q p_c).computes_at_encoded env (tr q c) := by
+  unfold eval_tr
+  exact eval_fun_graph_computes_of_fun (α := Option Symbol) (f := tr q)
+    (eval_fun_graph_computes_of_fun (α := State) (f := fun q' =>
+      (Fintype.elems : Finset (Option Symbol)).toList.map (fun c' => (c', tr q' c')))
+      h_tr h_q) h_c
 
 -- /-- The step function corresponding to a `SingleTapeTM`. -/
 -- @[simp]
@@ -1347,26 +1508,253 @@ def eval_tr (tr : PB) (q c : PB) : PB :=
 -- Compute the step function given a transition function (as its graph) and a configuration.
 -- Returns `Option Cfg`
 def singleTapeTM_step (tr : PB) (cfg : PB) : PB :=
-  PB.elim (cfg_state cfg)
+  PB.optionElim (cfg_state cfg)
     PB.empty
-    (fun q' _ => PB.letIn (cfg_bitape cfg) (fun tape =>
+    (fun q' => PB.letIn (cfg_bitape cfg) (fun tape =>
       PB.letIn (eval_tr tr q' tape.head) (fun tr_val =>
         .some (to_pair
           tr_val.snd
           (bitape_optionMove (bitape_write tape tr_val.fst.fst) tr_val.fst.snd)))))
 
+lemma singleTapeTM_step_computes [Inhabited Symbol] [Fintype Symbol]
+    [DecidableEq Symbol] {tm : SingleTapeTM Symbol}
+    [DataEncode tm.State] [DecidableEq tm.State]
+    {env : List Data} {p_tr p_cfg : PB} {cfg : tm.Cfg}
+    (h_tr : p_tr.computes_at_encoded env
+      ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
+        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+          (fun c' => (c', tm.tr q' c'))))))
+    (h_cfg : p_cfg.computes_at_encoded env cfg) :
+    (singleTapeTM_step p_tr p_cfg).computes_at_encoded env (tm.step cfg) := by
+  unfold singleTapeTM_step
+  obtain ⟨state, t⟩ := cfg
+  match hst : state with
+  | none =>
+    refine PB.optionElim_computes_none (cfg_state_computes h_cfg) ?_
+    change PB.empty.computes_at_encoded env (none : Option tm.Cfg)
+    simp [PB.computes_at_encoded, DataEncode.encode]
+  | some q' =>
+    refine PB.optionElim_computes_some (cfg_state_computes h_cfg) ?_
+    intro ext1
+    -- TODO letin makes this proof complicated.
+    -- Outer letIn: bind `tape := cfg_bitape p_cfg`, value `t`.
+    apply PB.letIn_computes_at_encoded (v := t)
+      (by simpa [List.append_assoc] using cfg_bitape_computes h_cfg.extend)
+    intro ext2
+    set env2 := env ++ ext1 ++ [DataEncode.encode q'] with env2_def
+    -- The slot for `q'` at depth `env.length + ext1.length`.
+    have h_q'_slot : PB.computes_at_encoded
+        (env2 ++ ext2 ++ [DataEncode.encode t])
+        (PB.atSlot (env.length + ext1.length)) q' := by
+      simpa [env2_def] using PB.atSlot_last_computes_at_encoded.extend
+    -- The slot for `tape` at depth `env2.length + ext2.length`.
+    have h_tape_slot : PB.computes_at_encoded
+        (env2 ++ ext2 ++ [DataEncode.encode t])
+        (PB.atSlot (env2.length + ext2.length)) t :=
+      PB.atSlot_last_computes_at_encoded
+    apply PB.letIn_computes_at_encoded
+      (eval_tr_computes
+        (by simpa [env2_def, List.append_assoc] using h_tr.extend)
+        h_q'_slot (bitape_head_computes h_tape_slot))
+    intro ext3
+    set env3 := env2 ++ ext2 ++ [DataEncode.encode t] with env3_def
+    set envS := env3 ++ ext3 ++ [DataEncode.encode (tm.tr q' t.head)] with envS_def
+    -- Re-derive tape slot at envS.
+    have h_tape_slot' : PB.computes_at_encoded envS
+        (PB.atSlot (env2.length + ext2.length)) t := by
+      simpa [envS_def, env3_def, List.append_assoc] using
+        h_tape_slot.extend (ext := ext3 ++ [DataEncode.encode (tm.tr q' t.head)])
+    -- Destructure the transition result.
+    rcases htr_eq : tm.tr q' t.head with ⟨⟨wr, dir⟩, q''⟩
+    have h_trval : PB.computes_at_encoded envS
+        (PB.atSlot (env3.length + ext3.length))
+        (SingleTapeTM.Stmt.mk (Symbol := Symbol) wr dir, q'') := by
+      simp [envS_def, htr_eq]
+    unfold SingleTapeTM.step
+    simp only [htr_eq]
+    exact PB.some_computes_at_encoded
+      (to_pair_computes
+        (PB.snd_computes_at_encoded h_trval)
+        (bitape_optionMove_computes
+          (bitape_write_computes h_tape_slot'
+            (PB.fst_computes_at_encoded (a := (wr, dir))
+              (PB.fst_computes_at_encoded h_trval)))
+          (PB.snd_computes_at_encoded (a := (wr, dir))
+            (PB.fst_computes_at_encoded h_trval))))
+
 def tm_main_loop (tr : PB) (cfg : PB) : PB :=
-  -- Note that `Cfg` is a pair of `Option State` and `BiTape`,
-  -- and the termination condition is that the first element of this pair is none.
-  -- This exactly matches our while loop termination condition.
-  PB.while_ (fun acc => PB.elim acc
-    -- accumulator is empty, initialize
-    cfg
-    -- accumulator is non-empty, run a single step. Ignore that the result is an option
-    (fun _ _ => (singleTapeTM_step tr acc).head))
+  -- The accumulator is the current `Cfg`. The body applies `singleTapeTM_step`
+  -- (an `Option Cfg`); on `some next` we continue with `next`, on `none` we keep
+  -- the current `acc` (which has `state = none`, signalling halt to `while_`).
+  PB.while_ cfg
+    (fun acc => PB.optionElim (singleTapeTM_step tr acc) acc (fun next => next))
+
+/-- Spec for `tm_main_loop`: assuming the TM eventually halts when started from
+`cfg` (witnessed by some `n` after which iterating `tm.step` reaches a `none`
+state), the loop computes the configuration obtained after the *minimal* such
+number of steps. Here `tm.step` is lifted to `tm.Cfg → tm.Cfg` by treating the
+halt result `none` as a fixed point via `Option.getD`. -/
+lemma tm_main_loop_computes [Inhabited Symbol] [Fintype Symbol]
+    [DecidableEq Symbol] {tm : SingleTapeTM Symbol}
+    [DataEncode tm.State] [DecidableEq tm.State]
+    {env : List Data} {p_tr p_cfg : PB} {cfg : tm.Cfg}
+    (h_tr : p_tr.computes_at_encoded env
+      ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
+        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+          (fun c' => (c', tm.tr q' c'))))))
+    (h_cfg : p_cfg.computes_at_encoded env cfg)
+    (h_halts : ∃ n, (((fun c => (tm.step c).getD c)^[n] cfg)).state = none) :
+    (tm_main_loop p_tr p_cfg).computes_at_encoded env
+      ((fun c => (tm.step c).getD c)^[Nat.find h_halts] cfg) := by
+  -- Lift `tm.step` to a total `tm.Cfg → tm.Cfg` map.
+  set step : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with step_def
+  -- `headD` of an encoded `Cfg` is empty iff the state is `none`.
+  have headD_iff : ∀ c : tm.Cfg,
+      (DataEncode.encode c).asList.headD (Data.l []) = Data.l [] ↔ c.state = none := by
+    rintro ⟨s, t⟩; cases s <;> simp [DataEncode.encode, DataEncode_pair, Data.asList]
+  -- Translate the halting hypothesis through the iff.
+  have h_halts' : ∃ n, (DataEncode.encode (step^[n] cfg)).asList.headD (Data.l []) = Data.l [] :=
+    h_halts.imp fun _ h => (headD_iff _).mpr h
+  have find_eq : Nat.find h_halts' = Nat.find h_halts :=
+    le_antisymm
+      (Nat.find_le ((headD_iff _).mpr (Nat.find_spec h_halts)))
+      (Nat.find_le ((headD_iff _).mp (Nat.find_spec h_halts')))
+  -- Reduce to a `while_` spec call.
+  change PB.computes_at env (tm_main_loop p_tr p_cfg)
+    (DataEncode.encode (step^[Nat.find h_halts] cfg))
+  rw [← find_eq]
+  unfold tm_main_loop
+  refine PB.while_computes_iter (env := env) (p_init := p_cfg)
+    (body := fun acc => PB.optionElim (singleTapeTM_step p_tr acc) acc (fun next => next))
+    step cfg h_cfg ?_ h_halts'
+  -- Body computes `step` at every typed accumulator (∀ ext).
+  intro c ext
+  set E := env ++ ext with E_def
+  have hE_len : E.length = env.length + ext.length := by simp [E_def]
+  have h_acc : PB.computes_at_encoded (E ++ [DataEncode.encode c])
+      (PB.atSlot E.length) c := by
+    simpa using PB.atSlot_last_computes_at_encoded (env := E) (ext := []) (a := c)
+  have h_step_eval :
+      (singleTapeTM_step p_tr (PB.atSlot E.length)).computes_at_encoded
+        (E ++ [DataEncode.encode c]) (tm.step c) := by
+    have h_tr_ext : PB.computes_at_encoded (E ++ [DataEncode.encode c]) p_tr
+        ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
+          (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+            (fun c' => (c', tm.tr q' c'))))) := by
+      have := h_tr.extend (ext := ext ++ [DataEncode.encode c])
+      simpa [E_def, List.append_assoc] using this
+    exact singleTapeTM_step_computes h_tr_ext h_acc
+  -- Show the body computes `step c` at slot `E.length = env.length + ext.length`.
+  change PB.computes_at (E ++ [DataEncode.encode c])
+    (PB.optionElim (singleTapeTM_step p_tr (PB.atSlot (env.length + ext.length)))
+      (PB.atSlot (env.length + ext.length))
+      (fun next => next)) (DataEncode.encode (step c))
+  rw [← hE_len]
+  cases hstep_c : tm.step c with
+  | none =>
+    rw [show step c = c from by simp only [step_def]; rw [hstep_c]; rfl]
+    exact PB.optionElim_computes_none (hstep_c ▸ h_step_eval) h_acc
+  | some next =>
+    rw [show step c = next from by simp only [step_def]; rw [hstep_c]; rfl]
+    refine PB.optionElim_computes_some (hstep_c ▸ h_step_eval) ?_
+    intro ext'
+    simpa using PB.atSlot_last_computes_at_encoded
+      (env := E ++ [DataEncode.encode c]) (ext := ext') (a := next)
+
+def reverse (x : PB) : PB :=
+  PB.fold (fun acc el => PB.cons el acc) PB.empty x
+
+lemma reverse_computes {α : Type} [DataEncode α]
+    {env : List Data} {p : PB} {l : List α}
+    (h : p.computes_at_encoded env l) :
+    (reverse p).computes_at_encoded env l.reverse := by
+  unfold reverse
+  have h_fold : l.reverse = l.foldl (fun acc el => el :: acc) [] := by simp
+  rw [h_fold]
+  apply PB.fold_computes_at_encoded (by simp [PB.computes_at_encoded]) h
+  -- TODO at this point, we should actually be able to just apply a combinator on the semantics
+  -- of PB.cons
+  intro acc el ext
+  have h_el : PB.computes_at
+      (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el])
+      (PB.atSlot (env.length + ext.length + 1)) (DataEncode.encode el) := by
+    simpa using (PB.atSlot_last_computes_at (ext := ext ++ [DataEncode.encode acc])).extend
+  simpa [DataEncode.encode, Data.asList] using
+    PB.cons_computes_at h_el (by simpa using PB.atSlot_last_computes_at.extend)
+
+def list_map (x : PB) (f : PB → PB) : PB :=
+  reverse (PB.fold (fun acc el => PB.cons (f el) acc) PB.empty x)
+
+lemma list_map_computes {α β : Type} [DataEncode α] [DataEncode β]
+    {env : List Data} {p : PB} {l : List α}
+    {f : PB → PB} {g : α → β}
+    (h : p.computes_at_encoded env l)
+    (hf : ∀ x : α, PB.computes_at_body₁_encoded env x f (g x)) :
+    (list_map p f).computes_at_encoded env (l.map g) := by
+  unfold list_map
+  -- TODO simplify proof
+  have h_fold : (PB.fold (fun acc el => PB.cons (f el) acc) PB.empty p).computes_at_encoded
+      env (l.foldl (fun acc el => g el :: acc) []) := by
+    apply PB.fold_computes_at_encoded (a := ([] : List β)) (f := fun acc el => g el :: acc)
+      (by simp [PB.computes_at_encoded, DataEncode.encode]) h
+    intro acc el ext
+    have h_acc : PB.computes_at
+        (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el])
+        (PB.atSlot (env.length + ext.length)) (DataEncode.encode acc) := by
+      simpa using (PB.atSlot_last_computes_at (env := env) (ext := ext)
+        (d := DataEncode.encode acc)).extend (ext := [DataEncode.encode el])
+    have h_fel : (f (PB.atSlot (env.length + ext.length + 1))).computes_at_encoded
+        (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el]) (g el) := by
+      simpa [List.append_assoc] using hf el (ext ++ [DataEncode.encode acc])
+    simpa [DataEncode.encode, Data.asList] using PB.cons_computes_at h_fel h_acc
+  have h_rev := reverse_computes h_fold
+  have h_eq : (l.foldl (fun acc el => g el :: acc) []).reverse = l.map g := by
+    rw [show l.foldl (fun acc el => g el :: acc) []
+          = (l.map g).foldl (fun acc el => el :: acc) [] from
+        (List.foldl_map (f := g) (g := fun acc el => el :: acc) (l := l) (init := [])).symm]
+    simp
+  rwa [h_eq] at h_rev
+
+def list_head_option (input : PB) : PB :=
+  PB.elim input PB.empty (fun hd _tl => PB.some hd)
+
+lemma list_head_option_computes {α : Type} [DataEncode α]
+    {env : List Data} {p : PB} {l : List α}
+    (h : p.computes_at_encoded env l) :
+    (list_head_option p).computes_at_encoded env l.head? := by
+  cases l with
+  | nil =>
+    apply PB.elim_nil_computes_at (em := PB.empty)
+    · simpa [DataEncode.encode] using h
+    · simp [DataEncode.encode]
+  | cons hd tl =>
+    apply PB.elim_cons_computes_at (head := DataEncode.encode hd)
+      (tail := tl.map DataEncode.encode)
+    · simpa [DataEncode.encode] using h
+    · intro ext
+      simpa [DataEncode.encode] using
+        PB.cons_computes_at PB.elim_cons_head_var_computes_at PB.empty_computes_at
 
 def string_to_tape (input : PB) : PB :=
-  to_pair input.head (to_pair .empty input.tail)
+  to_pair (list_head_option input) (to_pair .empty (list_map input.tail PB.some))
+
+lemma string_to_tape_computes {env : List Data} {p_input : PB} {input : List Symbol}
+    (h_input : p_input.computes_at_encoded env input) :
+    (string_to_tape p_input).computes_at_encoded env (BiTape.mk₁ input) := by
+  have h_tail : (PB.tail p_input).computes_at_encoded env input.tail := by
+    simpa [PB.computes_at_encoded, DataEncode.encode] using PB.tail_computes_at h_input
+  have h_map : (list_map (PB.tail p_input) PB.some).computes_at_encoded env
+      (StackTape.map_some input.tail : Turing.StackTape Symbol) := by
+    simpa [PB.computes_at_encoded, DataEncode.encode]
+      using list_map_computes h_tail (fun _ _ => by
+        simpa [DataEncode.encode] using
+          PB.cons_computes_at PB.atSlot_last_computes_at PB.empty_computes_at)
+  have h_empty : (PB.empty : PB).computes_at_encoded env (∅ : Turing.StackTape Symbol) := by
+    simp [PB.computes_at_encoded, DataEncode.encode]
+  simpa [PB.computes_at_encoded, encode_biTape, BiTape.mk₁, DataEncode_pair, string_to_tape]
+    using to_pair_computes (list_head_option_computes h_input)
+      (to_pair_computes h_empty h_map)
+
 
 def initial_config (q₀ : PB) (input : PB) : PB :=
   to_pair (PB.some q₀) (string_to_tape input)
