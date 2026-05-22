@@ -69,9 +69,17 @@ public import Cslib.Computability.Machines.MultiTapeTuring.TapeView
 public import Cslib.Computability.Machines.MultiTapeTuring.UniversalTM
 public import Cslib.Computability.Machines.MultiTapeTuring.WhileCombinator
 public import Cslib.Computability.Machines.MultiTapeTuring.WithTapes
+public import Cslib.Computability.Machines.RoseTreeMachine.RTM_to_TM
 public import Cslib.Computability.Machines.RoseTreeMachine.RoseTreeMachine
 public import Cslib.Computability.Machines.RoseTreeMachine.V2
+public import Cslib.Computability.Machines.RoseTreeMachine.V2.Data
+public import Cslib.Computability.Machines.RoseTreeMachine.V2.DataEncode
+public import Cslib.Computability.Machines.RoseTreeMachine.V2.PB
+public import Cslib.Computability.Machines.RoseTreeMachine.V2.Prog
+public import Cslib.Computability.Machines.RoseTreeMachine.V2.Tools
+public import Cslib.Computability.Machines.RoseTreeMachine.V2.UniversalTM
 public import Cslib.Computability.Machines.RoseTreeMachine.V3
+public import Cslib.Computability.Machines.RoseTreeMachine.log
 public import Cslib.Computability.Machines.SingleTapeTuring.Basic
 public import Cslib.Computability.URM.Basic
 public import Cslib.Computability.URM.Computable
