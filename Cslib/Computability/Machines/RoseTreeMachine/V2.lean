@@ -643,6 +643,15 @@ lemma PB.var_computes_at {env : List Data} {i : ℕ} (h : i < env.length) :
   simp [Prog.eval, Prog.meteredEval, List.getElem?_append_left h]
   grind
 
+@[simp]
+lemma PB.var_last_computes_at {env ext : List Data} {d : Data} :
+    PB.computes_at (env ++ ext ++ [d])
+      (fun _ => Prog.var (env.length + ext.length)) d := by
+  have hlen : env.length + ext.length < (env ++ ext ++ [d]).length := by simp
+  have h := PB.var_computes_at (env := env ++ ext ++ [d]) hlen
+  convert h using 2
+  simp [List.getElem_append]
+
 @[simp, grind .]
 lemma PB.empty_computes_at {env : List Data} :
     PB.computes_at env PB.empty (Data.l []) := by
@@ -678,6 +687,18 @@ def PB.atSlot (i : ℕ) : PB := fun _ => .var i
 lemma PB.atSlot_computes_at {env : List Data} {i : ℕ} (h : i < env.length) :
     PB.computes_at env (PB.atSlot i) env[i] :=
   PB.var_computes_at h
+
+@[simp]
+lemma PB.atSlot_last_computes_at {env ext : List Data} {d : Data} :
+    PB.computes_at (env ++ ext ++ [d])
+      (PB.atSlot (env.length + ext.length)) d :=
+  PB.var_last_computes_at
+
+@[simp]
+lemma PB.atSlot_last_computes_at_right {env ext : List Data} {d : Data} :
+    PB.computes_at (env ++ (ext ++ [d]))
+      (PB.atSlot (env.length + ext.length)) d := by
+  rw [← List.append_assoc]; exact PB.atSlot_last_computes_at
 
 /-- Body-of-binder hypothesis. `mkBody` is an arity-`bindings.length` body
 builder that receives the var-lookup PBs for each binding and produces a PB.
@@ -819,6 +840,23 @@ def PB.ifEq (a b : PB) (then_ else_ : PB) : PB :=
     else_
     fun _ _ => then_
 
+lemma PB.ifEq_computes_at {env : List Data} {a b then_ else_ : PB} {da db dr : Data}
+    (ha : PB.computes_at env a da) (hb : PB.computes_at env b db)
+    (hthen : da = db → PB.computes_at env then_ dr)
+    (helse : da ≠ db → PB.computes_at env else_ dr) :
+    (PB.ifEq a b then_ else_).computes_at env dr := by
+  unfold PB.ifEq
+  by_cases h : da = db
+  · have heq : PB.computes_at env (PB.eq a b) (Data.l [Data.l []]) := by
+      simpa [h] using PB.eq_computes_at ha hb
+    refine PB.elim_cons_computes_at heq ?_
+    intro ext
+    have h' := (hthen h).extend (ext := ext ++ [Data.l [], Data.l []])
+    simpa [List.append_assoc] using h'
+  · have heq : PB.computes_at env (PB.eq a b) (Data.l []) := by
+      simpa [h] using PB.eq_computes_at ha hb
+    exact PB.elim_nil_computes_at heq (helse h)
+
 ------------------------------------------------------
 ----------- Tools
 -----------------------------------------------------------
@@ -839,6 +877,20 @@ def PB.optionElim (x : PB) (noneCase : PB) (someCase : PB → PB) : PB :=
 
 def PB.computes_at_encoded {α : Type} [DataEncode α] (env : List Data) (x : PB) (a : α) : Prop :=
     PB.computes_at env x (DataEncode.encode a)
+
+@[simp]
+lemma PB.atSlot_last_computes_at_encoded {α : Type} [DataEncode α]
+    {env ext : List Data} {a : α} :
+    PB.computes_at_encoded (env ++ ext ++ [DataEncode.encode a])
+      (PB.atSlot (env.length + ext.length)) a :=
+  PB.atSlot_last_computes_at
+
+@[simp]
+lemma PB.atSlot_last_computes_at_encoded_right {α : Type} [DataEncode α]
+    {env ext : List Data} {a : α} :
+    PB.computes_at_encoded (env ++ (ext ++ [DataEncode.encode a]))
+      (PB.atSlot (env.length + ext.length)) a :=
+  PB.atSlot_last_computes_at_right
 
 /-- Encoded body-of-binder hypothesis: the body computes a typed value `a`
 under any outer env extension. -/
@@ -1085,15 +1137,19 @@ lemma bitape_move_computes {env : List Data} {p_t p_dir : PB} {t : BiTape Symbol
     (h_t : PB.computes_at_encoded env p_t t)
     (h_dir : PB.computes_at_encoded env p_dir d) :
     (bitape_move p_t p_dir).computes_at_encoded env (t.move d) := by
-  unfold PB.computes_at_encoded bitape_move PB.ifEq
-  simp only [PB.ifEq, constant, DataEncode_pair] at h_dir ⊢
-  cases d with
-  | left =>
-    rw [if_pos rfl]
-    exact bitape_move_left_computes h_t
-  | right =>
-    rw [if_neg (by simp)]
-    exact bitape_move_right_computes h_t
+  unfold PB.computes_at_encoded bitape_move
+  refine PB.ifEq_computes_at h_dir constant_computes ?_ ?_
+  · intro hd_eq
+    -- TODO could use injectivity here once we have it.
+    cases d with
+    | left => exact bitape_move_left_computes h_t
+    | right =>
+      exfalso
+      exact absurd hd_eq (by decide)
+  · intro hne
+    cases d with
+    | left => exact absurd rfl hne
+    | right => exact bitape_move_right_computes h_t
 
 -- /--
 -- Optionally perform a `move`, or do nothing if `none`.
@@ -1103,9 +1159,22 @@ lemma bitape_move_computes {env : List Data} {p_t p_dir : PB} {t : BiTape Symbol
 --   | t, some d => t.move d
 
 def bitape_optionMove (t dir : PB) : PB :=
-  .elim dir
+  PB.optionElim dir
     t
-    (fun d _ => bitape_move t d)
+    (fun d => bitape_move t d)
+
+lemma bitape_optionMove_computes {env : List Data} {p_t p_dir : PB}
+    {t : BiTape Symbol} {d : Option Dir}
+    (h_t : PB.computes_at_encoded env p_t t)
+    (h_dir : PB.computes_at_encoded env p_dir d) :
+    (bitape_optionMove p_t p_dir).computes_at_encoded env (t.optionMove d) := by
+  unfold PB.computes_at_encoded bitape_optionMove BiTape.optionMove
+  match d with
+  | none => simpa using PB.optionElim_computes_none h_dir h_t
+  | some d =>
+    apply PB.optionElim_computes_some h_dir
+    intro ext
+    exact bitape_move_computes (by simpa using h_t.extend) (by simp)
 
 instance (tm : SingleTapeTM Symbol) [DataEncode tm.State] :
     DataEncode (Turing.SingleTapeTM.Cfg tm) where
