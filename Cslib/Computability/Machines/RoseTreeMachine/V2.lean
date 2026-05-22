@@ -523,7 +523,7 @@ lemma PB.tail_computes {x : PB} {fx : List Data → Data} (hx : x.computes fx) :
   intro env
   have he := h env
   simp only at he
-  show _ = Part.some (Data.l (fx env).asList.tail)
+  change _ = Part.some (Data.l (fx env).asList.tail)
   suffices h_eq :
       (match (fx env).asList with
        | [] => Data.l []
@@ -590,6 +590,22 @@ Lifting eval rules to `@[simp]` lemmas lets you discharge most goals of the form
     (ha : a.eval env = .some da) (hb : b.eval env = .some db) :
     (Prog.eq a b).eval env =
       .some (if da = db then Data.l [Data.l []] else Data.l []) := by
+  sorry
+
+/-- Semantic spec for `Prog.fold`. Rather than quantifying the body universally
+over arbitrary `Data` accumulators/elements, we parameterise by the actually
+visited accumulator sequence `acc : ℕ → Data`. This makes the lemma usable both
+for untyped and typed/encoded fold reasoning. -/
+lemma Prog.fold_eval {env : List Data} {body init list : Prog}
+    {da : Data} {dl : List Data} {result : Data}
+    (hi : init.eval env = .some da)
+    (hl : list.eval env = .some (Data.l dl))
+    (acc : ℕ → Data)
+    (hacc0 : acc 0 = da)
+    (haccN : acc dl.length = result)
+    (hstep : ∀ k (h : k < dl.length),
+      body.eval (env ++ [acc k, dl[k]]) = .some (acc (k+1))) :
+    (Prog.fold body init list).eval env = .some result := by
   sorry
 
 /-- Example: with the `simp` set above, the `tail` spec on a concrete env is short. -/
@@ -768,6 +784,29 @@ lemma PB.elim_cons_tail_var_computes_at {env ext : List Data}
       < (env ++ ext ++ [head, tail]).length := by simp; omega
   grind [PB.var_computes_at hlen]
 
+/-- `fold` at a fixed env: lifts `Prog.fold_eval` pointwise. The body hypothesis
+is packaged as `PB.computes_at_body₂` parameterised over the current
+accumulator `acc` and element `el`. -/
+lemma PB.fold_computes_at {env : List Data} {init list : PB}
+    {body : PB → PB → PB}
+    {da : Data} {dl : List Data} {f : Data → Data → Data}
+    (hi : PB.computes_at env init da)
+    (hl : PB.computes_at env list (Data.l dl))
+    (hbody : ∀ acc el, PB.computes_at_body₂ env acc el body (f acc el)) :
+    PB.computes_at env (PB.fold body init list) (dl.foldl f da) := by
+  intro ext
+  simp only [PB.fold]
+  refine Prog.fold_eval (hi ext) (hl ext)
+    (fun k => (dl.take k).foldl f da) rfl (by simp) ?_
+  intro k hk
+  have h := (hbody ((dl.take k).foldl f da) dl[k] ext).here
+  have hfoldl_succ :
+      (dl.take (k+1)).foldl f da = f ((dl.take k).foldl f da) dl[k] := by
+    rw [List.take_succ, List.foldl_append]
+    simp [List.getElem?_eq_getElem hk]
+  simp only [hfoldl_succ]
+  simpa [PB.atSlot, List.append_assoc] using h
+
 /-- `PB.tail` at a fixed env, derived directly from `PB.elim_*_computes_at`. -/
 lemma PB.tail_computes_at {env : List Data} {x : PB} {dx : Data}
     (hx : PB.computes_at env x dx) :
@@ -945,6 +984,36 @@ lemma PB.optionElim_computes_some {α β : Type} [DataEncode α] [DataEncode β]
   apply PB.elim_cons_computes_at hx
   intro ext
   simpa [List.append_assoc] using (h_some ext).extend
+
+/-- Encoded variant of `PB.fold_computes_at`: typed accumulator `a : α`, typed
+list elements of type `β`, and a typed step function `f : α → β → α`. The body
+hypothesis is `PB.computes_at_body₂_encoded` parameterised over `acc : α` and
+`el : β`. -/
+lemma PB.fold_computes_at_encoded
+    {α β : Type} [DataEncode α] [DataEncode β]
+    {env : List Data} {init list : PB} {body : PB → PB → PB}
+    {a : α} {l : List β} {f : α → β → α}
+    (hi : init.computes_at_encoded env a)
+    (hl : list.computes_at_encoded env l)
+    (hbody : ∀ acc el, PB.computes_at_body₂_encoded env acc el body (f acc el)) :
+    PB.computes_at_encoded env (PB.fold body init list) (l.foldl f a) := by
+  intro ext
+  simp only [PB.fold]
+  have hl' :
+      (list (env.length + ext.length)).eval (env ++ ext)
+        = .some (Data.l (l.map DataEncode.encode)) := hl ext
+  refine Prog.fold_eval (hi ext) hl'
+    (fun k => DataEncode.encode ((l.take k).foldl f a)) rfl (by simp) ?_
+  intro k hk
+  have hk' : k < l.length := by simpa using hk
+  have h := (hbody ((l.take k).foldl f a) l[k] ext).here
+  have hfoldl_succ :
+      (l.take (k+1)).foldl f a = f ((l.take k).foldl f a) l[k] := by
+    rw [List.take_succ, List.foldl_append]
+    simp [List.getElem?_eq_getElem hk']
+  have hget : (l.map DataEncode.encode)[k] = DataEncode.encode l[k] := by simp
+  simp only [hget, hfoldl_succ]
+  simpa [PB.atSlot, List.append_assoc] using h
 -------------------------------------------------------------------
 ---------------- Universal Turing Machine (simulation of a SingleTapeTM)
 ---------------------------------------------------------------------------
@@ -1186,9 +1255,9 @@ instance (tm : SingleTapeTM Symbol) [DataEncode tm.State] :
 def eval_fun_graph (graph : PB) (arg : PB) : PB :=
   PB.fold
     (fun acc x =>
-      PB.ifEq acc .empty
+      PB.optionElim acc
         (PB.ifEq x.fst arg (PB.some x.snd) PB.empty)
-        acc)
+        fun _ => acc)
     PB.empty graph
 
 
