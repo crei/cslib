@@ -221,6 +221,48 @@ def Prog.meteredEval (env : List Data) (p : Prog) : Part (Data × ℕ × ℕ) :=
     Part.fix F (Data.empty, 1, 1)
   termination_by (sizeOf p, 0)
 
+------------------------------------
+--- We are just handling the semantics for now.
+--- Later on, it would probably make sense to define a variation of meteredEval
+--- that uses O-classes for the space and time, so we can use equality-transformations
+--- instead of inequalities in the semantics proofs.
+-------------------------------------------
+
+def Prog.eval (p : Prog) (env : List Data) : Part Data := (p.meteredEval env).map Prod.fst
+
+def Prog.computes (impl : Prog) (f : List Data → Data) : Prop :=
+  ∀ env, impl.eval env = .some (f env)
+
+@[simp]
+lemma Prog.var_computes {i : ℕ} :
+  (Prog.var i).computes (fun env => env[i]?.getD (Data.l [])) := by
+  simp [Prog.computes, Prog.eval, Prog.meteredEval]
+
+@[simp]
+lemma Prog.empty_computes :
+  Prog.empty.computes (fun _ => Data.l []) := by
+  simp [Prog.computes, Prog.eval, Prog.meteredEval]
+
+@[simp]
+lemma Prog.cons_computes {h t : Prog} {fh ft : List Data → Data}
+    (hh : h.computes fh) (ht : t.computes ft) :
+    (Prog.cons h t).computes (fun env => Data.l (fh env :: (ft env).asList)) := by
+  sorry
+
+/-- Pointwise (single-env) version of `Prog.cons_computes`. -/
+lemma Prog.cons_eval {h t : Prog} {env : List Data} {dh dt : Data}
+    (hh : h.eval env = .some dh) (ht : t.eval env = .some dt) :
+    (Prog.cons h t).eval env = .some (Data.l (dh :: dt.asList)) := by
+  sorry
+
+/-- Pointwise (single-env) version for `elim`. -/
+lemma Prog.elim_eval {v em cs : Prog} {env : List Data} {dv : Data}
+    (hv : v.eval env = .some dv) :
+    (Prog.elim v em cs).eval env =
+      match dv.asList with
+      | [] => em.eval env
+      | head :: tail => cs.eval (env ++ [head, Data.l tail]) := by
+  sorry
 
 def Prog.Total (p : Prog) : Prop := ∀ env, (p.meteredEval env).Dom
 
@@ -255,38 +297,31 @@ abbrev PB := ℕ → Prog
 
 namespace PB
 
-@[simp]
 def empty : PB := fun _ => .empty
-@[simp]
 def cons (h t : PB) : PB := fun n => .cons (h n) (t n)
-@[simp]
 def eq (a b : PB) : PB := fun n => .eq (a n) (b n)
 
 /-- `letIn val (fun x => body)`: bind the value of `val` as a fresh variable `x`
 visible in `body`. -/
-@[simp]
 def letIn (val : PB) (body : PB → PB) : PB := fun n =>
   .letin (val n) (body (fun _ => .var n) (n + 1))
 
 /-- `elim v em (fun head tail => body)`: case-analyse the result of `v`. -/
-@[simp]
 def elim (v : PB) (em : PB) (cs : PB → PB → PB) : PB := fun n =>
   .elim (v n) (em n) (cs (fun _ => .var n) (fun _ => .var (n + 1)) (n + 2))
 
 /-- `fold (fun acc x => body) init list`: run `body` for each element `x`
 threading accumulator `acc`. -/
-@[simp]
 def fold (body : PB → PB → PB) (init list : PB) : PB := fun n =>
   .fold (body (fun _ => .var n) (fun _ => .var (n + 1)) (n + 2)) (init n) (list n)
 
 /-- `while_ (fun acc => body)`. -/
-@[simp]
 def while_ (body : PB → PB) : PB := fun n =>
   .while_ (body (fun _ => .var n) (n + 1))
 
 /-- Close a builder into a concrete `Prog`. -/
-@[simp]
 def build (p : PB) : Prog := p 0
+
 
 end PB
 
@@ -344,6 +379,11 @@ instance : DataEncode ℕ where
   encode x := DataEncode.encode (Nat.bits x)
   h_inj := by sorry
 
+----------------------------------------------------
+
+def PB.computes (impl : PB) (f : List Data → Data) : Prop :=
+  ∀ env, (impl env.length).eval env = .some (f env)
+
 -------------------------------------------------------
 --- combinator semantics
 ----------------------------------------------------
@@ -379,33 +419,361 @@ lemma list_getElem_length_add {α : Type} (xs ys : List α) (i : ℕ) (h_lt : i 
 def PB.tail (x : PB) : PB := PB.elim x PB.empty (fun _head tl => tl)
 def PB.head (x : PB) : PB := PB.elim x PB.empty (fun hd _tl => hd)
 
-lemma tail_semantics (x : PB) {env : List Data} {h_wf : (x env.length).WhileFree} :
-  ((PB.tail x (env.length)).meteredEvalT (by simp [PB.tail, h_wf]) env).1 =
-  Data.l ((x env.length).meteredEvalT h_wf env).1.asList.tail := by
-  simp [PB.tail, meteredEvalT_elim_val]
+/-! ### Compositional `computes` rules for `PB` combinators
+
+The pattern: each combinator takes its `PB` arguments **paired with their `computes`
+specs**, and yields a `computes` for the composite. -/
+
+@[simp] lemma PB.empty_computes : PB.empty.computes (fun _ => Data.l []) := by
+  intro env
+  simp [PB.empty, Prog.eval, Prog.meteredEval]
+
+/-- The "bound-variable look-up" PB: at binder depth `n` it produces `var (n + offset)`. -/
+def PB.bound (offset : ℕ) : PB := fun n => Prog.var (n + offset)
+
+lemma PB.bound_computes (offset : ℕ) :
+    (PB.bound offset).computes (fun env => env[env.length + offset]?.getD (Data.l [])) := by
+  simp [PB.bound, PB.computes, Prog.eval, Prog.meteredEval]
+
+lemma PB.cons_computes {h t : PB} {fh ft : List Data → Data}
+    (hh : h.computes fh) (ht : t.computes ft) :
+    (PB.cons h t).computes (fun env => Data.l (fh env :: (ft env).asList)) := by
+  intro env
+  simp only [PB.cons]
+  exact Prog.cons_eval (hh env) (ht env)
+
+/-- Inside an `elim cs` branch, the two PBs passed to `cs` are constant closures
+returning `.var n` and `.var (n+1)`, where `n = env.length` at the outer call site.
+The body is then evaluated under env extended with `[head, Data.l tail]`.
+
+The spec for `cs` must therefore be parametric in the slot `n`: assume that for
+every `slot`, the body built with the two constant lookups computes a function
+expressed in terms of those two slot positions. -/
+lemma PB.elim_computes {v em : PB} {cs : PB → PB → PB}
+    {fv fem : List Data → Data}
+    {fcs : List Data → Data → Data → Data}
+    (hv : v.computes fv) (hem : em.computes fem)
+    (hcs : ∀ slot : ℕ,
+      (cs (fun _ => .var slot) (fun _ => .var (slot + 1))).computes
+        (fun env' => fcs (env'.take slot)
+                         (env'[slot]?.getD (Data.l []))
+                         (env'[slot + 1]?.getD (Data.l [])))) :
+    (PB.elim v em cs).computes (fun env =>
+      match (fv env).asList with
+      | [] => fem env
+      | head :: tail => fcs env head (Data.l tail)) := by
+  intro env
+  simp only [PB.elim]
+  -- Apply pointwise elim eval with hv env.
+  rw [Prog.elim_eval (hv env)]
+  -- Case split on (fv env).asList.
+  match h_fv : (fv env).asList with
+  | [] =>
+    simp only
+    exact hem env
+  | head :: tail =>
+    simp only
+    -- The cs body, instantiated at slot = env.length, computes the right function;
+    -- specialise its `computes` hypothesis to env' = env ++ [head, Data.l tail].
+    have hcs_inst := hcs env.length (env ++ [head, Data.l tail])
+    -- Beta-reduce the spec function on the extended env.
+    simp only at hcs_inst
+    -- The depth at the body's call site is (env ++ [head, Data.l tail]).length = env.length + 2.
+    have hlen : (env ++ [head, Data.l tail]).length = env.length + 2 := by simp
+    rw [hlen] at hcs_inst
+    have h_take : (env ++ [head, Data.l tail]).take env.length = env := by
+      simp
+    have h_get0 : (env ++ [head, Data.l tail])[env.length]? = some head := by
+      simp [List.getElem?_append_right]
+    have h_get1 : (env ++ [head, Data.l tail])[env.length + 1]? = some (Data.l tail) := by
+      simp [List.getElem?_append_right]
+    rw [h_take, h_get0, h_get1] at hcs_inst
+    simp only [Option.getD_some] at hcs_inst
+    exact hcs_inst
+
+lemma PB.elim_computes' {v em : PB} {cs : PB → PB → PB}
+    {fv fem : List Data → Data}
+    {fcs : Data → Data → List Data → Data}
+    (hv : v.computes fv) (hem : em.computes fem)
+    (hcs : ∀ slot : ℕ,
+      (cs (fun _ => .var slot) (fun _ => .var (slot + 1))).computes
+        (fun env' => fcs (env'[slot]?.getD (Data.l []))
+                         (env'[slot + 1]?.getD (Data.l []))
+                         (env'.take slot))) :
+    (PB.elim v em cs).computes (fun env =>
+      match (fv env).asList with
+      | [] => fem env
+      | head :: tail => fcs head (Data.l tail) env) := by
+  sorry
+
+/-- `PB.tail` computes the tail-of-list function applied to the spec of its argument.
+This is the direct combinator-level spec, obtainable from `PB.elim_computes` with
+`em := PB.empty` and `cs head tl := tl`. -/
+lemma PB.tail_computes {x : PB} {fx : List Data → Data} (hx : x.computes fx) :
+    (PB.tail x).computes (fun env => Data.l (fx env).asList.tail) := by
+  unfold PB.tail
+  have h := PB.elim_computes (cs := fun _head tl => tl)
+    (fv := fx) (fem := fun _ => Data.l [])
+    (fcs := fun _env _head tl => tl)
+    hx PB.empty_computes
+    (by
+      intro slot env'
+      simp [Prog.eval, Prog.meteredEval]
+      rfl)
+  intro env
+  have he := h env
+  simp only at he
+  show _ = Part.some (Data.l (fx env).asList.tail)
+  suffices h_eq :
+      (match (fx env).asList with
+       | [] => Data.l []
+       | _head :: tail => Data.l tail) = Data.l (fx env).asList.tail by
+    rw [← h_eq]; exact he
+  rcases (fx env).asList with _ | ⟨head, tail⟩
+  · rfl
+  · rfl
+
+/-- Same for `PB.head`. -/
+lemma PB.head_computes {x : PB} {fx : List Data → Data} (hx : x.computes fx) :
+    (PB.head x).computes (fun env => (fx env).asList.headD (Data.l [])) := by
+  sorry
+
+lemma PB.letIn_computes {val : PB} {body : PB → PB}
+    {fv : List Data → Data} {fb : List Data → Data → Data}
+    (hv : val.computes fv)
+    (hb : (body (PB.bound 0)).computes
+            (fun env => fb env.dropLast ((env.getLast?).getD (Data.l [])))) :
+    (PB.letIn val body).computes (fun env => fb env (fv env)) := by
+  sorry
+
+/-! ## Alternative reasoning layers
+
+The `PB.computes` framework above is awkward because the universal quantification
+over `env` is coupled to the depth `env.length` at which the PB is unfolded.
+Below are two lighter-weight alternatives. -/
+
+/-! ### Option A: pointwise `Prog`-level `simp` set
+
+Lifting eval rules to `@[simp]` lemmas lets you discharge most goals of the form
+`p.eval env = .some d` by `simp` plus at most one `rcases` on a list. -/
+
+@[simp] lemma Prog.var_eval {env : List Data} {i : ℕ} :
+    (Prog.var i).eval env = .some (env[i]?.getD (Data.l [])) := by
+  sorry
+
+@[simp] lemma Prog.empty_eval {env : List Data} :
+    Prog.empty.eval env = .some (Data.l []) := by
+  sorry
+
+@[simp] lemma Prog.cons_eval_simp {env : List Data} {h t : Prog} {dh dt : Data}
+    (hh : h.eval env = .some dh) (ht : t.eval env = .some dt) :
+    (Prog.cons h t).eval env = .some (Data.l (dh :: dt.asList)) := by
+  sorry
+
+@[simp] lemma Prog.elim_eval_nil {env : List Data} {v em cs : Prog}
+    (hv : v.eval env = .some (Data.l [])) :
+    (Prog.elim v em cs).eval env = em.eval env := by
+  sorry
+
+@[simp] lemma Prog.elim_eval_cons {env : List Data} {v em cs : Prog}
+    {head : Data} {tail : List Data}
+    (hv : v.eval env = .some (Data.l (head :: tail))) :
+    (Prog.elim v em cs).eval env = cs.eval (env ++ [head, Data.l tail]) := by
+  sorry
+
+@[simp] lemma Prog.letin_eval {env : List Data} {val rest : Prog} {dv : Data}
+    (hv : val.eval env = .some dv) :
+    (Prog.letin val rest).eval env = rest.eval (env ++ [dv]) := by
+  sorry
+
+@[simp] lemma Prog.eq_eval {env : List Data} {a b : Prog} {da db : Data}
+    (ha : a.eval env = .some da) (hb : b.eval env = .some db) :
+    (Prog.eq a b).eval env =
+      .some (if da = db then Data.l [Data.l []] else Data.l []) := by
+  sorry
+
+/-- Example: with the `simp` set above, the `tail` spec on a concrete env is short. -/
+example {env : List Data} {x : Prog} {dx : Data} (hx : x.eval env = .some dx) :
+    (Prog.elim x Prog.empty (Prog.var (env.length + 1))).eval env =
+      .some (Data.l dx.asList.tail) := by
+  rcases h : dx.asList with _ | ⟨head, tail⟩
+  · have hx' : x.eval env = .some (Data.l []) := by
+      rw [hx]; congr 1; rw [← Data.asList_l dx, h]
+    simp [Prog.elim_eval_nil hx']
+  · have hx' : x.eval env = .some (Data.l (head :: tail)) := by
+      rw [hx]; congr 1; rw [← Data.asList_l dx, h]
+    rw [Prog.elim_eval_cons hx', Prog.var_eval]
+    have hidx : (env ++ [head, Data.l tail])[env.length + 1]? = some (Data.l tail) := by
+      simp [List.getElem?_append_right]
+    simp only [hidx, Option.getD_some]
+    rfl
+
+/-! ### Option C: per-env `PB.computes_at`
+
+A pointwise version of `PB.computes` that talks about a specific env. -/
+
+/-- `PB.computes_at env impl d`: for every extension `ext` of `env`, when the
+program is unfolded at depth `(env ++ ext).length` and evaluated on `env ++ ext`,
+it yields `d`. The `∀ ext` quantifier captures the fact that well-formed PBs
+preserve their value under env-extension, which is essential for composing them
+inside binders. -/
+def PB.computes_at (env : List Data) (impl : PB) (d : Data) : Prop :=
+  ∀ ext : List Data,
+    (impl (env.length + ext.length)).eval (env ++ ext) = .some d
+
+/-- The basic per-env consequence, instantiating `ext := []`. -/
+lemma PB.computes_at.here {env : List Data} {impl : PB} {d : Data}
+    (h : PB.computes_at env impl d) :
+    (impl env.length).eval env = .some d := by
+  simpa using h []
+
+/-- Weakening: extending the env preserves `computes_at`. -/
+lemma PB.computes_at.extend {env ext : List Data} {impl : PB} {d : Data}
+    (h : PB.computes_at env impl d) :
+    PB.computes_at (env ++ ext) impl d := by
+  intro ext'
+  have := h (ext ++ ext')
+  simpa [List.append_assoc, Nat.add_assoc] using this
+
+@[simp, grind .]
+lemma PB.var_computes_at {env : List Data} {i : ℕ} (h : i < env.length) :
+    PB.computes_at env (fun _ => .var i) env[i] := by
+  intro ext
+  simp [Prog.eval, Prog.meteredEval, List.getElem?_append_left h]
   grind
+
+@[simp, grind .]
+lemma PB.empty_computes_at {env : List Data} :
+    PB.computes_at env PB.empty (Data.l []) := by
+  intro ext
+  simp [PB.empty, Prog.eval, Prog.meteredEval]
+
+@[simp, grind .]
+lemma PB.cons_computes_at {env : List Data} {h t : PB} {dh dt : Data}
+    (hh : PB.computes_at env h dh) (ht : PB.computes_at env t dt) :
+    PB.computes_at env (PB.cons h t) (Data.l (dh :: dt.asList)) := by
+  intro ext
+  simpa [PB.cons] using Prog.cons_eval_simp (hh ext) (ht ext)
+
+/-- `elim` at a fixed env, nil branch. -/
+@[grind .]
+lemma PB.elim_nil_computes_at {env : List Data} {v em : PB} {cs : PB → PB → PB}
+    {dr : Data}
+    (hv : PB.computes_at env v (Data.l []))
+    (hem : PB.computes_at env em dr) :
+    PB.computes_at env (PB.elim v em cs) dr := by
+  intro ext
+  simp only [PB.elim]
+  rw [Prog.elim_eval_nil (hv ext)]
+  exact hem ext
+
+/-- `elim` at a fixed env, cons branch. The body hypothesis is a `PB.computes_at`
+on the env extended with `[head, Data.l tail]` (and any outer extension `ext`),
+applied to `cs` with the two slot-lookup PBs for `head` and `Data.l tail`. -/
+@[grind .]
+lemma PB.elim_cons_computes_at {env : List Data} {v em : PB} {cs : PB → PB → PB}
+    {head : Data} {tail : List Data} {dr : Data}
+    (hv : PB.computes_at env v (Data.l (head :: tail)))
+    (hcs : ∀ ext, PB.computes_at (env ++ ext ++ [head, Data.l tail])
+                    (cs (fun _ => .var (env.length + ext.length))
+                        (fun _ => .var (env.length + ext.length + 1))) dr) :
+    PB.computes_at env (PB.elim v em cs) dr := by
+  intro ext
+  simp only [PB.elim]
+  rw [Prog.elim_eval_cons (hv ext)]
+  have h := (hcs ext).here
+  simpa [List.append_assoc] using h
+
+/-- The two slot-lookup PBs appearing as arguments to `cs` in
+`PB.elim_cons_computes_at` compute `head` and `Data.l tail` respectively, viewed
+as `PB.computes_at` over the env extended with `[head, Data.l tail]`. -/
+lemma PB.elim_cons_head_var_computes_at {env ext : List Data}
+    {head : Data} {tail : Data} :
+    PB.computes_at (env ++ ext ++ [head, tail])
+      (fun _ => .var (env.length + ext.length)) head := by
+  have hlen : env.length + ext.length
+      < (env ++ ext ++ [head, tail]).length := by simp
+  grind [PB.var_computes_at hlen]
+
+lemma PB.elim_cons_tail_var_computes_at {env ext : List Data}
+    {head : Data} {tail : Data} :
+    PB.computes_at (env ++ ext ++ [head, tail])
+      (fun _ => .var (env.length + ext.length + 1)) tail := by
+  have hlen : env.length + ext.length + 1
+      < (env ++ ext ++ [head, tail]).length := by grind
+  grind [PB.var_computes_at hlen]
+
+/-- `PB.tail` at a fixed env, derived directly from `PB.elim_*_computes_at`. -/
+lemma PB.tail_computes_at {env : List Data} {x : PB} {dx : Data}
+    (hx : PB.computes_at env x dx) :
+    PB.computes_at env (PB.tail x) (Data.l dx.asList.tail) := by
+  cases h : dx.asList with
+  | nil =>
+    refine PB.elim_nil_computes_at ?_ ?_
+    · intro ext; have := hx ext; rw [this]; congr 1
+      rw [← Data.asList_l dx, h]
+    · simp
+  | cons head tail =>
+    unfold PB.tail
+    apply PB.elim_cons_computes_at (em := PB.empty) (cs := fun _h tl => tl)
+    · intro ext; rw [hx ext]; congr 1
+      rw [← Data.asList_l dx, h]
+    · intro ext
+      simpa using PB.elim_cons_tail_var_computes_at
+
+/-- `PB.head` at a fixed env, derived directly from `PB.elim_*_computes_at`. -/
+lemma PB.head_computes_at {env : List Data} {x : PB} {dx : Data}
+    (hx : PB.computes_at env x dx) :
+    PB.computes_at env (PB.head x) (dx.asList.headD (Data.l [])) := by
+  cases h : dx.asList with
+  | nil =>
+    refine PB.elim_nil_computes_at ?_ (by simp)
+    · intro ext; have := hx ext; rw [this]; congr 1
+      rw [← Data.asList_l dx, h]
+  | cons head tail =>
+    apply PB.elim_cons_computes_at
+    · intro ext; have := hx ext; rw [this]; congr 1
+      rw [← Data.asList_l dx, h]
+    · intro ext
+      simpa using PB.elim_cons_head_var_computes_at
+
+/-! ### Option B (mentioned for completeness): recover the ∀-quantified version
+
+`PB.computes` is implied by the per-env strengthened version pointwise: if `impl`
+computes-at every env, it computes the constant value function. -/
+lemma PB.computes_of_computes_at {impl : PB} {d : Data}
+    (h : ∀ env, PB.computes_at env impl d) :
+    impl.computes (fun _ => d) := by
+  intro env; exact (h env).here
 
 /-- Program that evaluates to the constant `a`. -/
 def constant (a : Data) : PB := match a with
   | Data.l [] => PB.empty
   | Data.l (x :: xs) => PB.cons (constant x) (constant (Data.l xs))
 
-@[simp]
-lemma constant_whileFree (a : Data) (n : ℕ) : (constant a n).WhileFree := by
+-- @[simp]
+-- lemma constant_whileFree (a : Data) (n : ℕ) : (constant a n).WhileFree := by
+--   induction a using Data.inductionL with
+--   | nil => simp [constant]
+--   | cons x xs ihx ihxs => simp [constant, ihx, ihxs]
+
+-- lemma constant.semantics (a : Data) {n : ℕ} :
+--     ((constant a n).meteredEvalT (by simp) []).1 = a := by
+--   sorry
+
+lemma constant_computes {env : List Data} {a : Data} :
+    (constant a).computes_at env a := by
   induction a using Data.inductionL with
   | nil => simp [constant]
-  | cons x xs ihx ihxs => simp [constant, ihx, ihxs]
-
-lemma constant.semantics (a : Data) {n : ℕ} :
-    ((constant a n).meteredEvalT (by simp) []).1 = a := by
-  sorry
+  | cons x xs ihx ihxs =>
+    simpa [constant] using PB.cons_computes_at ihx ihxs
 
 def encConst {α : Type} [DataEncode α] (a : α) : PB := constant (DataEncode.encode a)
 
 def PB.ifEq (a b : PB) (then_ else_ : PB) : PB :=
   .elim (PB.eq a b)
     else_
-    (fun _ _ => then_)
+    fun _ _ => then_
 
 ------------------------------------------------------
 ----------- Tools
@@ -420,7 +788,30 @@ def PB.snd (x : PB) : PB := head (tail x)
 -- Compute x => Option.some x
 def PB.some (x : PB) : PB := cons x empty
 
--- TODO for the semantics, the PBs could actually be typed...
+----------------- Typed computation
+
+def PB.computes_at_encoded {α : Type} [DataEncode α] (env : List Data) (x : PB) (a : α) : Prop :=
+    PB.computes_at env x (DataEncode.encode a)
+
+lemma PB.fst_computes_at_encoded {α β : Type} [DataEncode α] [DataEncode β]
+    {env : List Data} {x : PB} {a : α × β}
+    (hx : PB.computes_at_encoded env x a) :
+    PB.computes_at_encoded env (PB.fst x) a.fst := by
+  obtain ⟨a, b⟩ := a
+  simpa [Data.asList] using PB.head_computes_at hx
+
+lemma PB.snd_computes_at_encoded {α β : Type} [DataEncode α] [DataEncode β]
+    {env : List Data} {x : PB} {a : α × β}
+    (hx : PB.computes_at_encoded env x a) :
+    PB.computes_at_encoded env (PB.snd x) a.snd := by
+  obtain ⟨a, b⟩ := a
+  simpa [Data.asList] using PB.head_computes_at (PB.tail_computes_at hx)
+
+lemma PB.some_computes_at_encoded {α : Type} [DataEncode α]
+    {env : List Data} {x : PB} {a : α}
+    (hx : PB.computes_at_encoded env x a) :
+    PB.computes_at_encoded env (PB.some x) (Option.some a) := by
+  apply PB.cons_computes_at hx PB.empty_computes_at
 
 -------------------------------------------------------------------
 ---------------- Universal Turing Machine (simulation of a SingleTapeTM)
@@ -443,6 +834,14 @@ lemma encode_biTape (t : Turing.BiTape Symbol) :
 
 def bitape_write (t v : PB) : PB := PB.cons v t.tail
 
+lemma bitape_write_computes
+    {env : List Data} {p_t p_v : PB} {t : BiTape Symbol} {v : Option Symbol}
+    (h_t : PB.computes_at_encoded env p_t t)
+    (h_v : PB.computes_at_encoded env p_v v) :
+    PB.computes_at_encoded env (bitape_write p_t p_v) (t.write v) := by
+  simp only [PB.computes_at_encoded, encode_biTape, DataEncode_pair] at h_t h_v ⊢
+  apply PB.cons_computes_at h_v (PB.tail_computes_at h_t)
+
 -- /-- Prepend an `Option` to the `StackTape` -/
 -- @[scoped grind]
 -- def cons (x : Option Symbol) (xs : StackTape Symbol) : StackTape Symbol :=
@@ -458,6 +857,50 @@ def stackTape_cons (x st : PB) : PB :=
       (fun _ _ => PB.cons x st))
     (fun _ _ => PB.cons x st)
 
+lemma stackTape_cons_computes
+    {env : List Data} {p_x p_st : PB} {x : Option Symbol} {st : StackTape Symbol}
+    (h_x : PB.computes_at_encoded env p_x x)
+    (h_st : PB.computes_at_encoded env p_st st) :
+    (stackTape_cons p_x p_st).computes_at_encoded env (st.cons x) := by
+  simp only [PB.computes_at_encoded] at h_x h_st ⊢
+  -- Outer elim splits on `x`.
+  cases x with
+  | none =>
+    -- encode none = Data.l []
+    have hx0 : PB.computes_at env p_x (Data.l []) := by
+      simpa [DataEncode.encode] using h_x
+    refine PB.elim_nil_computes_at hx0 ?_
+    -- Inner elim splits on `st.toList`.
+    obtain ⟨l, hl⟩ := st
+    cases l with
+    | nil =>
+      -- encode st = Data.l [], encode (st.cons none) = Data.l []
+      have hst0 : PB.computes_at env p_st (Data.l []) := by
+        simpa [DataEncode.encode, StackTape.toList] using h_st
+      simpa [DataEncode.encode, StackTape.cons, StackTape.toList] using
+        PB.elim_nil_computes_at hst0 (PB.empty_computes_at)
+    | cons hd tl =>
+      -- encode st = Data.l (encode hd :: tl.map encode)
+      have hstc : PB.computes_at env p_st
+          (Data.l (DataEncode.encode hd :: (tl.map DataEncode.encode))) := by
+        simpa [DataEncode.encode, StackTape.toList, List.map] using h_st
+      apply PB.elim_cons_computes_at hstc
+        (head := DataEncode.encode hd) (tail := tl.map DataEncode.encode)
+      intro ext
+      -- cs body is `fun _ _ => PB.cons p_x p_st`; evaluate it.
+      have hcons := PB.cons_computes_at h_x h_st
+        (ext := ext ++ [DataEncode.encode hd, Data.l (tl.map DataEncode.encode)])
+      simpa [PB.cons, List.append_assoc] using hcons
+  | some a =>
+    -- encode (some a) = Data.l [encode a]
+    have hxc : PB.computes_at env p_x (Data.l [DataEncode.encode a]) := by
+      simpa [DataEncode.encode] using h_x
+    apply PB.elim_cons_computes_at hxc
+      (head := DataEncode.encode a) (tail := [])
+    intro ext
+    have hcons := PB.cons_computes_at h_x h_st
+      (ext := ext ++ [DataEncode.encode a, Data.l []])
+    simpa [PB.cons, List.append_assoc] using hcons
 
 def to_pair (a b : PB) : PB := PB.cons a (PB.cons b PB.empty)
 
