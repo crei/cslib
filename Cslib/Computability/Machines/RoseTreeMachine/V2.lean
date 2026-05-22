@@ -1260,6 +1260,67 @@ def eval_fun_graph (graph : PB) (arg : PB) : PB :=
         fun _ => acc)
     PB.empty graph
 
+/-- Semantic spec of `eval_fun_graph`: given an encoded graph (list of
+`(α × β)`-pairs) and an encoded argument `a : α`, returns
+`(graph.find? (·.1 = a)).map (·.2)`, i.e. `some y` for the first pair `(a, y)`
+in the graph, else `none`. -/
+lemma eval_fun_graph_computes
+    {α β : Type} [DataEncode α] [DataEncode β] [DecidableEq α]
+    {env : List Data} {p_graph p_arg : PB}
+    {graph : List (α × β)} {a : α}
+    (h_graph : p_graph.computes_at_encoded env graph)
+    (h_arg : p_arg.computes_at_encoded env a) :
+    (eval_fun_graph p_graph p_arg).computes_at_encoded env
+      ((graph.find? (fun p => p.1 = a)).map (·.2)) := by
+  -- The Lean-level step function for the fold.
+  let step : Option β → α × β → Option β :=
+    fun acc x => acc.elim (if x.1 = a then some x.2 else none) (fun _ => acc)
+  -- Once the accumulator is `some _`, it stays `some _`.
+  have stays : ∀ (l : List (α × β)) (b : β), l.foldl step (some b) = some b := by
+    intro l b
+    induction l with
+    | nil => simp
+    | cons hd tl ih => simp [step, ih]
+  -- `foldl step none` matches `find?`-then-`map snd`.
+  have key : ∀ l : List (α × β),
+      l.foldl step none = (l.find? (fun p => p.1 = a)).map (·.2) := by
+    intro l
+    induction l with
+    | nil => simp
+    | cons hd tl ih =>
+      simp only [List.foldl_cons, List.find?_cons]
+      by_cases h : hd.1 = a
+      · simp [step, h, stays]
+      · simp [step, h, ih]
+  rw [show (graph.find? (fun p => p.1 = a)).map (·.2)
+        = graph.foldl step none from (key graph).symm]
+  unfold eval_fun_graph
+  refine PB.fold_computes_at_encoded (a := (none : Option β)) (f := step)
+    (by simp [PB.computes_at_encoded, DataEncode.encode]) h_graph ?_
+  intro acc x ext
+  rcases acc with _ | v
+  · -- acc = none: step none x = if x.1 = a then some x.2 else none
+    refine PB.optionElim_computes_none (α := β)
+      PB.elim_cons_head_var_computes_at ?_
+    refine PB.ifEq_computes_at
+      (PB.fst_computes_at_encoded PB.elim_cons_tail_var_computes_at)
+      (by simpa using h_arg.extend) ?_ ?_
+    · intro h_enc
+      have h_eq : x.1 = a := DataEncode.h_inj h_enc
+      change PB.computes_at_encoded _ _ (step none x)
+      simp only [step, Option.elim_none, if_pos h_eq]
+      exact PB.some_computes_at_encoded
+        (PB.snd_computes_at_encoded PB.elim_cons_tail_var_computes_at)
+    · intro h_enc
+      have h_ne : x.1 ≠ a := fun h => h_enc (by rw [h])
+      simp [DataEncode.encode, step, h_ne]
+  · -- acc = some v: step (some v) x = some v
+    refine PB.optionElim_computes_some (α := β)
+      (PB.elim_cons_head_var_computes_at
+        (head := DataEncode.encode (some v : Option β))) ?_
+    intro ext'
+    simpa [List.append_assoc, step] using PB.elim_cons_head_var_computes_at.extend
+
 
 def cfg_state (cfg : PB) : PB := cfg.fst
 def cfg_bitape (cfg : PB) : PB := cfg.snd
