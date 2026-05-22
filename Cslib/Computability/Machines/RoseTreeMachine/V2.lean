@@ -628,6 +628,7 @@ lemma PB.computes_at.here {env : List Data} {impl : PB} {d : Data}
   simpa using h []
 
 /-- Weakening: extending the env preserves `computes_at`. -/
+@[simp]
 lemma PB.computes_at.extend {env ext : List Data} {impl : PB} {d : Data}
     (h : PB.computes_at env impl d) :
     PB.computes_at (env ++ ext) impl d := by
@@ -655,6 +656,49 @@ lemma PB.cons_computes_at {env : List Data} {h t : PB} {dh dt : Data}
   intro ext
   simpa [PB.cons] using Prog.cons_eval_simp (hh ext) (ht ext)
 
+lemma PB.eq_computes_at {env : List Data} {a b : PB} {da db : Data}
+    (ha : PB.computes_at env a da) (hb : PB.computes_at env b db) :
+    PB.computes_at env (PB.eq a b)
+      (if da = db then Data.l [Data.l []] else Data.l []) := by
+  intro ext
+  simpa [PB.eq] using Prog.eq_eval (ha ext) (hb ext)
+
+/-! ### Body-of-binder abstraction
+
+The hypothesis shape arising for the body of a binder (`elim`, `letin`, `fold`,
+…) is that the body PB, built from var-lookup PBs for each new binding,
+computes the result on the env extended with those bindings, for any outer
+extension `ext`. We package this as `PB.computes_at_body` with arity-typed
+convenience wrappers. -/
+
+/-- Depth-agnostic var-lookup PB: `PB.atSlot i = fun _ => .var i`. -/
+def PB.atSlot (i : ℕ) : PB := fun _ => .var i
+
+@[simp]
+lemma PB.atSlot_computes_at {env : List Data} {i : ℕ} (h : i < env.length) :
+    PB.computes_at env (PB.atSlot i) env[i] :=
+  PB.var_computes_at h
+
+/-- Body-of-binder hypothesis. `mkBody` is an arity-`bindings.length` body
+builder that receives the var-lookup PBs for each binding and produces a PB.
+The result must compute `dr` on `env` extended with `bindings` (under any
+outer extension `ext`). -/
+def PB.computes_at_body (env : List Data) (bindings : List Data)
+    (mkBody : (Fin bindings.length → PB) → PB) (dr : Data) : Prop :=
+  ∀ ext : List Data,
+    PB.computes_at (env ++ ext ++ bindings)
+      (mkBody (fun i => PB.atSlot (env.length + ext.length + i))) dr
+
+/-- Arity-1 convenience: one new binding `b`, body `body : PB → PB`. -/
+abbrev PB.computes_at_body₁ (env : List Data) (b : Data)
+    (body : PB → PB) (dr : Data) : Prop :=
+  PB.computes_at_body env [b] (fun a => body (a 0)) dr
+
+/-- Arity-2 convenience: two new bindings `b₁, b₂`, body `body : PB → PB → PB`. -/
+abbrev PB.computes_at_body₂ (env : List Data) (b₁ b₂ : Data)
+    (body : PB → PB → PB) (dr : Data) : Prop :=
+  PB.computes_at_body env [b₁, b₂] (fun a => body (a 0) (a 1)) dr
+
 /-- `elim` at a fixed env, nil branch. -/
 @[grind .]
 lemma PB.elim_nil_computes_at {env : List Data} {v em : PB} {cs : PB → PB → PB}
@@ -667,40 +711,40 @@ lemma PB.elim_nil_computes_at {env : List Data} {v em : PB} {cs : PB → PB → 
   rw [Prog.elim_eval_nil (hv ext)]
   exact hem ext
 
-/-- `elim` at a fixed env, cons branch. The body hypothesis is a `PB.computes_at`
-on the env extended with `[head, Data.l tail]` (and any outer extension `ext`),
-applied to `cs` with the two slot-lookup PBs for `head` and `Data.l tail`. -/
+/-- `elim` at a fixed env, cons branch. The body hypothesis is packaged as
+`PB.computes_at_body₂`: `cs`, applied to the var-lookup PBs for `head` and
+`Data.l tail`, computes `dr` on the env extended with `[head, Data.l tail]`. -/
 @[grind .]
 lemma PB.elim_cons_computes_at {env : List Data} {v em : PB} {cs : PB → PB → PB}
     {head : Data} {tail : List Data} {dr : Data}
     (hv : PB.computes_at env v (Data.l (head :: tail)))
-    (hcs : ∀ ext, PB.computes_at (env ++ ext ++ [head, Data.l tail])
-                    (cs (fun _ => .var (env.length + ext.length))
-                        (fun _ => .var (env.length + ext.length + 1))) dr) :
+    (hcs : PB.computes_at_body₂ env head (Data.l tail) cs dr) :
     PB.computes_at env (PB.elim v em cs) dr := by
   intro ext
   simp only [PB.elim]
   rw [Prog.elim_eval_cons (hv ext)]
   have h := (hcs ext).here
-  simpa [List.append_assoc] using h
+  simpa [PB.atSlot, List.append_assoc] using h
 
-/-- The two slot-lookup PBs appearing as arguments to `cs` in
-`PB.elim_cons_computes_at` compute `head` and `Data.l tail` respectively, viewed
-as `PB.computes_at` over the env extended with `[head, Data.l tail]`. -/
+/-- The slot-lookup PB for `head` in the body of an `elim` (or any 2-binding
+body). -/
 lemma PB.elim_cons_head_var_computes_at {env ext : List Data}
     {head : Data} {tail : Data} :
     PB.computes_at (env ++ ext ++ [head, tail])
-      (fun _ => .var (env.length + ext.length)) head := by
+      (PB.atSlot (env.length + ext.length)) head := by
+  show PB.computes_at _ (fun _ => .var (env.length + ext.length)) _
   have hlen : env.length + ext.length
       < (env ++ ext ++ [head, tail]).length := by simp
   grind [PB.var_computes_at hlen]
 
+/-- The slot-lookup PB for the second binding in the body of an `elim`. -/
 lemma PB.elim_cons_tail_var_computes_at {env ext : List Data}
     {head : Data} {tail : Data} :
     PB.computes_at (env ++ ext ++ [head, tail])
-      (fun _ => .var (env.length + ext.length + 1)) tail := by
+      (PB.atSlot (env.length + ext.length + 1)) tail := by
+  show PB.computes_at _ (fun _ => .var (env.length + ext.length + 1)) _
   have hlen : env.length + ext.length + 1
-      < (env ++ ext ++ [head, tail]).length := by grind
+      < (env ++ ext ++ [head, tail]).length := by simp; omega
   grind [PB.var_computes_at hlen]
 
 /-- `PB.tail` at a fixed env, derived directly from `PB.elim_*_computes_at`. -/
@@ -719,7 +763,7 @@ lemma PB.tail_computes_at {env : List Data} {x : PB} {dx : Data}
     · intro ext; rw [hx ext]; congr 1
       rw [← Data.asList_l dx, h]
     · intro ext
-      simpa using PB.elim_cons_tail_var_computes_at
+      exact PB.elim_cons_tail_var_computes_at
 
 /-- `PB.head` at a fixed env, derived directly from `PB.elim_*_computes_at`. -/
 lemma PB.head_computes_at {env : List Data} {x : PB} {dx : Data}
@@ -735,7 +779,7 @@ lemma PB.head_computes_at {env : List Data} {x : PB} {dx : Data}
     · intro ext; have := hx ext; rw [this]; congr 1
       rw [← Data.asList_l dx, h]
     · intro ext
-      simpa using PB.elim_cons_head_var_computes_at
+      exact PB.elim_cons_head_var_computes_at
 
 /-! ### Option B (mentioned for completeness): recover the ∀-quantified version
 
@@ -788,10 +832,28 @@ def PB.snd (x : PB) : PB := head (tail x)
 -- Compute x => Option.some x
 def PB.some (x : PB) : PB := cons x empty
 
+def PB.optionElim (x : PB) (noneCase : PB) (someCase : PB → PB) : PB :=
+  elim x noneCase (fun hd _ => someCase hd)
+
 ----------------- Typed computation
 
 def PB.computes_at_encoded {α : Type} [DataEncode α] (env : List Data) (x : PB) (a : α) : Prop :=
     PB.computes_at env x (DataEncode.encode a)
+
+/-- Encoded body-of-binder hypothesis: the body computes a typed value `a`
+under any outer env extension. -/
+abbrev PB.computes_at_body_encoded {α : Type} [DataEncode α]
+    (env : List Data) (bindings : List Data)
+    (mkBody : (Fin bindings.length → PB) → PB) (a : α) : Prop :=
+  PB.computes_at_body env bindings mkBody (DataEncode.encode a)
+
+abbrev PB.computes_at_body₁_encoded {α β : Type} [DataEncode α] [DataEncode β]
+    (env : List Data) (a : α) (body : PB → PB) (b : β) : Prop :=
+  PB.computes_at_body₁ env (DataEncode.encode a) body (DataEncode.encode b)
+
+abbrev PB.computes_at_body₂_encoded {α β γ : Type} [DataEncode α] [DataEncode β] [DataEncode γ]
+    (env : List Data) (a : α) (b : β) (body : PB → PB → PB) (c : γ) : Prop :=
+  PB.computes_at_body₂ env (DataEncode.encode a) (DataEncode.encode b) body (DataEncode.encode c)
 
 lemma PB.fst_computes_at_encoded {α β : Type} [DataEncode α] [DataEncode β]
     {env : List Data} {x : PB} {a : α × β}
@@ -813,6 +875,24 @@ lemma PB.some_computes_at_encoded {α : Type} [DataEncode α]
     PB.computes_at_encoded env (PB.some x) (Option.some a) := by
   apply PB.cons_computes_at hx PB.empty_computes_at
 
+lemma PB.optionElim_computes_none {α β : Type} [DataEncode α] [DataEncode β]
+    {env : List Data} {x : PB} {noneCase : PB} {someCase : PB → PB}
+    (hx : x.computes_at_encoded env (none : Option α))
+    {a : β}
+    (h_none : noneCase.computes_at_encoded env a) :
+    (PB.optionElim x noneCase someCase).computes_at_encoded env a := by
+  apply PB.elim_nil_computes_at hx h_none
+
+lemma PB.optionElim_computes_some {α β : Type} [DataEncode α] [DataEncode β]
+    {env : List Data} {x : PB} {noneCase : PB} {someCase : PB → PB}
+    {a : α}
+    (hx : x.computes_at_encoded env (Option.some a))
+    {b : β}
+    (h_some : PB.computes_at_body₁_encoded env a someCase b) :
+    (PB.optionElim x noneCase someCase).computes_at_encoded env b := by
+  apply PB.elim_cons_computes_at hx
+  intro ext
+  simpa [List.append_assoc] using (h_some ext).extend
 -------------------------------------------------------------------
 ---------------- Universal Turing Machine (simulation of a SingleTapeTM)
 ---------------------------------------------------------------------------
@@ -851,58 +931,45 @@ lemma bitape_write_computes
 --   | some a, ⟨l, hl⟩ => ⟨some a :: l, by grind⟩
 
 def stackTape_cons (x st : PB) : PB :=
-  PB.elim x
+  PB.optionElim x
     (PB.elim st
       PB.empty
       (fun _ _ => PB.cons x st))
-    (fun _ _ => PB.cons x st)
+    (fun _ => PB.cons x st)
 
+omit [Inhabited Symbol] [Fintype Symbol] in
 lemma stackTape_cons_computes
     {env : List Data} {p_x p_st : PB} {x : Option Symbol} {st : StackTape Symbol}
     (h_x : PB.computes_at_encoded env p_x x)
     (h_st : PB.computes_at_encoded env p_st st) :
     (stackTape_cons p_x p_st).computes_at_encoded env (st.cons x) := by
-  simp only [PB.computes_at_encoded] at h_x h_st ⊢
-  -- Outer elim splits on `x`.
   cases x with
   | none =>
-    -- encode none = Data.l []
-    have hx0 : PB.computes_at env p_x (Data.l []) := by
-      simpa [DataEncode.encode] using h_x
-    refine PB.elim_nil_computes_at hx0 ?_
-    -- Inner elim splits on `st.toList`.
+    apply PB.optionElim_computes_none h_x
     obtain ⟨l, hl⟩ := st
     cases l with
     | nil =>
-      -- encode st = Data.l [], encode (st.cons none) = Data.l []
-      have hst0 : PB.computes_at env p_st (Data.l []) := by
-        simpa [DataEncode.encode, StackTape.toList] using h_st
-      simpa [DataEncode.encode, StackTape.cons, StackTape.toList] using
-        PB.elim_nil_computes_at hst0 (PB.empty_computes_at)
+      simpa [DataEncode.encode] using
+        PB.elim_nil_computes_at (by simpa using h_st) (PB.empty_computes_at)
     | cons hd tl =>
-      -- encode st = Data.l (encode hd :: tl.map encode)
-      have hstc : PB.computes_at env p_st
-          (Data.l (DataEncode.encode hd :: (tl.map DataEncode.encode))) := by
-        simpa [DataEncode.encode, StackTape.toList, List.map] using h_st
-      apply PB.elim_cons_computes_at hstc
-        (head := DataEncode.encode hd) (tail := tl.map DataEncode.encode)
+      apply PB.elim_cons_computes_at (by simpa [DataEncode.encode] using h_st)
       intro ext
-      -- cs body is `fun _ _ => PB.cons p_x p_st`; evaluate it.
-      have hcons := PB.cons_computes_at h_x h_st
-        (ext := ext ++ [DataEncode.encode hd, Data.l (tl.map DataEncode.encode)])
-      simpa [PB.cons, List.append_assoc] using hcons
+      simpa using (PB.cons_computes_at h_x h_st).extend
   | some a =>
-    -- encode (some a) = Data.l [encode a]
-    have hxc : PB.computes_at env p_x (Data.l [DataEncode.encode a]) := by
-      simpa [DataEncode.encode] using h_x
-    apply PB.elim_cons_computes_at hxc
-      (head := DataEncode.encode a) (tail := [])
+    apply PB.optionElim_computes_some h_x
     intro ext
-    have hcons := PB.cons_computes_at h_x h_st
-      (ext := ext ++ [DataEncode.encode a, Data.l []])
-    simpa [PB.cons, List.append_assoc] using hcons
+    simpa using (PB.cons_computes_at (by simpa [DataEncode.encode] using h_x) h_st).extend
 
 def to_pair (a b : PB) : PB := PB.cons a (PB.cons b PB.empty)
+
+lemma to_pair_computes {α β : Type} [DataEncode α] [DataEncode β]
+    {env : List Data} {p_a p_b : PB}
+    {a : α} {b : β}
+    (h_a : p_a.computes_at_encoded env a)
+    (h_b : p_b.computes_at_encoded env b) :
+    (to_pair p_a p_b).computes_at_encoded env (a, b) := by
+  simpa [DataEncode.encode, to_pair] using
+    PB.cons_computes_at h_a (PB.cons_computes_at h_b PB.empty_computes_at)
 
 --- The head component of the bitape
 def bitape_head (t : PB) : PB := t.fst
@@ -910,6 +977,49 @@ def bitape_head (t : PB) : PB := t.fst
 def bitape_left (t : PB) : PB := t.snd.fst
 --- The right component of the bitape
 def bitape_right (t : PB) : PB := t.snd.snd
+
+omit [Inhabited Symbol] [Fintype Symbol]
+lemma bitape_head_computes {env : List Data} {p_t : PB} {t : BiTape Symbol}
+    (h_t : PB.computes_at_encoded env p_t t) :
+    (bitape_head p_t).computes_at_encoded env t.head := PB.head_computes_at h_t
+
+omit [Inhabited Symbol] [Fintype Symbol]
+lemma bitape_left_computes {env : List Data} {p_t : PB} {t : BiTape Symbol}
+    (h_t : PB.computes_at_encoded env p_t t) :
+    (bitape_left p_t).computes_at_encoded env t.left :=
+  PB.head_computes_at (PB.head_computes_at (PB.tail_computes_at h_t))
+
+omit [Inhabited Symbol] [Fintype Symbol]
+lemma bitape_right_computes {env : List Data} {p_t : PB} {t : BiTape Symbol}
+    (h_t : PB.computes_at_encoded env p_t t) :
+    (bitape_right p_t).computes_at_encoded env t.right :=
+  PB.head_computes_at (PB.tail_computes_at (PB.head_computes_at (PB.tail_computes_at h_t)))
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+lemma encode_stackTape_head (st : StackTape Symbol) :
+    (DataEncode.encode st).asList.headD (Data.l []) = DataEncode.encode st.head := by
+  obtain ⟨l, hl⟩ := st
+  cases l <;> simp [DataEncode.encode, StackTape.head, Data.asList]
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+lemma encode_stackTape_tail (st : StackTape Symbol) :
+    Data.l (DataEncode.encode st).asList.tail = DataEncode.encode st.tail := by
+  obtain ⟨l, hl⟩ := st
+  cases l <;> simp [DataEncode.encode, StackTape.tail, Data.asList]
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+lemma stackTape_head_computes_at_encoded {env : List Data} {p_st : PB} {st : StackTape Symbol}
+    (h_st : PB.computes_at_encoded env p_st st) :
+    (p_st.head).computes_at_encoded env st.head := by
+  unfold PB.computes_at_encoded
+  simpa [← encode_stackTape_head] using PB.head_computes_at h_st
+
+omit [Inhabited Symbol] [Fintype Symbol] in
+lemma stackTape_tail_computes_at_encoded {env : List Data} {p_st : PB} {st : StackTape Symbol}
+    (h_st : PB.computes_at_encoded env p_st st) :
+    (p_st.tail).computes_at_encoded env st.tail := by
+  unfold PB.computes_at_encoded
+  simpa [← encode_stackTape_tail] using PB.tail_computes_at h_st
 
 -- def move_left (t : BiTape Symbol) : BiTape Symbol :=
 --   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
@@ -920,6 +1030,18 @@ def bitape_move_left (t : PB) : PB :=
       (bitape_left t).tail
       (stackTape_cons (bitape_head t) (bitape_right t)))
 
+lemma bitape_move_left_computes
+    {env : List Data} {p_t : PB} {t : BiTape Symbol}
+    (h_t : PB.computes_at_encoded env p_t t) :
+    PB.computes_at_encoded env (bitape_move_left p_t) t.move_left := by
+  unfold PB.computes_at_encoded
+  rw [encode_biTape]
+  exact to_pair_computes
+    (stackTape_head_computes_at_encoded (bitape_left_computes h_t))
+    (to_pair_computes
+      (stackTape_tail_computes_at_encoded (bitape_left_computes h_t))
+      (stackTape_cons_computes (bitape_head_computes h_t) (bitape_right_computes h_t)))
+
 -- def move_right (t : BiTape Symbol) : BiTape Symbol :=
 --   ⟨t.right.head, StackTape.cons t.head t.left, t.right.tail⟩
 
@@ -928,6 +1050,18 @@ def bitape_move_right (t : PB) : PB :=
     (to_pair
       (stackTape_cons (bitape_head t) (bitape_left t))
       (bitape_right t).tail)
+
+lemma bitape_move_right_computes
+    {env : List Data} {p_t : PB} {t : BiTape Symbol}
+    (h_t : PB.computes_at_encoded env p_t t) :
+    PB.computes_at_encoded env (bitape_move_right p_t) t.move_right := by
+  unfold PB.computes_at_encoded
+  rw [encode_biTape]
+  exact to_pair_computes
+    (stackTape_head_computes_at_encoded (bitape_right_computes h_t))
+    (to_pair_computes
+      (stackTape_cons_computes (bitape_head_computes h_t) (bitape_left_computes h_t))
+      (stackTape_tail_computes_at_encoded (bitape_right_computes h_t)))
 
 instance : DataEncode Dir where
   encode := fun
@@ -946,6 +1080,20 @@ def bitape_move (tape dir : PB) : PB :=
   PB.ifEq dir (constant (DataEncode.encode Dir.left))
     (bitape_move_left tape)
     (bitape_move_right tape)
+
+lemma bitape_move_computes {env : List Data} {p_t p_dir : PB} {t : BiTape Symbol} {d : Dir}
+    (h_t : PB.computes_at_encoded env p_t t)
+    (h_dir : PB.computes_at_encoded env p_dir d) :
+    (bitape_move p_t p_dir).computes_at_encoded env (t.move d) := by
+  unfold PB.computes_at_encoded bitape_move PB.ifEq
+  simp only [PB.ifEq, constant, DataEncode_pair] at h_dir ⊢
+  cases d with
+  | left =>
+    rw [if_pos rfl]
+    exact bitape_move_left_computes h_t
+  | right =>
+    rw [if_neg (by simp)]
+    exact bitape_move_right_computes h_t
 
 -- /--
 -- Optionally perform a `move`, or do nothing if `none`.
