@@ -12,6 +12,7 @@ public import Std
 
 public import Cslib.Computability.Machines.SingleTapeTuring.Basic
 public import Mathlib.Data.Nat.Bits
+public import Mathlib.Data.List.ReduceOption
 
 /-!
 -- This is a proposal to define a machine model and related time and space measure
@@ -1715,6 +1716,87 @@ lemma list_map_computes {α β : Type} [DataEncode α] [DataEncode β]
     simp
   rwa [h_eq] at h_rev
 
+/-- Discards the `none` elements of a list of options, keeping the `some` payloads. -/
+def list_reduceOption (x : PB) : PB :=
+  reverse (PB.fold
+    (fun acc el => PB.optionElim el acc (fun y => PB.cons y acc))
+    PB.empty x)
+
+lemma list_reduceOption_computes {α : Type} [DataEncode α]
+    {env : List Data} {p : PB} {l : List (Option α)}
+    (h : p.computes_at_encoded env l) :
+    (list_reduceOption p).computes_at_encoded env l.reduceOption := by
+  unfold list_reduceOption
+  set step : List α → Option α → List α :=
+    fun acc el => match el with | none => acc | some y => y :: acc with step_def
+  -- Convert `reduceOption` to the foldl form of `step` (with reversed accumulator). We need
+  -- this generalized over the initial accumulator so the induction goes through.
+  have h_eq : ∀ (xs : List (Option α)) (init : List α),
+      (xs.foldl step init).reverse = init.reverse ++ xs.reduceOption := by
+    intro xs
+    induction xs with
+    | nil => intro init; simp [List.reduceOption]
+    | cons hd tl ih =>
+      intro init
+      cases hd with
+      | none => simpa [step_def] using ih init
+      | some y =>
+        have h1 : List.foldl step init (some y :: tl) = List.foldl step (y :: init) tl := by
+          simp [step_def]
+        rw [h1, ih (y :: init)]
+        simp [List.reduceOption]
+  have h_fold : (PB.fold
+        (fun acc el => PB.optionElim el acc (fun y => PB.cons y acc)) PB.empty p
+      ).computes_at_encoded env (l.foldl step []) := by
+    apply PB.fold_computes_at_encoded
+      (a := ([] : List α)) (f := step)
+      (by simp [PB.computes_at_encoded, DataEncode.encode]) h
+    intro acc el ext
+    have h_el : (PB.atSlot (env.length + ext.length + 1)).computes_at_encoded
+        (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el]) el := by
+      simpa [PB.computes_at_encoded] using
+        (PB.atSlot_last_computes_at (ext := ext ++ [DataEncode.encode acc])).extend
+    have h_acc : (PB.atSlot (env.length + ext.length)).computes_at_encoded
+        (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el]) acc := by
+      simpa [PB.computes_at_encoded] using
+        (PB.atSlot_last_computes_at (env := env) (ext := ext)
+          (d := DataEncode.encode acc)).extend (ext := [DataEncode.encode el])
+    cases el with
+    | none =>
+      simpa [step_def] using
+        PB.optionElim_computes_none (α := α) h_el h_acc
+    | some y =>
+      refine PB.optionElim_computes_some (α := α) h_el ?_
+      intro ext'
+      -- Inside someCase, the bound `y` lives at slot
+      -- `env.length + ext.length + 2 + ext'.length`; `acc` is still at `env.length + ext.length`.
+      set ext_inner :=
+        ext ++ [DataEncode.encode acc, DataEncode.encode (some y)] ++ ext' with ext_inner_def
+      have hlen : ext_inner.length = ext.length + 2 + ext'.length := by
+        simp [ext_inner_def, Nat.add_comm, Nat.add_left_comm]
+      have h_y :
+          PB.computes_at (env ++ ext_inner ++ [DataEncode.encode y])
+            (PB.atSlot (env.length + ext.length + 2 + ext'.length))
+            (DataEncode.encode y) := by
+        have h := PB.atSlot_last_computes_at
+          (env := env) (ext := ext_inner) (d := DataEncode.encode y)
+        rw [hlen] at h
+        convert h using 2
+        omega
+      have h_acc' :
+          PB.computes_at (env ++ ext_inner ++ [DataEncode.encode y])
+            (PB.atSlot (env.length + ext.length)) (DataEncode.encode acc) := by
+        have h := (h_acc :
+          PB.computes_at (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode (some y)])
+            _ (DataEncode.encode acc)).extend (ext := ext' ++ [DataEncode.encode y])
+        simpa [ext_inner_def, List.append_assoc] using h
+      have h_cons := PB.cons_computes_at h_y h_acc'
+      simp only [ext_inner_def] at h_cons
+      simpa [step_def, DataEncode.encode, Data.asList, List.append_assoc] using h_cons
+  have h_rev := reverse_computes h_fold
+  have h_eq₀ : (l.foldl step []).reverse = l.reduceOption := by simpa using h_eq l []
+  rwa [h_eq₀] at h_rev
+
 def list_head_option (input : PB) : PB :=
   PB.elim input PB.empty (fun hd _tl => PB.some hd)
 
@@ -1759,15 +1841,128 @@ lemma string_to_tape_computes {env : List Data} {p_input : PB} {input : List Sym
 def initial_config (q₀ : PB) (input : PB) : PB :=
   to_pair (PB.some q₀) (string_to_tape input)
 
-/-- Turn the final config to an output, by taking the head and the right part of the tape. -/
-def final_config_to_output (cfg : PB) : PB := PB.cons (bitape_head cfg.snd) (bitape_right cfg.snd)
+/-- Turn the final config to an output, by taking the head and the right part of the tape
+    and discarding the blank (`none`) cells. -/
+def final_config_to_output (cfg : PB) : PB :=
+  list_reduceOption (PB.cons (bitape_head cfg.snd) (bitape_right cfg.snd))
 
 /-- Implements a universal Single-Tape TM, assuming that the input contains the following:
 ((initialState, transitionFunction), input).
 If it terminates, the output is the tape contents under the head and to its right. -/
 def universal_tm (input : PB) :=
   final_config_to_output
-    (tm_main_loop input.fst.snd (initial_config input.fst.fst input.fst.snd))
+    (tm_main_loop input.fst.snd (initial_config input.fst.fst input.snd))
+
+lemma initial_config_computes [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
+    {env : List Data} {p_q₀ p_input : PB} {input : List Symbol}
+    (h_q₀ : p_q₀.computes_at_encoded env tm.q₀)
+    (h_input : p_input.computes_at_encoded env input) :
+    (initial_config p_q₀ p_input).computes_at_encoded env (tm.initCfg input) := by
+  -- `tm.initCfg input = ⟨some tm.q₀, BiTape.mk₁ input⟩`, and `encode` on `Cfg` goes
+  -- through the `(state, BiTape)` pair, so this matches `to_pair`.
+  exact to_pair_computes (PB.some_computes_at_encoded h_q₀) (string_to_tape_computes h_input)
+
+lemma final_config_to_output_computes [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
+    {env : List Data} {p_cfg : PB} {cfg : tm.Cfg}
+    (h_cfg : p_cfg.computes_at_encoded env cfg) :
+    (final_config_to_output p_cfg).computes_at_encoded env
+      (cfg.BiTape.head :: cfg.BiTape.right.toList).reduceOption := by
+  unfold final_config_to_output
+  have h_BiTape : (p_cfg.snd).computes_at_encoded env cfg.BiTape :=
+    PB.snd_computes_at_encoded (a := (cfg.state, cfg.BiTape)) h_cfg
+  have h_head := bitape_head_computes h_BiTape
+  have h_right := bitape_right_computes h_BiTape
+  -- The inner `cons` builds the encoding of `head :: right.toList` (a `List (Option Symbol)`),
+  -- then `list_reduceOption` discards the blanks.
+  have h_list : (PB.cons (bitape_head p_cfg.snd) (bitape_right p_cfg.snd)).computes_at_encoded env
+      (cfg.BiTape.head :: cfg.BiTape.right.toList) := by
+    change PB.computes_at env _ (DataEncode.encode (cfg.BiTape.head :: cfg.BiTape.right.toList))
+    simpa [DataEncode.encode, Data.asList] using PB.cons_computes_at h_head h_right
+  exact list_reduceOption_computes h_list
+
+lemma universal_tm_computes [Inhabited Symbol] [Fintype Symbol] [DecidableEq Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State] [DecidableEq tm.State]
+    {env : List Data} {p_input : PB} {input : List Symbol}
+    (h_input : p_input.computes_at_encoded env
+      ((tm.q₀,
+        (Fintype.elems : Finset tm.State).toList.map (fun q' =>
+          (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+            (fun c' => (c', tm.tr q' c'))))),
+       input))
+    (h_halts : ∃ n,
+        ((fun c => (tm.step c).getD c)^[n] (tm.initCfg input)).state = none) :
+    (universal_tm p_input).computes_at_encoded env
+      (let cfg := (fun c => (tm.step c).getD c)^[Nat.find h_halts] (tm.initCfg input)
+       (cfg.BiTape.head :: cfg.BiTape.right.toList).reduceOption) := by
+  unfold universal_tm
+  have h_fst := PB.fst_computes_at_encoded h_input
+  have h_q₀ := PB.fst_computes_at_encoded h_fst
+  have h_tr := PB.snd_computes_at_encoded h_fst
+  have h_inp := PB.snd_computes_at_encoded h_input
+  exact final_config_to_output_computes
+    (tm_main_loop_computes h_tr (initial_config_computes h_q₀ h_inp) h_halts)
+
+/-- The output of reading the tape from `BiTape.mk₁ l` (head + right, then discarding
+blanks) recovers `l`. -/
+private lemma reduceOption_mk₁_tape {Symbol : Type} (l : List Symbol) :
+    ((BiTape.mk₁ l).head :: (BiTape.mk₁ l).right.toList).reduceOption = l := by
+  have h : ∀ xs : List Symbol, (xs.map Option.some).reduceOption = xs := fun xs => by
+    induction xs with
+    | nil => rfl
+    | cons _ _ ih => simp [ih]
+  cases l <;> simp [BiTape.mk₁, Turing.StackTape.map_some_toList, h]
+
+/-- For a `SingleTapeTM` `tm` and any input `w`, if `tm` outputs `w'` on input `w`,
+then the universal Turing machine `universal_tm`, when given an encoding of `tm`
+together with `w`, computes `w'`.
+
+The encoded input has the shape `((tm.q₀, transitionTable), w)`, where
+`transitionTable` enumerates `tm.tr` over all `(state, head symbol)` pairs. -/
+theorem universal_tm_simulates [Inhabited Symbol] [Fintype Symbol] [DecidableEq Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State] [DecidableEq tm.State]
+    {env : List Data} {p_input : PB} {w w' : List Symbol}
+    (h_input : p_input.computes_at_encoded env
+      ((tm.q₀,
+        (Fintype.elems : Finset tm.State).toList.map (fun q' =>
+          (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+            (fun c' => (c', tm.tr q' c'))))),
+       w))
+    (h_out : tm.Outputs w w') :
+    (universal_tm p_input).computes_at_encoded env w' := by
+  -- Lift `tm.step` to a total step function; halting states are fixed points.
+  set step : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with hstep
+  have halt_fix : ∀ {c : tm.Cfg}, c.state = none → step c = c := by
+    rintro ⟨_, _⟩ rfl; rfl
+  have halt_fix_iter : ∀ (k : ℕ) {c : tm.Cfg}, c.state = none → step^[k] c = c := by
+    intro k _ hc
+    induction k with
+    | zero => rfl
+    | succ k ih => rw [Function.iterate_succ_apply', ih, halt_fix hc]
+  -- Convert `ReflTransGen` into an explicit step count via tail-induction.
+  obtain ⟨n, hn⟩ : ∃ n, step^[n] (tm.initCfg w) = tm.haltCfg w' := by
+    induction h_out with
+    | refl => exact ⟨0, rfl⟩
+    | tail _ h' ih =>
+      obtain ⟨n, hn⟩ := ih
+      refine ⟨n + 1, ?_⟩
+      rw [Function.iterate_succ_apply', hn]
+      show (tm.step _).getD _ = _
+      rw [show tm.step _ = some _ from h']; rfl
+  -- The halting hypothesis required by `universal_tm_computes`.
+  have h_halts : ∃ k, (step^[k] (tm.initCfg w)).state = none := ⟨n, by rw [hn]⟩
+  -- Determinism + stationarity: `Nat.find` of the halt index also reaches `haltCfg w'`.
+  have h_find : step^[Nat.find h_halts] (tm.initCfg w) = tm.haltCfg w' := by
+    have h_le : Nat.find h_halts ≤ n := Nat.find_le (by rw [hn])
+    have h_iter := halt_fix_iter (n - Nat.find h_halts) (Nat.find_spec h_halts)
+    rw [← Function.iterate_add_apply, Nat.add_sub_cancel' h_le, hn] at h_iter
+    exact h_iter.symm
+  -- Conclude via `universal_tm_computes`.
+  have h := universal_tm_computes (tm := tm) h_input h_halts
+  rw [show ((fun c => (tm.step c).getD c)^[Nat.find h_halts] (tm.initCfg w)) =
+    tm.haltCfg w' from h_find] at h
+  simpa [SingleTapeTM.haltCfg, reduceOption_mk₁_tape] using h
 
 end RoseTreeMachine
 
