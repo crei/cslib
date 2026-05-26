@@ -83,6 +83,32 @@ def PB.computes_at (env : List Data) (impl : PB) (d : Data) : Prop :=
   ∀ ext : List Data,
     (impl (env.length + ext.length)).eval (env ++ ext) = .some d
 
+-- TODO mabe we should think about using the following version of `computes_at`,
+-- which should be sufficient for most cases:
+-- (I think this was problematic at the binder bodies,
+-- where the body PB is parameterised over var-lookup PBs for the bindings,
+-- so the body PB itself needs to be depth-agnostic. But maybe we can still use this version for
+-- the body hypotheses, and then show that the body PBs are depth-agnostic as a consequence of
+-- their own `computes_at` hypotheses?)
+def PB.computes_at_v2 (impl : PB) (f : List Data → Data) : Prop :=
+  ∀ env : List Data, (impl (env.length)).eval env = .some (f env)
+
+def PB.outputsOSize (impl : PB) (s : List Data → ℕ) : Prop :=
+  ∃ a b, ∀ env : List Data, ∃ s' ≤ a * (s env) + b,
+    (((impl env.length).meteredEval env).map fun (d, _, _) => d.size) = .some s'
+
+def PB.usesOTime (impl : PB) (t : List Data → ℕ) : Prop :=
+  ∃ a b, ∀ env : List Data, ∃ t' ≤ a * (t env) + b,
+    (((impl env.length).meteredEval env).map fun (_, t'', _) => t'') = .some t'
+
+def PB.usesOSpace (impl : PB) (s : List Data → ℕ) : Prop :=
+  ∃ a b, ∀ env : List Data, ∃ s' ≤ a * (s env) + b,
+    (((impl env.length).meteredEval env).map fun (_, _, s'') => s'') = .some s'
+
+def PB.usesLinearTimeAndSpace (impl : PB) : Prop :=
+  PB.usesOTime impl (fun env => (Data.l env).size) ∧
+  PB.usesOSpace impl (fun env => (Data.l env).size)
+
 /-- The basic per-env consequence, instantiating `ext := []`. -/
 lemma PB.computes_at.here {env : List Data} {impl : PB} {d : Data}
     (h : PB.computes_at env impl d) :
@@ -106,19 +132,56 @@ lemma PB.var_computes_at {env : List Data} {i : ℕ} (h : i < env.length) :
   grind
 
 @[simp]
+lemma PB.var_computes_at_v2 {i : ℕ} :
+    PB.computes_at_v2 (fun _ => .var i) fun env => env[i]?.getD (Data.l []) := by
+  intro ext
+  simp [Prog.eval, Prog.meteredEval]
+
+@[simp]
 lemma PB.var_last_computes_at {env ext : List Data} {d : Data} :
     PB.computes_at (env ++ ext ++ [d])
       (fun _ => Prog.var (env.length + ext.length)) d := by
   have hlen : env.length + ext.length < (env ++ ext ++ [d]).length := by simp
   have h := PB.var_computes_at (env := env ++ ext ++ [d]) hlen
   convert h using 2
-  simp [List.getElem_append]
+  simp
 
 @[simp, grind .]
-lemma PB.empty_computes_at {env : List Data} :
-    PB.computes_at env PB.empty (Data.l []) := by
+lemma DB.var_usesOTime {env : List Data} {i : ℕ} (h : i < env.length) :
+    PB.usesOTime (fun _ => .var i) 1 := by
+  use 1, 0
+  intro ext
+  simp [Prog.meteredEval]
+
+@[simp]
+lemma PB.var_usesLinearTimeAndSpace {i : ℕ} :
+    PB.usesLinearTimeAndSpace (fun _ => .var i) := by
+  sorry
+
+
+@[simp, grind .]
+lemma PB.empty_computes_at {env : List Data} : PB.computes_at env PB.empty (Data.l []) := by
   intro ext
   simp [PB.empty, Prog.eval, Prog.meteredEval]
+
+@[simp, grind .]
+lemma PB.empty_outputsOSize : PB.outputsOSize PB.empty (fun _ => 1) := by
+  use 2, 0
+  simp [PB.empty, Prog.meteredEval]
+
+@[simp, grind .]
+lemma PB.empty_usesOTime : PB.usesOTime PB.empty 1 := by
+  use 1, 0
+  simp [PB.empty, Prog.meteredEval]
+
+@[simp, grind .]
+lemma PB.empty_usesOSpace : PB.usesOSpace PB.empty 1 := by
+  use 1, 0
+  simp [PB.empty, Prog.meteredEval]
+
+@[simp, grind .]
+lemma PB.empty_usesLinearTimeAndSpace : PB.usesLinearTimeAndSpace PB.empty := by
+  sorry
 
 @[simp, grind .]
 lemma PB.cons_computes_at {env : List Data} {h t : PB} {dh dt : Data}
@@ -126,6 +189,59 @@ lemma PB.cons_computes_at {env : List Data} {h t : PB} {dh dt : Data}
     PB.computes_at env (PB.cons h t) (Data.l (dh :: dt.asList)) := by
   intro ext
   simpa [PB.cons] using Prog.cons_eval_simp (hh ext) (ht ext)
+
+@[simp, grind .]
+lemma PB.cons_computes_at_v2 {h t : PB} {fh ft : List Data → Data}
+    (hh : PB.computes_at_v2 h fh) (ht : PB.computes_at_v2 t ft) :
+    PB.computes_at_v2 (PB.cons h t) (fun env => Data.l ((fh env) :: (ft env).asList)) := by
+  intro ext
+  simpa [PB.cons] using Prog.cons_eval_simp (hh ext) (ht ext)
+
+@[simp, grind .]
+lemma PB.cons_outputsOSize {h t : PB} {s_h s_t : List Data → ℕ}
+    (hh : PB.outputsOSize h s_h) (ht : PB.outputsOSize t s_t) :
+    PB.outputsOSize (PB.cons h t) (s_h + s_t) := by
+  obtain ⟨ah, bh, hh⟩ := hh
+  obtain ⟨a_t, b_t, ht⟩ := ht
+  refine ⟨max ah a_t, bh + b_t, fun env => ?_⟩
+  obtain ⟨sh', hsh_le, hsh_eq⟩ := hh env
+  obtain ⟨st', hst_le, hst_eq⟩ := ht env
+  -- TODO this proof can be simplified if we introduce 'Prog.sizeOfOutput' similar to 'Prog.eval'
+  rw [Part.eq_some_iff, Part.mem_map_iff] at hsh_eq hst_eq
+  obtain ⟨⟨dh, th, sph⟩, hh_mem, rfl⟩ := hsh_eq
+  obtain ⟨⟨dt, tt, spt⟩, ht_mem, rfl⟩ := hst_eq
+  refine ⟨dh.size + dt.size, ?_, ?_⟩
+  · calc dh.size + dt.size
+        ≤ (ah * s_h env + bh) + (a_t * s_t env + b_t) := Nat.add_le_add hsh_le hst_le
+      _ ≤ max ah a_t * s_h env + max ah a_t * s_t env + (bh + b_t) := by
+          have h1 := Nat.mul_le_mul_right (s_h env) (le_max_left ah a_t)
+          have h2 := Nat.mul_le_mul_right (s_t env) (le_max_right ah a_t)
+          omega
+      _ = max ah a_t * ((s_h + s_t) env) + (bh + b_t) := by
+          simp [Pi.add_apply, Nat.mul_add]
+  · have hh_eq : Prog.meteredEval env (h env.length) = .some (dh, th, sph) :=
+      Part.eq_some_iff.mpr hh_mem
+    have ht_eq : Prog.meteredEval env (t env.length) = .some (dt, tt, spt) :=
+      Part.eq_some_iff.mpr ht_mem
+    simp [PB.cons, Prog.meteredEval, hh_eq, ht_eq]
+
+@[simp, grind .]
+lemma PB.cons_usesOTime {h t : PB} {t_h t_t : List Data → ℕ}
+    (hh : PB.usesOTime h t_h) (ht : PB.usesOTime t t_t) :
+    PB.usesOTime (PB.cons h t) (t_h + t_t) := by
+  sorry
+
+@[simp, grind .]
+lemma PB.cons_usesOSpace {h t : PB} {s_h s_t : List Data → ℕ}
+    (hh : PB.usesOSpace h s_h) (ht : PB.usesOSpace t s_t) :
+    PB.usesOSpace (PB.cons h t) (fun env => max (s_h env) (s_t env)) := by
+  sorry
+
+@[simp, grind .]
+lemma PB.cons_preserves_linearity {h t : PB}
+    (hh : PB.usesLinearTimeAndSpace h) (ht : PB.usesLinearTimeAndSpace t) :
+    PB.usesLinearTimeAndSpace (PB.cons h t) := by
+  sorry
 
 lemma PB.eq_computes_at {env : List Data} {a b : PB} {da db : Data}
     (ha : PB.computes_at env a da) (hb : PB.computes_at env b db) :
@@ -144,6 +260,12 @@ convenience wrappers. -/
 
 /-- Depth-agnostic var-lookup PB: `PB.atSlot i = fun _ => .var i`. -/
 def PB.atSlot (i : ℕ) : PB := fun _ => .var i
+
+@[simp, grind .]
+lemma PB.atSlot_usesLinearTimeAndSpace {i : ℕ} :
+    PB.usesLinearTimeAndSpace (PB.atSlot i) := by
+  unfold PB.atSlot
+  simp [PB.var_usesLinearTimeAndSpace]
 
 @[simp]
 lemma PB.atSlot_computes_at {env : List Data} {i : ℕ} (h : i < env.length) :
@@ -229,6 +351,14 @@ lemma PB.elim_cons_tail_var_computes_at {env ext : List Data}
   have hlen : env.length + ext.length + 1
       < (env ++ ext ++ [head, tail]).length := by simp; omega
   grind [PB.var_computes_at hlen]
+
+@[simp, grind .]
+lemma PB.elim_preserves_linearity {v em : PB} {cs : PB → PB → PB}
+    (hv : PB.usesLinearTimeAndSpace v) (hem : PB.usesLinearTimeAndSpace em)
+    (hcs : ∀ i j, PB.usesLinearTimeAndSpace (cs (PB.atSlot i) (PB.atSlot j))) :
+    PB.usesLinearTimeAndSpace (PB.elim v em cs) := by
+  sorry
+
 
 /-- `fold` at a fixed env: lifts `Prog.fold_eval` pointwise. The body hypothesis
 is packaged as `PB.computes_at_body₂` parameterised over the current

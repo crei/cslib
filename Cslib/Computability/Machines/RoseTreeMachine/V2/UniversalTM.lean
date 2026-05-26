@@ -22,23 +22,27 @@ namespace Turing
 
 namespace RoseTreeMachine
 
+-- TODO Working on the resource bounds now.
+-- The proof outline should be:
+-- each iteration of the loop causes the accumulator to grow by at most a constant.
+-- this can actually be shown from the semantics and the proof that the tape size grows by at
+-- most a constant.
+-- then, we show that the time and space of each iteration is linear in its input.
+-- so overall, t iterations are computed in O(t^2) time and O(t) space.
+
 variable [Inhabited Symbol] [Fintype Symbol] [DataEncode Symbol]
 
 public instance : DataEncode (Turing.StackTape Symbol) where
   encode t := DataEncode.encode t.toList
   h_inj := by
     intro ⟨l₁, h₁⟩ ⟨l₂, h₂⟩ h
-    have : l₁ = l₂ := DataEncode.h_inj h
-    cases this; rfl
+    grind [DataEncode.h_inj h]
 
 public instance : DataEncode (Turing.BiTape Symbol) where
   encode t := DataEncode.encode (t.head, t.left, t.right)
   h_inj := by
     intro ⟨h₁, l₁, r₁⟩ ⟨h₂, l₂, r₂⟩ h
-    have heq := DataEncode.h_inj h
-    simp at heq
-    obtain ⟨hh, hl, hr⟩ := heq
-    cases hh; cases hl; cases hr; rfl
+    grind [DataEncode.h_inj h]
 
 omit [Inhabited Symbol] [Fintype Symbol] in
 lemma encode_biTape (t : Turing.BiTape Symbol) :
@@ -54,6 +58,17 @@ lemma bitape_write_computes
     PB.computes_at_encoded env (bitape_write p_t p_v) (t.write v) := by
   simp only [PB.computes_at_encoded, encode_biTape, DataEncode_pair] at h_t h_v ⊢
   apply PB.cons_computes_at h_v (PB.tail_computes_at h_t)
+
+@[simp]
+lemma bitape_usesLinearTimeAndSpace
+    {p_t p_v : PB}
+    (h_t : PB.usesLinearTimeAndSpace p_t)
+    (h_v : PB.usesLinearTimeAndSpace p_v) :
+    (bitape_write p_t p_v).usesLinearTimeAndSpace := by
+  unfold bitape_write PB.tail
+  apply PB.cons_preserves_linearity (h_v)
+  apply PB.elim_preserves_linearity (by grind) (by grind)
+  simp_all
 
 -- /-- Prepend an `Option` to the `StackTape` -/
 -- @[scoped grind]
@@ -174,6 +189,20 @@ lemma bitape_move_left_computes
     (to_pair_computes
       (stackTape_tail_computes_at_encoded (bitape_left_computes h_t))
       (stackTape_cons_computes (bitape_head_computes h_t) (bitape_right_computes h_t)))
+
+lemma bitape_move_left_uses_linear_time_and_space
+    {p_t : PB} (h_t : PB.usesLinearTimeAndSpace p_t) :
+    (bitape_move_left p_t).usesLinearTimeAndSpace := by
+  simp [h_t, bitape_move_left, to_pair, bitape_left, PB.fst, PB.snd, PB.tail, PB.head, stackTape_cons, bitape_head, bitape_right]
+  apply PB.cons_preserves_linearity
+  · apply PB.elim_preserves_linearity'
+    · apply PB.elim_preserves_linearity'
+      · grind --refine PB.elim_preserves_linearity' (by grind) (by grind) (by grind)
+      · grind
+      · grind
+    · grind
+    · sorry
+  · sorry
 
 -- def move_right (t : BiTape Symbol) : BiTape Symbol :=
 --   ⟨t.right.head, StackTape.cons t.head t.left, t.right.tail⟩
@@ -435,6 +464,14 @@ def singleTapeTM_step (tr : PB) (cfg : PB) : PB :=
         .some (to_pair
           tr_val.snd
           (bitape_optionMove (bitape_write tape tr_val.fst.fst) tr_val.fst.snd)))))
+
+-- TODO for space and time bounds, we need to prove for singleTapeTM_step, than:
+-- for any `env`,
+-- 1) the size of the output is the size of `env` plus a constant (not with a linear factor!)
+-- 2) the time and space required is linear in the size of `env`.
+-- the problematic bits are that we don't know what `tr` and `cfg` do, they are programs,
+-- we cannot just look at their outputs
+-- What is the right condition for `tr` and `cfg`?
 
 lemma singleTapeTM_step_computes [Inhabited Symbol] [Fintype Symbol]
     [DecidableEq Symbol] {tm : SingleTapeTM Symbol}

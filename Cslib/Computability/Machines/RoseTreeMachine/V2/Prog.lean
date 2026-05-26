@@ -40,12 +40,14 @@ For ergonomic construction with named binders use `PB` below. -/
 inductive Prog where
   | var (id : Var)
   /-- `letin val rest`: evaluate `val`, append the result to `env`, then evaluate `rest`. -/
+  -- TODO maybe scrap this
   | letin (val : Prog) (rest : Prog)
   | empty
   | cons (h t : Prog)
   /-- `elim v em cs`: if `v` evaluates to `empty`, run `em`; otherwise destructure into
       `head` and `tail` (both appended to `env`, in that order) and run `cs`. -/
   | elim (v : Prog) (em : Prog) (cs : Prog)
+  -- TOOD swap this out with `ifEq (a b then_ else_ : Prog)`.
   | eq (a b : Prog)
   /-- `fold body init list`: `init` and `list` produce starting accumulator and the input
       list; `body` runs once per element with `env` extended by `[acc, x]`. -/
@@ -69,6 +71,9 @@ def Prog.meteredEval (env : List Data) (p : Prog) : Part (Data × ℕ × ℕ) :=
   | .cons h t => do
     let (head, h_t, h_s) ← h.meteredEval env
     let (tail, t_t, t_s) ← t.meteredEval env
+    -- TODO is it correct that we don't charge for the size of the output?
+    -- probably yes, since the output size of both is (max h_s t_s), so there is just a
+    -- linear factor lost.
     return (Data.l (head :: tail.asList), 1 + h_t + t_t, max h_s t_s)
   | .elim v em cs => do
     let (v', t, s) ← v.meteredEval env
@@ -219,7 +224,7 @@ establish that the metered fix, projected to its data component, equals the
 non-metered `whileFrom_eval`. This is the key ingredient for `Prog.while_eval`.
 -/
 
-private noncomputable def Prog.metered_F (body : Prog) (env : List Data) :
+noncomputable def Prog.metered_F (body : Prog) (env : List Data) :
     ((Data × ℕ × ℕ) → Part (Data × ℕ × ℕ)) → (Data × ℕ × ℕ) → Part (Data × ℕ × ℕ) :=
   fun rec d_ts =>
     let (acc, t, s) := d_ts
