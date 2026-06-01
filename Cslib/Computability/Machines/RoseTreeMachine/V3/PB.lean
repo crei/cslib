@@ -124,6 +124,14 @@ def PB.computesFun₂ (env : List Data) (x y : Data) (body : PB → PB → PB) (
     t
     s
 
+/-- A body that ignores its two freshly-bound arguments satisfies `computesFun₂` as soon as the
+underlying program computes `out`: the two extra bindings are just an environment extension. -/
+lemma PB.computesFun₂_const {env : List Data} {x y : Data} {impl : PB} {out : Data}
+    (h : PB.computes env impl out) :
+    PB.computesFun₂ env x y (fun _ _ => impl) out := by
+  intro ext
+  simpa [List.append_assoc, Nat.add_assoc] using h (ext ++ [x, y])
+
 /-- A `PB.var` at the absolute level of the `j`-th freshly-bound variable reads `binds[j]`.
 This is the additive lookup used to discharge HOAS branch bodies (see `PB.elim_cons_computes`):
 the `j`-th binding introduced after `env ++ ext` sits at level `(env ++ ext).length + j`. -/

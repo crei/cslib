@@ -91,12 +91,12 @@ lemma stackTape_cons_computes
         PB.elim_nil_computes (by simpa using h_st) (PB.empty_computes)
     | cons hd tl =>
       apply PB.elim_cons_computes (by simpa [DataEncode.encode] using h_st)
-      intro ext
-      simpa using (PB.cons_computes h_x h_st).extend
+      simpa [DataEncode.encode, StackTape.cons] using
+        PB.computesFun₂_const (PB.cons_computes h_x h_st)
   | some a =>
     apply PB.optionElim_computes_some h_x
-    intro ext
-    simpa using (PB.cons_computes (by simpa [DataEncode.encode] using h_x) h_st).extend
+    simpa [DataEncode.encode, StackTape.cons] using
+      PB.computesFun₂_const (PB.cons_computes (by simpa [DataEncode.encode] using h_x) h_st)
 
 def to_pair (a b : PB) : PB := PB.cons a (PB.cons b PB.empty)
 
@@ -178,14 +178,17 @@ lemma bitape_move_left_uses_linear_time_and_space
     (bitape_move_left p_t).usesLinearTimeAndSpace := by
   simp [h_t, bitape_move_left, to_pair, bitape_left, PB.fst, PB.snd, PB.tail, PB.head, stackTape_cons, bitape_head, bitape_right]
   apply PB.cons_preserves_linearity
-  · apply PB.elim_preserves_linearity'
-    · apply PB.elim_preserves_linearity'
-      · grind --refine PB.elim_preserves_linearity' (by grind) (by grind) (by grind)
+  · apply PB.elim_preserves_linearity
+    · apply PB.elim_preserves_linearity
+      · refine PB.elim_preserves_linearity (by grind) (by grind) (by grind)
       · grind
       · grind
     · grind
+    · grind
+  · refine PB.cons_preserves_linearity ?_ (by grind)
+    refine PB.cons_preserves_linearity ?_ ?_
     · sorry
-  · sorry
+    · sorry
 
 -- def move_right (t : BiTape Symbol) : BiTape Symbol :=
 --   ⟨t.right.head, StackTape.cons t.head t.left, t.right.tail⟩
