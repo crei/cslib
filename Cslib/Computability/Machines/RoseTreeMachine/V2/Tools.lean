@@ -74,6 +74,9 @@ def PB.optionElim (x : PB) (noneCase : PB) (someCase : PB → PB) : PB :=
 
 ----------------- Typed computation
 
+-- def PB.computes_encoded {α β : Type} [DataEncode α] [DataEncode β] (x : PB) (f : α → β) : Prop :=
+--     PB.computes x (fun DataEncode.encode a)
+
 def PB.computes_at_encoded {α : Type} [DataEncode α] (env : List Data) (x : PB) (a : α) : Prop :=
     PB.computes_at env x (DataEncode.encode a)
 

@@ -60,15 +60,6 @@ end PB
 def PB.computes (impl : PB) (f : List Data → Data) : Prop :=
   ∀ env, (impl env.length).eval env = .some (f env)
 
--------------------------------------------------------------------
---- tools
--------------------------------------------
-
-/-- Example: `tail x` returns the tail of the list bound at variable `x`, or `empty`
-    if `x` denotes the empty list. Built with `elim`: the empty branch yields `empty`,
-    the cons branch ignores the head and projects the bound tail. -/
-def PB.tail (x : PB) : PB := PB.elim x PB.empty (fun _head tl => tl)
-def PB.head (x : PB) : PB := PB.elim x PB.empty (fun hd _tl => hd)
 
 /-! ### Per-env `PB.computes_at`
 
@@ -448,6 +439,9 @@ lemma PB.letIn_computes_at {env : List Data} {val : PB} {body : PB → PB}
   rw [Prog.letin_eval (hv ext)]
   have h := (hbody ext).here
   simpa [PB.atSlot] using h
+
+def PB.tail (x : PB) : PB := PB.elim x PB.empty (fun _head tl => tl)
+def PB.head (x : PB) : PB := PB.elim x PB.empty (fun hd _tl => hd)
 
 /-- `PB.tail` at a fixed env, derived directly from `PB.elim_*_computes_at`. -/
 lemma PB.tail_computes_at {env : List Data} {x : PB} {dx : Data}
