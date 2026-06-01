@@ -44,19 +44,21 @@ mutual
 `ProgSem σ i p x t s` means that on environment `σ` with variable height
 `i`, the program `p` evaluates to `x` and uses `t` time and `s` space. -/
 inductive ProgSem : (List Data) → Prog → Data → ℕ → ℕ → Prop
-  | var (h : σ[(i : ℕ)]? = some v) : ProgSem σ (.var i) v v.size v.size
+  | var :
+      ProgSem σ (.var (i : ℕ)) (σ[i]?.getD (Data.l []))
+        (σ[i]?.getD (Data.l [])).size (σ[i]?.getD (Data.l [])).size
   | empty : ProgSem σ .empty (Data.l []) 2 2
   | cons (h₁ : ProgSem σ head hd hd_t hd_s) (h₂ : ProgSem σ tail tl tl_t tl_s) :
       ProgSem σ (.cons head tail) (Data.l (hd :: tl.asList)) (hd_t + tl_t) (hd_s + tl_s)
   | elim_nil
       (h₁ : ProgSem σ val (Data.l []) t_v s_v)
       (h₂ : ProgSem σ empty r t_em s_em) :
-      ProgSem σ (.elim val empty _) r (t_v + em_v) (max s_v s_em)
+      ProgSem σ (.elim val empty _) r (t_v + t_em) (max s_v s_em)
   | elim_cons
       (h₁ : ProgSem σ val (Data.l (hd :: tl)) t_v s_v)
       (h₂ : ProgSem (σ ++ [hd, Data.l tl]) cons r t_em s_em) :
       -- TODO include the size of hd for time and space?
-      ProgSem σ (.elim val _ cons) r (t_v + em_v) (max s_v s_em)
+      ProgSem σ (.elim val _ cons) r (t_v + t_em) (max s_v s_em)
   | ifEq_eq
       (h_a : ProgSem σ p_a a t_a s_a)
       (h_b : ProgSem σ p_b a t_b s_b)
