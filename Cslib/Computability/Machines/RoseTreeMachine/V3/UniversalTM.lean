@@ -170,11 +170,14 @@ def bitape_move_left (t : PB) : PB :=
       (bitape_left t).tail
       (stackTape_cons (bitape_head t) (bitape_right t)))
 
+set_option trace.Meta.Tactic.solveByElim true in
 lemma bitape_move_left_computes
     {env : List Data} {p_t : PB} {t : BiTape Symbol}
     (h_t : PB.computes_enc env p_t t) :
     PB.computes_enc env (bitape_move_left p_t) t.move_left := by
-  computes [bitape_move_left, BiTape.move_left]
+  simp only [PB.computes_enc, computes_simp, bitape_move_left, BiTape.move_left,
+             bitape_right, bitape_head]
+  solve_by_elim (config := { maxDepth := 15 }) using computes
 
 lemma bitape_move_left_uses_linear_time_and_space
     {p_t : PB} (h_t : PB.usesLinearTimeAndSpace p_t) :
@@ -206,7 +209,8 @@ lemma bitape_move_right_computes
     {env : List Data} {p_t : PB} {t : BiTape Symbol}
     (h_t : PB.computes_enc env p_t t) :
     PB.computes_enc env (bitape_move_right p_t) t.move_right := by
-  computes [bitape_move_right, BiTape.move_right]
+  simp only [PB.computes_enc, computes_simp, bitape_move_right, BiTape.move_right] <;>
+    solve_by_elim (config := { maxDepth := 30 }) using computes
 
 instance : DataEncode Dir where
   encode := fun
