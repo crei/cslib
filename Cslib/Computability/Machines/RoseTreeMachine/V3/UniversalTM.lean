@@ -38,12 +38,14 @@ public instance : DataEncode (Turing.BiTape Symbol) where
     intro ⟨h₁, l₁, r₁⟩ ⟨h₂, l₂, r₂⟩ h
     grind [DataEncode.h_inj h]
 
+@[computes_simp]
 lemma encode_biTape (t : Turing.BiTape Symbol) :
     DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
     simp [DataEncode.encode]
 
 def bitape_write (t v : PB) : PB := PB.cons v t.tail
 
+@[computes]
 lemma bitape_write_computes
     {env : List Data} {p_t p_v : PB} {t : BiTape Symbol} {v : Option Symbol}
     (h_t : PB.computes_enc env p_t t)
@@ -76,6 +78,7 @@ def stackTape_cons (x st : PB) : PB :=
       (fun _ _ => PB.cons x st))
     (fun _ => PB.cons x st)
 
+@[computes]
 lemma stackTape_cons_computes
     {env : List Data} {p_x p_st : PB} {x : Option Symbol} {st : StackTape Symbol}
     (h_x : PB.computes_enc env p_x x)
@@ -100,6 +103,7 @@ lemma stackTape_cons_computes
 
 def to_pair (a b : PB) : PB := PB.cons a (PB.cons b PB.empty)
 
+@[computes]
 lemma to_pair_computes {α β : Type} [DataEncode α] [DataEncode β]
     {env : List Data} {p_a p_b : PB}
     {a : α} {b : β}
@@ -116,15 +120,18 @@ def bitape_left (t : PB) : PB := t.snd.fst
 --- The right component of the bitape
 def bitape_right (t : PB) : PB := t.snd.snd
 
+@[computes]
 lemma bitape_head_computes {env : List Data} {p_t : PB} {t : BiTape Symbol}
     (h_t : PB.computes_enc env p_t t) :
     (bitape_head p_t).computes_enc env t.head := PB.head_computes h_t
 
+@[computes]
 lemma bitape_left_computes {env : List Data} {p_t : PB} {t : BiTape Symbol}
     (h_t : PB.computes_enc env p_t t) :
     (bitape_left p_t).computes_enc env t.left :=
   PB.head_computes (PB.head_computes (PB.tail_computes h_t))
 
+@[computes]
 lemma bitape_right_computes {env : List Data} {p_t : PB} {t : BiTape Symbol}
     (h_t : PB.computes_enc env p_t t) :
     (bitape_right p_t).computes_enc env t.right :=
@@ -140,12 +147,14 @@ lemma encode_stackTape_tail (st : StackTape Symbol) :
   obtain ⟨l, hl⟩ := st
   cases l <;> simp [DataEncode.encode, StackTape.tail, Data.asList]
 
+@[computes]
 lemma stackTape_head_computes_enc {env : List Data} {p_st : PB} {st : StackTape Symbol}
     (h_st : PB.computes_enc env p_st st) :
     (p_st.head).computes_enc env st.head := by
   unfold PB.computes_enc
   simpa [← encode_stackTape_head] using PB.head_computes h_st
 
+@[computes]
 lemma stackTape_tail_computes_enc {env : List Data} {p_st : PB} {st : StackTape Symbol}
     (h_st : PB.computes_enc env p_st st) :
     (p_st.tail).computes_enc env st.tail := by
@@ -165,13 +174,7 @@ lemma bitape_move_left_computes
     {env : List Data} {p_t : PB} {t : BiTape Symbol}
     (h_t : PB.computes_enc env p_t t) :
     PB.computes_enc env (bitape_move_left p_t) t.move_left := by
-  unfold PB.computes_enc
-  rw [encode_biTape]
-  exact to_pair_computes
-    (stackTape_head_computes_enc (bitape_left_computes h_t))
-    (to_pair_computes
-      (stackTape_tail_computes_enc (bitape_left_computes h_t))
-      (stackTape_cons_computes (bitape_head_computes h_t) (bitape_right_computes h_t)))
+  computes [bitape_move_left, BiTape.move_left]
 
 lemma bitape_move_left_uses_linear_time_and_space
     {p_t : PB} (h_t : PB.usesLinearTimeAndSpace p_t) :
@@ -203,13 +206,7 @@ lemma bitape_move_right_computes
     {env : List Data} {p_t : PB} {t : BiTape Symbol}
     (h_t : PB.computes_enc env p_t t) :
     PB.computes_enc env (bitape_move_right p_t) t.move_right := by
-  unfold PB.computes_enc
-  rw [encode_biTape]
-  exact to_pair_computes
-    (stackTape_head_computes_enc (bitape_right_computes h_t))
-    (to_pair_computes
-      (stackTape_cons_computes (bitape_head_computes h_t) (bitape_left_computes h_t))
-      (stackTape_tail_computes_enc (bitape_right_computes h_t)))
+  computes [bitape_move_right, BiTape.move_right]
 
 instance : DataEncode Dir where
   encode := fun

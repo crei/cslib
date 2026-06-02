@@ -8,6 +8,7 @@ module
 
 public import Cslib.Computability.Machines.RoseTreeMachine.V3.Prog
 public import Cslib.Computability.Machines.RoseTreeMachine.V3.DataEncode
+public import Cslib.Computability.Machines.RoseTreeMachine.V3.ComputesAttr
 
 /-! # RoseTreeMachine V2 — PB
 
@@ -87,13 +88,41 @@ lemma PB.var_computes {env : List Data} {i : ℕ} (h : i < env.length) :
   rw [← hval]
   exact ProgSem.var
 
-@[simp, grind .]
+/-- The first of two freshly-bound variables (at absolute level `(env ++ ext).length`) reads
+back the first bound value `x`. This is the leaf used by the `computesFun₂` bridge when a binder
+body projects out its first argument (e.g. the `head` branch of `PB.elim`). -/
+@[computes]
+lemma PB.var_computes_fst {env ext : List Data} {x y : Data} :
+    PB.computes (env ++ ext ++ [x, y]) (PB.var (env.length + ext.length)) x := by
+  have h : env.length + ext.length < (env ++ ext ++ [x, y]).length := by
+    simp [List.length_append]
+  have hv := PB.var_computes (env := env ++ ext ++ [x, y]) (i := env.length + ext.length) h
+  have he : (env ++ ext ++ [x, y])[env.length + ext.length] = x := by
+    rw [List.getElem_append_right (by simp [List.length_append])]
+    simp [List.length_append]
+  rwa [he] at hv
+
+/-- The second of two freshly-bound variables (at absolute level `(env ++ ext).length + 1`) reads
+back the second bound value `y`. This is the leaf used by the `computesFun₂` bridge when a binder
+body projects out its second argument (e.g. the `tail` branch of `PB.elim`). -/
+@[computes]
+lemma PB.var_computes_snd {env ext : List Data} {x y : Data} :
+    PB.computes (env ++ ext ++ [x, y]) (PB.var (env.length + ext.length + 1)) y := by
+  have h : env.length + ext.length + 1 < (env ++ ext ++ [x, y]).length := by
+    simp [List.length_append]; omega
+  have hv := PB.var_computes (env := env ++ ext ++ [x, y]) (i := env.length + ext.length + 1) h
+  have he : (env ++ ext ++ [x, y])[env.length + ext.length + 1] = y := by
+    rw [List.getElem_append_right (by simp [List.length_append])]
+    simp [List.length_append]
+  rwa [he] at hv
+
+@[simp, grind ., computes]
 lemma PB.empty_computes {env : List Data} :
     PB.computes env PB.empty (Data.l []) := by
   intro ext
   exact ⟨2, 2, ProgSem.empty⟩
 
-@[simp, grind .]
+@[simp, grind ., computes]
 lemma PB.cons_computes {env : List Data} {h t : PB} {dh dt : Data}
     (hh : PB.computes env h dh) (ht : PB.computes env t dt) :
     PB.computes env (PB.cons h t) (Data.l (dh :: dt.asList)) := by
@@ -126,11 +155,40 @@ def PB.computesFun₂ (env : List Data) (x y : Data) (body : PB → PB → PB) (
 
 /-- A body that ignores its two freshly-bound arguments satisfies `computesFun₂` as soon as the
 underlying program computes `out`: the two extra bindings are just an environment extension. -/
+@[computes]
 lemma PB.computesFun₂_const {env : List Data} {x y : Data} {impl : PB} {out : Data}
     (h : PB.computes env impl out) :
     PB.computesFun₂ env x y (fun _ _ => impl) out := by
   intro ext
   simpa [List.append_assoc, Nat.add_assoc] using h (ext ++ [x, y])
+
+/-- Bridge from a uniform `PB.computes` goal to `computesFun₂`: if, under any extension `ext`, the
+binder body — with its two arguments instantiated to the freshly-bound variables — computes `out`,
+then the body satisfies `computesFun₂`. This reduces a `computesFun₂` obligation to an ordinary
+`PB.computes` goal that the same proof search continues on, with the bound variables discharged by
+`PB.var_computes_fst`/`PB.var_computes_snd`. -/
+lemma PB.computesFun₂_intro {env : List Data} {x y : Data} {body : PB → PB → PB} {out : Data}
+    (h : ∀ ext : List Data, PB.computes (env ++ ext ++ [x, y])
+          (body (PB.var (env.length + ext.length)) (PB.var (env.length + ext.length + 1))) out) :
+    PB.computesFun₂ env x y body out := by
+  intro ext
+  simpa using (h ext).here
+
+/-- A binder body that projects out its first argument (e.g. `PB.head`'s branch) returns the first
+bound value. -/
+@[computes]
+lemma PB.computesFun₂_fst {env : List Data} {x y : Data} :
+    PB.computesFun₂ env x y (fun hd _ => hd) x := by
+  intro ext
+  exact (PB.var_computes_fst (ext := ext)).here
+
+/-- A binder body that projects out its second argument (e.g. `PB.tail`'s branch) returns the
+second bound value. -/
+@[computes]
+lemma PB.computesFun₂_snd {env : List Data} {x y : Data} :
+    PB.computesFun₂ env x y (fun _ tl => tl) y := by
+  intro ext
+  exact (PB.var_computes_snd (ext := ext)).here
 
 /-- A `PB.var` at the absolute level of the `j`-th freshly-bound variable reads `binds[j]`.
 This is the additive lookup used to discharge HOAS branch bodies (see `PB.elim_cons_computes`):
@@ -159,7 +217,7 @@ lemma PB.var_computesFun_zero {env binds : List Data} (ext : List Data) :
   simpa using PB.var_computesFun (j := 0) ext
 
 /-- `elim`, nil branch: `v` computes `[]`, so the empty branch `em` runs. -/
-@[simp, grind .]
+@[simp, grind ., computes]
 lemma PB.elim_nil_computes {env : List Data} {v em : PB} {cs : PB → PB → PB} {out : Data}
     (hv : PB.computes env v (Data.l []))
     (hem : PB.computes env em out) :
@@ -172,7 +230,7 @@ lemma PB.elim_nil_computes {env : List Data} {v em : PB} {cs : PB → PB → PB}
 
 /-- `elim`, cons branch: `v` computes `head :: tail`, so the body `cs` runs on the env
 extended with `[head, Data.l tail]`. -/
-@[simp, grind .]
+@[simp, grind ., computes]
 lemma PB.elim_cons_computes {env : List Data} {v em : PB} {cs : PB → PB → PB}
     {head : Data} {tail : List Data} {out : Data}
     (hv : PB.computes env v (Data.l (head :: tail)))

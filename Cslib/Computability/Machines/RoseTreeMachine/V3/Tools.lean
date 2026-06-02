@@ -38,6 +38,7 @@ def PB.tail (x : PB) : PB := .elim x .empty (fun _hd tl => tl)
 /-- Returns the head of a list-valued builder (`Data.l []` when empty). -/
 def PB.head (x : PB) : PB := .elim x .empty (fun hd _tl => hd)
 
+@[computes]
 lemma PB.tail_computes {env : List Data} {x : PB} {dx : Data} (hx : PB.computes env x dx) :
     PB.computes env (.tail x) (Data.l dx.asList.tail) := by
   obtain ⟨dx⟩ := dx
@@ -48,6 +49,7 @@ lemma PB.tail_computes {env : List Data} {x : PB} {dx : Data} (hx : PB.computes 
     intro ext
     simpa using PB.var_computesFun ext
 
+@[computes]
 lemma PB.head_computes {env : List Data} {x : PB} {dx : Data}
     (hx : PB.computes env x dx) :
     PB.computes env (PB.head x) (dx.asList.headD (Data.l [])) := by
@@ -101,6 +103,7 @@ def PB.optionElim (x noneCase : PB) (someCase : PB → PB) : PB :=
 --     (env : List Data) (a : α) (b : β) (body : PB → PB → PB) (c : γ) : Prop :=
 --   PB.computes_at_body₂ env (DataEncode.encode a) (DataEncode.encode b) body (DataEncode.encode c)
 
+@[computes]
 lemma PB.fst_computes_enc {α β : Type} [DataEncode α] [DataEncode β]
     {env : List Data} {x : PB} {a : α × β}
     (hx : PB.computes_enc env x a) :
@@ -108,6 +111,7 @@ lemma PB.fst_computes_enc {α β : Type} [DataEncode α] [DataEncode β]
   obtain ⟨a, b⟩ := a
   simpa [Data.asList] using PB.head_computes hx
 
+@[computes]
 lemma PB.snd_computes_enc {α β : Type} [DataEncode α] [DataEncode β]
     {env : List Data} {x : PB} {a : α × β}
     (hx : PB.computes_enc env x a) :
@@ -115,6 +119,7 @@ lemma PB.snd_computes_enc {α β : Type} [DataEncode α] [DataEncode β]
   obtain ⟨a, b⟩ := a
   simpa [Data.asList] using PB.head_computes (PB.tail_computes hx)
 
+@[computes]
 lemma PB.some_computes_enc {α : Type} [DataEncode α]
     {env : List Data} {x : PB} {a : α}
     (hx : PB.computes_enc env x a) :
