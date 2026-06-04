@@ -56,6 +56,8 @@ namespace BiTape
 
 variable {Symbol : Type}
 
+-- TODO remove this definition, just use `default`.
+
 /-- The empty `BiTape` -/
 def nil : BiTape Symbol := ⟨none, ∅, ∅⟩
 
@@ -67,6 +69,9 @@ instance : EmptyCollection (BiTape Symbol) :=
 
 @[simp]
 lemma empty_eq_nil : (∅ : BiTape Symbol) = nil := rfl
+
+@[simp]
+lemma nil_eq_default : (default : BiTape Symbol) = nil := rfl
 
 /--
 Given a `List` of `Symbol`s, construct a `BiTape` by mapping the list to `some` elements
@@ -198,6 +203,11 @@ lemma get_optionMove (t : BiTape Symbol) (d : Option Dir) (p : ℤ) :
     (t.optionMove d).get p = t.get (p + optionDirToInt d) := by
   unfold optionMove optionDirToInt
   grind [move]
+
+@[simp, scoped grind =]
+lemma get_move (t : BiTape Symbol) (d : Dir) (p : ℤ) :
+    (t.move d).get p = t.get (p + optionDirToInt (some d)) := by
+  cases d <;> grind
 
 @[simp, scoped grind =]
 lemma get_move_right_iterate (t : BiTape Symbol) (n : ℕ) (p : ℤ) :
