@@ -11,7 +11,6 @@ public import Mathlib.Algebra.Order.BigOperators.Group.Finset
 public import Mathlib.Computability.Language
 public import Cslib.Foundations.Data.BiTape
 public import Cslib.Foundations.Data.RelatesInSteps
-public import Cslib.Computability.Machines.TuringCommon
 
 /-!
 # Multi-Tape Turing Machines
@@ -71,7 +70,7 @@ structure TransitionOut (k : ℕ) (Symbol State : Type) where
   /-- The movement (attempt) of the input head. -/
   inputMove : Option Dir
   /-- Actions on the work tapes: optionally a symbol to write and the head movement. -/
-  stmts : Fin k → (Option (Option Symbol) × Option Dir)
+  stmts : Fin k → (Option (Option Symbol)) × (Option Dir)
   /-- An optional symbol to output. -/
   outS : Option Symbol
   /-- The successor state or none to halt. -/
@@ -166,10 +165,8 @@ def step (cfg : tm.Cfg) : Option tm.Cfg :=
       input := cfg.input,
       inputPos := moveInputPos cfg.inputPos inputMove,
       workTapes i := match stmts i with
-        | (none, none) => cfg.workTapes i
-        | (some sym, none) => cfg.workTapes i |>.write sym
-        | (none, some d) => cfg.workTapes i |>.move d
-        | (some sym, some d) => cfg.workTapes i |>.write sym |>.move d,
+        | (none, m) =>  cfg.workTapes i |>.optionMove m
+        | (some s, m) => cfg.workTapes i |>.write s |>.optionMove m
       output := match outS with
       | none => cfg.output
       | some s => cfg.output ++ [s]
@@ -210,14 +207,19 @@ section Space
 
 variable [Inhabited Symbol] [Fintype Symbol] (tm : MultiTapeTM k Symbol)
 
+/-- Convert an "optional movement" to an integer where positive is "right". -/
+@[simp, grind]
+def optionDirToInt : Option Dir → ℤ
+  | some .left => -1
+  | none => 0
+  | some .right => 1
+
 /-- The movements of the work tape heads after configuration `cfg`. -/
 def headMovements (cfg : tm.Cfg) : Fin k → ℤ
   | i => match cfg.state with
     | none => 0
-    | some q => match tm.transitionOutput q (tm.inputSymbol cfg) cfg.workTapes |>.stmts i |>.2 with
-      | none => 0
-      | some .left => -1
-      | some .right => 1
+    | some q => optionDirToInt
+      (tm.transitionOutput q (tm.inputSymbol cfg) cfg.workTapes |>.stmts i |>.2)
 
 /-- The head positions of the work tapes as a function of the number of steps, relative to
 the starting position in `cfg`. -/
@@ -248,7 +250,7 @@ lemma spaceUsed_zero_tapes_eq_zero (cfg : tm.Cfg) (t : ℕ) (h_zero : k = 0) :
   simp
 
 @[scoped grind .]
-lemma optionDirToInt_bound (d : Option Dir) :
+lemma OptionDirToInt_bound (d : Option Dir) :
     -1 ≤ optionDirToInt d ∧ optionDirToInt d ≤ 1 := by
   rcases d with _ | d
   · decide

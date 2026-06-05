@@ -9,7 +9,6 @@ module
 public import Cslib.Foundations.Data.BiTape
 public import Cslib.Foundations.Data.RelatesInSteps
 public import Mathlib.Algebra.Polynomial.Eval.Defs
-public import Cslib.Computability.Machines.TuringCommon
 
 /-!
 # Single-Tape Turing Machines
@@ -43,6 +42,7 @@ for convenience in composition of machines.
 
 We define a number of structures related to Turing machine computation:
 
+* `Stmt`: the write and movement operations a TM can do in a single step.
 * `SingleTapeTM`: the TM itself.
 * `Cfg`: the configuration of a TM, including internal and tape state.
 * `TimeComputable f`: a TM for computing `f`, packaged with a bound on runtime.
@@ -70,6 +70,21 @@ open BiTape StackTape
 
 variable {Symbol : Type}
 
+namespace SingleTapeTM
+
+/--
+A Turing machine "statement" is just a `Option`al command to move left or right,
+and write a symbol (i.e. an `Option Symbol`, where `none` is the blank symbol) on the `BiTape`
+-/
+structure Stmt (Symbol : Type) where
+  /-- The symbol to write at the current head position -/
+  symbol : Option Symbol
+  /-- The direction to move the tape head -/
+  movement : Option Dir
+deriving Inhabited
+
+end SingleTapeTM
+
 /--
 A single-tape Turing machine
 over the alphabet of `Option Symbol` (where `none` is the blank `BiTape` symbol).
@@ -83,7 +98,7 @@ structure SingleTapeTM Symbol [Inhabited Symbol] [Fintype Symbol] where
   (q₀ : State)
   /-- Transition function, mapping a state and a head symbol to a `Stmt` to invoke,
   and optionally the new state to transition to afterwards (`none` for halt) -/
-  (tr : State → Option Symbol → Stmt Symbol × Option State)
+  (tr : State → Option Symbol → SingleTapeTM.Stmt Symbol × Option State)
 
 namespace SingleTapeTM
 
@@ -102,6 +117,8 @@ variable [Inhabited Symbol] [Fintype Symbol] (tm : SingleTapeTM Symbol)
 instance : Inhabited tm.State := ⟨tm.q₀⟩
 
 instance : Fintype tm.State := tm.stateFintype
+
+instance inhabitedStmt : Inhabited (Stmt Symbol) := inferInstance
 
 /--
 The configurations of a Turing machine consist of:
@@ -143,27 +160,27 @@ def haltCfg (tm : SingleTapeTM Symbol) (s : List Symbol) : tm.Cfg := ⟨none, Bi
 /--
 The space used by a configuration is the space used by its tape.
 -/
-def Cfg.space_used (tm : SingleTapeTM Symbol) (cfg : tm.Cfg) : ℕ := cfg.BiTape.space_used
+def Cfg.spaceUsed (tm : SingleTapeTM Symbol) (cfg : tm.Cfg) : ℕ := cfg.BiTape.spaceUsed
 
 @[scoped grind =]
-lemma Cfg.space_used_initCfg (tm : SingleTapeTM Symbol) (s : List Symbol) :
-    (tm.initCfg s).space_used = max 1 s.length := BiTape.space_used_mk₁ s
+lemma Cfg.spaceUsed_initCfg (tm : SingleTapeTM Symbol) (s : List Symbol) :
+    (tm.initCfg s).spaceUsed = max 1 s.length := BiTape.spaceUsed_mk₁ s
 
 @[scoped grind =]
-lemma Cfg.space_used_haltCfg (tm : SingleTapeTM Symbol) (s : List Symbol) :
-    (tm.haltCfg s).space_used = max 1 s.length := BiTape.space_used_mk₁ s
+lemma Cfg.spaceUsed_haltCfg (tm : SingleTapeTM Symbol) (s : List Symbol) :
+    (tm.haltCfg s).spaceUsed = max 1 s.length := BiTape.spaceUsed_mk₁ s
 
-lemma Cfg.space_used_step {tm : SingleTapeTM Symbol} (cfg cfg' : tm.Cfg)
-    (hstep : tm.step cfg = some cfg') : cfg'.space_used ≤ cfg.space_used + 1 := by
+lemma Cfg.spaceUsed_step {tm : SingleTapeTM Symbol} (cfg cfg' : tm.Cfg)
+    (hstep : tm.step cfg = some cfg') : cfg'.spaceUsed ≤ cfg.spaceUsed + 1 := by
   obtain ⟨_ | q, tape⟩ := cfg
   · simp [step] at hstep
   · simp only [step] at hstep
     generalize hM : tm.tr q tape.head = result at hstep
     obtain ⟨⟨wr, dir⟩, q''⟩ := result
     cases hstep; cases dir with
-    | none => simp [Cfg.space_used, BiTape.optionMove, BiTape.space_used_write, hM]
-    | some d => simpa [Cfg.space_used, BiTape.optionMove, BiTape.space_used_write, hM] using
-        BiTape.space_used_move (tape.write wr) d
+    | none => simp [Cfg.spaceUsed, BiTape.optionMove, BiTape.spaceUsed_write, hM]
+    | some d => simpa [Cfg.spaceUsed, BiTape.optionMove, BiTape.spaceUsed_write, hM] using
+        BiTape.spaceUsed_move (tape.write wr) d
 
 end Cfg
 
@@ -198,8 +215,8 @@ lemma output_length_le_input_length_add_time (tm : SingleTapeTM Symbol) (l l' : 
     (h : tm.OutputsWithinTime l l' t) :
     l'.length ≤ max 1 l.length + t := by
   obtain ⟨steps, hsteps_le, hevals⟩ := h
-  grind [hevals.apply_le_apply_add (Cfg.space_used tm)
-      fun a b hstep ↦ Cfg.space_used_step a b (Option.mem_def.mp hstep)]
+  grind [hevals.apply_le_apply_add (Cfg.spaceUsed tm)
+      fun a b hstep ↦ Cfg.spaceUsed_step a b (Option.mem_def.mp hstep)]
 
 section Computers
 
@@ -367,23 +384,21 @@ This section defines the notion of time-bounded Turing Machines
 
 section TimeComputable
 
-variable [Inhabited Symbol] [Fintype Symbol]
-
 /-- A Turing machine + a time function +
 a proof it outputs `f` in at most `time(input.length)` steps. -/
 structure TimeComputable (f : List Symbol → List Symbol) where
   /-- the underlying bundled SingleTapeTM -/
   tm : SingleTapeTM Symbol
   /-- a bound on runtime -/
-  time_bound : ℕ → ℕ
-  /-- proof this machine outputs `f` in at most `time_bound(input.length)` steps -/
-  outputsFunInTime (a) : tm.OutputsWithinTime a (f a) (time_bound a.length)
+  timeBound : ℕ → ℕ
+  /-- proof this machine outputs `f` in at most `timeBound(input.length)` steps -/
+  outputsFunInTime (a) : tm.OutputsWithinTime a (f a) (timeBound a.length)
 
 
 /-- The identity map on Symbol is computable in constant time. -/
 def TimeComputable.id : TimeComputable (Symbol := Symbol) id where
   tm := idComputer
-  time_bound _ := 1
+  timeBound _ := 1
   outputsFunInTime _ := ⟨1, le_rfl, RelatesInSteps.single rfl⟩
 
 /--
@@ -402,36 +417,36 @@ then the time bound for the second machine still holds for that shorter input to
 -/
 def TimeComputable.comp {f g : List Symbol → List Symbol}
     (hf : TimeComputable f) (hg : TimeComputable g)
-    (h_mono : Monotone hg.time_bound) :
+    (h_mono : Monotone hg.timeBound) :
     (TimeComputable (g ∘ f)) where
   tm := compComputer hf.tm hg.tm
   -- perhaps it would be good to track the blow up separately?
-  time_bound l := (hf.time_bound l) + hg.time_bound (max 1 l + hf.time_bound l)
+  timeBound l := (hf.timeBound l) + hg.timeBound (max 1 l + hf.timeBound l)
   outputsFunInTime a := by
     have hf_outputsFun := hf.outputsFunInTime a
     have hg_outputsFun := hg.outputsFunInTime (f a)
     simp only [OutputsWithinTime, initCfg, compComputer_q₀_eq, Function.comp_apply,
       haltCfg] at hg_outputsFun hf_outputsFun ⊢
-    -- The computer reduces a to f a in time hf.time_bound a.length
+    -- The computer reduces a to f a in time hf.timeBound a.length
     have h_a_reducesTo_f_a :
         RelatesWithinSteps (compComputer hf.tm hg.tm).TransitionRelation
           (initialCfg hf.tm hg.tm a)
           (intermediateCfg hf.tm hg.tm (f a))
-          (hf.time_bound a.length) :=
+          (hf.timeBound a.length) :=
       comp_left_relatesWithinSteps hf.tm hg.tm a (f a)
-        (hf.time_bound a.length) hf_outputsFun
-    -- The computer reduces f a to g (f a) in time hg.time_bound (f a).length
+        (hf.timeBound a.length) hf_outputsFun
+    -- The computer reduces f a to g (f a) in time hg.timeBound (f a).length
     have h_f_a_reducesTo_g_f_a :
         RelatesWithinSteps (compComputer hf.tm hg.tm).TransitionRelation
           (intermediateCfg hf.tm hg.tm (f a))
           (finalCfg hf.tm hg.tm (g (f a)))
-          (hg.time_bound (f a).length) :=
+          (hg.timeBound (f a).length) :=
       comp_right_relatesWithinSteps hf.tm hg.tm (f a) (g (f a))
-        (hg.time_bound (f a).length) hg_outputsFun
+        (hg.timeBound (f a).length) hg_outputsFun
     -- Therefore, the computer reduces a to g (f a) in the sum of those times.
     have h_a_reducesTo_g_f_a := RelatesWithinSteps.trans h_a_reducesTo_f_a h_f_a_reducesTo_g_f_a
     apply RelatesWithinSteps.of_le h_a_reducesTo_g_f_a
-    refine Nat.add_le_add_left ?_ (hf.time_bound a.length)
+    refine Nat.add_le_add_left ?_ (hf.timeBound a.length)
     · apply h_mono
       -- Use the lemma about output length being bounded by input length + time
       exact output_length_le_input_length_add_time hf.tm _ _ _ (hf.outputsFunInTime a)
@@ -453,15 +468,13 @@ section PolyTimeComputable
 
 open Polynomial
 
-variable [Inhabited Symbol] [Fintype Symbol]
-
 /-- A Turing machine + a polynomial time function +
 a proof it outputs `f` in at most `time(input.length)` steps. -/
 structure PolyTimeComputable (f : List Symbol → List Symbol) extends TimeComputable f where
   /-- a polynomial time bound -/
   poly : Polynomial ℕ
   /-- proof that this machine outputs `f` in at most `time(input.length)` steps -/
-  bounds : ∀ n, time_bound n ≤ poly.eval n
+  bounds : ∀ n, timeBound n ≤ poly.eval n
 
 /-- A proof that the identity map on Symbol is computable in polytime. -/
 noncomputable def PolyTimeComputable.id : PolyTimeComputable (Symbol := Symbol) id where
@@ -476,7 +489,7 @@ A proof that the composition of two polytime computable functions is polytime co
 -/
 noncomputable def PolyTimeComputable.comp {f g : List Symbol → List Symbol}
     (hf : PolyTimeComputable f) (hg : PolyTimeComputable g)
-    (h_mono : Monotone hg.time_bound) :
+    (h_mono : Monotone hg.timeBound) :
     PolyTimeComputable (g ∘ f) where
   toTimeComputable := TimeComputable.comp hf.toTimeComputable hg.toTimeComputable h_mono
   poly := hf.poly + hg.poly.comp (1 + X + hf.poly)
