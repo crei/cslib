@@ -26,9 +26,11 @@ inductive Prog where
   /-- `elim v em cs`: if `v` evaluates to `empty`, run `em`; otherwise destructure into
       `head` and `tail` (both appended to `env`, in that order) and run `cs`. -/
   | elim (v em cs : Prog)
+  -- TODO ifEq is actually redundant
   | ifEq (x y then_ else_ : Prog)
   /-- `fold body init list`: `init` and `list` produce starting accumulator and the input
       list; `body` runs once per element with `env` extended by `[acc, x]`. -/
+  -- TODO fold is actually redundant
   | fold (body init list : Prog)
   /-- `while_ init body`: `init` produces the starting accumulator; `body` runs with
       `env` extended by the current accumulator. -/
