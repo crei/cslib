@@ -134,6 +134,10 @@ def moveInputPos {n : ℕ} (pos : Fin (n + 2)) (m : Option Dir) : Fin (n + 2) :=
   let p := (pos + optionDirToInt m).toNat
   if h : p < n + 2 then ⟨p, h⟩ else ⟨n + 1, by omega⟩
 
+@[simp, scoped grind =]
+lemma moveInputPos_none (pos : Fin (n + 2)) : moveInputPos pos none = pos := by
+  simp [moveInputPos, optionDirToInt]
+
 /-- The output of the transition function applied to a state and the set of topes. -/
 def transitionOutput (q : tm.State) (inputSymbol : Option Symbol) (work : Fin k → BiTape Symbol) :
     TransitionOut k Symbol tm.State :=

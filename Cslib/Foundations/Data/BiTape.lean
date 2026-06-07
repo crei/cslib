@@ -243,6 +243,19 @@ lemma moveInt_head (t : BiTape Symbol) (Δ : ℤ) :
   rw [show (moveInt t Δ).head = (moveInt t Δ).get 0 from rfl]
   grind [moveInt]
 
+@[simp, scoped grind =]
+lemma moveInt_moveInt (t : BiTape Symbol) (Δ₁ Δ₂ : ℤ) :
+  (t.moveInt Δ₁).moveInt Δ₂ = t.moveInt (Δ₁ + Δ₂) := by
+  sorry
+
+lemma move_eq_moveInt (t : BiTape Symbol) (d : Dir) : t.move d = t.moveInt (optionDirToInt (some d)) := by
+  sorry
+
+lemma moveLeft_eq_moveInt (t : BiTape Symbol) : t.moveLeft = t.moveInt (-1) := by
+  sorry
+
+lemma moveRight_eq_moveInt (t : BiTape Symbol) : t.moveRight = t.moveInt 1 := by
+  sorry
 
 end Move
 

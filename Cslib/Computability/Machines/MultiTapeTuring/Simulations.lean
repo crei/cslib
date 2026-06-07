@@ -53,10 +53,14 @@ def SimTr :
     | none => ⟨none, fun _ => ⟨none, some .left⟩, none, some .moveToStart⟩
     | some c => ⟨some .right, fun _ => ⟨some (some c), some .right⟩, none, some .copyInput⟩
   | .moveToStart => fun _ syms => match syms 0 with
-    | some c => ⟨none, fun _ => ⟨none, some .left⟩, none, some .moveToStart⟩
+    | some _ => ⟨none, fun _ => ⟨none, some .left⟩, none, some .moveToStart⟩
     | none => ⟨none, fun _ => ⟨none, some .right⟩, none, some (.runSingleTape tm.q₀)⟩
-  | .runSingleTape q => sorry
-  | .copyOutput => sorry
+  | .runSingleTape q => fun _ syms => match tm.tr q (syms 0) with
+    | ⟨⟨w, m⟩, some q'⟩ => ⟨none, fun _ => ⟨some w, m⟩, none, some (.runSingleTape q')⟩
+    | ⟨⟨w, m⟩, none⟩ => ⟨none, fun _ => ⟨some w, m⟩, none, some .copyOutput⟩
+  | .copyOutput => fun _ syms => match syms 0 with
+    | some c => ⟨none, fun _ => ⟨none, some .right⟩, some c, some .copyOutput⟩
+    | none => ⟨none, fun _ => ⟨none, none⟩, none, none⟩
 
 def MultiFromSingle : MultiTapeTM (k := 1) Symbol where
   State := SimState tm
@@ -88,7 +92,7 @@ lemma copyInput_innerStep
       simp [Function.update]
       grind
     rw [configs_succ, ih (by omega)]
-    simp [step, hinput, htransitionOut, moveInputPos, optionDirToInt, htape]
+    simp [step, hinput, htransitionOut, moveInputPos, htape]
     grind
 
 lemma copyInput_lastStep
@@ -96,7 +100,7 @@ lemma copyInput_lastStep
     (MultiFromSingle tm).step
       ⟨some .copyInput, input, ⟨1 + input.length, by omega⟩, fun _ => work, []⟩ =
       some ⟨some .moveToStart, input, ⟨1 + input.length, by omega⟩,
-          fun _ => work.move_left, []⟩ := by
+          fun _ => work.moveLeft, []⟩ := by
   have hinput : (MultiFromSingle tm).inputSymbol
       ⟨some .copyInput, input, ⟨1 + input.length, by omega⟩, fun _ => work, []⟩ = none := by
     grind
@@ -109,6 +113,7 @@ lemma copyInput_lastStep
   grind
 
 lemma moveToStart_semantics (input work : List Symbol) (ip : Fin (input.length + 2))
+    (h_ip : ip ≠ 0 ∧ ip ≠ input.length + 1)
     (t : ℕ) (h_lt : t < work.length - 1) :
     RelatesInSteps (MultiFromSingle tm).TransitionRelation
       ⟨some .moveToStart, input, ip, fun _ => (BiTape.mk₁ work).moveInt (t - 1), []⟩
@@ -121,19 +126,16 @@ lemma moveToStart_semantics (input work : List Symbol) (ip : Fin (input.length +
     rw [RelatesInSteps.succ'_iff]
     refine ⟨⟨some .moveToStart, input, ip, fun _ => (BiTape.mk₁ work).moveInt (t - 1), []⟩, ?_, ih⟩
     have h_inputSymbol : (MultiFromSingle tm).inputSymbol
-        ⟨some .moveToStart, input, ip, fun _ => (BiTape.mk₁ work).moveInt (t - 1), []⟩ ≠ none := by
-      grind
-    have htout (c : Symbol) : (MultiFromSingle tm).transitionOutput
-          .moveToStart (some c) (fun _ => (BiTape.mk₁ work).moveInt t) =
+        ⟨some .moveToStart, input, ip, fun _ => (BiTape.mk₁ work).moveInt t, []⟩ ≠ none := by
+      unfold inputSymbol
+      simp [h_ip]
+    have htout (c : Option Symbol) (h_c : c ≠ none) : (MultiFromSingle tm).transitionOutput
+          .moveToStart c (fun _ => (BiTape.mk₁ work).moveInt t) =
         ⟨none, fun _ => ⟨none, some .left⟩, none, some .moveToStart⟩ := by
       unfold MultiFromSingle SimTr
-      simp [inputSymbol]
-      sorry
-
-    --   grind
-    simp [TransitionRelation, step, h_inputSymbol, htout, moveInputPos, optionDirToInt]
-    ext i
-    simp [optionDirToInt]
+      simp [transitionOutput]
+      grind
+    simp [TransitionRelation, step, move_eq_moveInt, BiTape.optionDirToInt, htout _ h_inputSymbol]
     grind
 
 
