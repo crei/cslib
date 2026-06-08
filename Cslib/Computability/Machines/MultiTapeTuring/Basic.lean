@@ -409,23 +409,23 @@ lemma configs_isSome_of_haltsAtStep
   grind [haltsAtStep]
 
 
-@[simp]
-public lemma haltsOn_of_eval_eq_some
-    {tm : MultiTapeTM k Symbol} {tapes tapes' : Fin k → BiTape Symbol}
-    (h_eval : tm.eval tapes = .some tapes') :
-  tm.HaltsOn tapes := by
-  simp only [eval, Part.eq_some_iff, Part.mem_mk_iff] at h_eval
-  exact h_eval.1
+-- @[simp]
+-- public lemma haltsOn_of_eval_eq_some
+--     {tm : MultiTapeTM k Symbol} {tapes tapes' : Fin k → BiTape Symbol}
+--     (h_eval : tm.eval tapes = .some tapes') :
+--   tm.HaltsOn tapes := by
+--   simp only [eval, Part.eq_some_iff, Part.mem_mk_iff] at h_eval
+--   exact h_eval.1
 
-/-- Execute the Turing machine `tm` that always halts on initial tapes `tapes` and
-return the resulting tapes. -/
-@[expose, simp]
-public def eval_tot
-    (tm : MultiTapeTM k Symbol)
-    (h_alwaysHalts : ∀ tapes, tm.HaltsOn tapes)
-    (tapes : Fin k → BiTape Symbol) :
-    Fin k → BiTape Symbol :=
-  (tm.eval tapes).get (h_alwaysHalts tapes)
+-- /-- Execute the Turing machine `tm` that always halts on initial tapes `tapes` and
+-- return the resulting tapes. -/
+-- @[expose, simp]
+-- public def eval_tot
+--     (tm : MultiTapeTM k Symbol)
+--     (h_alwaysHalts : ∀ tapes, tm.HaltsOn tapes)
+--     (tapes : Fin k → BiTape Symbol) :
+--     Fin k → BiTape Symbol :=
+--   (tm.eval tapes).get (h_alwaysHalts tapes)
 
 end MultiTapeTM
 

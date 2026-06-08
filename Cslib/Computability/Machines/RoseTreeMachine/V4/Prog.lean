@@ -7,6 +7,7 @@ Authors: Christian Reitwiessner
 module
 
 public import Cslib.Computability.Machines.RoseTreeMachine.V3.Data
+public import Cslib.Computability.Machines.RoseTreeMachine.V3.DataEncode
 
 @[expose] public section
 
@@ -59,7 +60,7 @@ inductive Value where
   | data (d : Data)
   /-- A closure: the environment `env` captured when the enclosing `fn` was evaluated,
       paired with the abstraction's `body`. -/
-  | closure (env : List Value) (body : Prog)
+  | closure (body : Prog) (env : List Value)
 deriving Repr
 
 /-- Size (encoding length) of a value. Mirrors `Data.size` on first-order data; a closure
@@ -67,7 +68,7 @@ costs a small constant plus the sizes of its captured environment (the body is t
 constant-size code pointer and not counted). -/
 def Value.size : Value → ℕ
   | .data d => d.size
-  | .closure env _ => 2 + (env.map Value.size).sum
+  | .closure _ env => 2 + (env.map Value.size).sum
 
 /-- The empty first-order value. -/
 abbrev Value.empty : Value := .data (Data.l [])
@@ -115,10 +116,12 @@ inductive ProgSem : (List Value) → Prog → Value → ℕ → ℕ → Prop
         (max (max s_init s_body) s_w)
   /-- `fn body`: evaluate to a closure capturing the current environment `σ`. The cost is the
       size of the resulting closure (mirroring `var`, which charges the size of the value it
-      produces). -/
+      produces).
+      TODO: We could charge only the size of the referenced variables, which would make it
+      more or less free to create a non-capturing closure. -/
   | fn :
-      ProgSem σ (.fn body) (.closure σ body)
-        (Value.closure σ body).size (Value.closure σ body).size
+      ProgSem σ (.fn body) (.closure body σ)
+        (Value.closure body σ).size (Value.closure body σ).size
   /-- `app fn arg`: evaluate `fn` to a closure, evaluate `arg` to a value, then run the
       closure's body in the *captured* environment extended with the argument (static
       scoping). -/
@@ -133,7 +136,7 @@ closure `f` to the argument `v` yields `r` using `t` time and `s` space. Only cl
 applied; applying a first-order value has no derivation (the program is stuck). -/
 inductive AppSem : Value → Value → Value → ℕ → ℕ → Prop
   | mk (h_body : ProgSem (σ' ++ [v]) body r t s) :
-      AppSem (.closure σ' body) v r t s
+      AppSem (.closure body σ') v r t s
 
 /-- Iterates the closure `bodyVal` of a `while_` loop, threading the accumulator.
 `WhileSem bodyVal acc r t s` means that, starting from accumulator `acc`, repeatedly applying
@@ -154,8 +157,13 @@ inductive WhileSem : Value → Data → Data → ℕ → ℕ → Prop
 end
 
 /-- The program `p` computes the value `y` from the value `x` in time `t` and space `s`. -/
-def ComputesInTimeAndSpace (p : Prog) (x y : Data) (t : ℕ) (s : ℕ) : Prop :=
+def Prog.ComputesInTimeAndSpace (p : Prog) (x y : Data) (t : ℕ) (s : ℕ) : Prop :=
   ProgSem [.data x] p (.data y) t s
+
+def Prog.ComputesBoolFunInTimeAndSpace
+  (p : Prog) (f : List Bool → List Bool) (t : ℕ → ℕ) (s : ℕ → ℕ) : Prop :=
+  ∀ x, ∃ t' ≤ t x.length, ∃ s' ≤ s x.length,
+  Prog.ComputesInTimeAndSpace p (DataEncode.encode x) (DataEncode.encode (f x)) t' s'
 
 /-- The *in-place* (first-order) fragment of the functional language.
 
