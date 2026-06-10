@@ -71,13 +71,6 @@ lemma Computes.extend {impl : PB} {out : Value} (more : List Value)
   intro ext
   simpa [List.append_assoc, List.length_append, Nat.add_assoc] using h (more ++ ext)
 
-/-- Variant of `Computes.extend` matching the left-associated environment shape `env ++ a ++ b`
-produced by the eliminator combinators. -/
-lemma Computes.extend_append {impl : PB} {out : Value} (a b : List Value)
-    (h : Computes env impl out) :
-    Computes (env ++ a ++ b) impl out := by
-  rw [List.append_assoc]; exact h.extend (a ++ b)
-
 /-- Analogon of `Computes`, but as a statement of the pre-encoded value.
 This allows statements that `PB`s compute functions on lean datatypes. -/
 def ComputesEnc {α : Type} [DataEncode α] (env : List Value) (impl : PB) (x : α) :=
@@ -102,6 +95,23 @@ lemma var_computes_fresh {v : Value} (ext binds : List Value) :
     rw [List.getElem_append_right (by simp [List.length_append])]
     simp [List.length_append]
   simpa [hget] using var_computes (env := env ++ ext ++ (v :: binds)) hlt
+
+/-- The `j`-th freshly-bound argument: the variable at level `env.length + ext.length + j` reads
+`binds[j]` from the trailing bindings `binds`. Generalises `var_computes_fresh` to any position. -/
+lemma var_computes_fresh' (ext binds : List Value) {j : ℕ} (hj : j < binds.length) :
+    Computes (env ++ ext ++ binds) (PB.var (env.length + ext.length + j)) binds[j] := by
+  have hlt : env.length + ext.length + j < (env ++ ext ++ binds).length := by
+    simp only [List.length_append]; omega
+  have hget : (env ++ ext ++ binds)[env.length + ext.length + j]'hlt = binds[j] := by
+    rw [List.getElem_append_right (by simp [List.length_append])]
+    simp [List.length_append]
+  exact hget ▸ var_computes (env := env ++ ext ++ binds) hlt
+
+/-- A freshly-bound second argument: the variable at level `env.length + ext.length + 1` reads the
+second of the trailing bindings `v :: w :: binds`. Specialises `var_computes_fresh'` to `j = 1`. -/
+lemma var_computes_fresh2 {v w : Value} (ext binds : List Value) :
+    Computes (env ++ ext ++ (v :: w :: binds)) (PB.var (env.length + ext.length + 1)) w := by
+  exact var_computes_fresh' ext (v :: w :: binds) (j := 1) (by simp)
 
 @[simp]
 lemma empty_computes : Computes env empty (.data (.l [])) := by
@@ -151,11 +161,31 @@ lemma computesFun₂_branch {x y : Value} {body : PB → PB} {out : Value}
   intro ext
   simpa [List.length_append, Nat.add_assoc] using (h ext).here
 
+/-- Two-argument version of `computesFun₂_branch`: to run a branch `body` that uses both of its
+freshly-bound arguments, it suffices that `body` applied to the two fresh variables computes `out`
+in the extended environment. This hides the `Computes.here`/length bookkeeping of `computesFun₂`. -/
+lemma computesFun₂_branch2 {x y : Value} {body : PB → PB → PB} {out : Value}
+    (h : ∀ ext, (body (PB.var (env.length + ext.length))
+        (PB.var (env.length + ext.length + 1))).Computes (env ++ ext ++ [x, y]) out) :
+    computesFun₂ env x y body out := by
+  intro ext
+  simpa [List.length_append, Nat.add_assoc] using (h ext).here
+
 /-- The code in `body` computes a function of one argument `x` and returns `out`. -/
 def computesFun₁ (env : List Value) (x : Value) (body : PB → PB) (out : Value) : Prop :=
   ∀ ext : List Value, ∃ t s, ProgSem (env ++ ext ++ [x])
     (body (PB.var (env.length + ext.length)) (env.length + ext.length + 1))
     out t s
+
+/-- To run a one-argument body on its freshly-bound argument, it suffices that `body` applied to
+the fresh variable computes `out` in the extended environment. This hides the
+`Computes.here`/length bookkeeping of `computesFun₁` (the one-argument analogue of
+`computesFun₂_branch`). -/
+lemma computesFun₁_branch {x : Value} {body : PB → PB} {out : Value}
+    (h : ∀ ext, (body (PB.var (env.length + ext.length))).Computes (env ++ ext ++ [x]) out) :
+    computesFun₁ env x body out := by
+  intro ext
+  simpa [List.length_append, Nat.add_assoc] using (h ext).here
 
 /-- `elim`, nil branch: `v` computes `[]`, so the empty branch `em` runs. -/
 @[simp]
@@ -239,6 +269,81 @@ lemma app_fn_computes {body : PB → PB} {arg : PB} {dx out : Value}
     rw [hmap]; exact hb
   exact ⟨_, _, ProgSem.app ProgSem.fn ha (AppSem.mk hb')⟩
 
+/-- Resource-erased iteration of a `while_` loop body. `WhileComputes env body acc r` says that,
+under any outer extension `ext`, repeatedly applying the loop-body closure (the closure produced by
+`while_ _ body` at the current depth) starting from accumulator `acc` eventually yields `r`.
+
+This mirrors `WhileSem` at the builder level: it has the two introduction rules
+`WhileComputes.halt` and `WhileComputes.step`, which together form the case analysis used in
+inductive proofs about a `while_` loop. -/
+def WhileComputes (env : List Value) (body : PB → PB) (acc r : Data) : Prop :=
+  ∀ ext : List Value, ∃ t s,
+    WhileSem
+      (.closure (body (PB.var (env.length + ext.length)) (env.length + ext.length + 1))
+        (env ++ ext))
+      acc r t s
+
+/-- Halting case of `WhileComputes`: if the accumulator's head is empty, the loop stops with the
+accumulator as result. Mirrors `WhileSem.halt`. -/
+lemma WhileComputes.halt {body : PB → PB} {acc : Data}
+    (h_stop : acc.asList.head?.getD (Data.l []) = Data.l []) :
+    WhileComputes env body acc acc := by
+  intro ext
+  exact ⟨_, _, WhileSem.halt h_stop⟩
+
+/-- Stepping case of `WhileComputes`: if the accumulator's head is non-empty, applying the body to
+`acc` yields `v` (this is exactly a `computesFun₁` for the body run on the freshly-bound argument),
+and the loop continues from `v` to `r`, then the whole loop runs from `acc` to `r`. Mirrors
+`WhileSem.step`. -/
+lemma WhileComputes.step {body : PB → PB} {acc v r : Data}
+    (h_cont : acc.asList.head?.getD (Data.l []) ≠ Data.l [])
+    (h_body : computesFun₁ env (.data acc) body (.data v))
+    (h_rest : WhileComputes env body v r) :
+    WhileComputes env body acc r := by
+  intro ext
+  obtain ⟨tb, sb, hb⟩ := h_body ext
+  obtain ⟨tr, sr, hr⟩ := h_rest ext
+  exact ⟨_, _, WhileSem.step h_cont (AppSem.mk hb) hr⟩
+
+/-- A `while_` loop computes `r`: evaluate `init` to the starting accumulator `acc`, then iterate
+the body via `WhileComputes` from `acc` to `r`. The iteration hypothesis `h_loop` is established by
+combining `WhileComputes.halt`/`WhileComputes.step`, typically inside an induction. -/
+lemma while_computes {init : PB} {body : PB → PB} {acc r : Data}
+    (h_init : Computes env init (.data acc))
+    (h_loop : WhileComputes env body acc r) :
+    Computes env (PB.while_ init body) (.data r) := by
+  intro ext
+  obtain ⟨ti, si, hi⟩ := h_init ext
+  obtain ⟨tw, sw, hw⟩ := h_loop ext
+  simp only [PB.while_]
+  exact ⟨_, _, ProgSem.while_ hi ProgSem.fn hw⟩
+
+/-- Recursion principle for building a `WhileComputes`. To show that the loop run from `acc`
+produces `result acc`, supply, via a strictly-decreasing measure `μ`:
+* `h_halt`: on a halting accumulator (empty head) the result is the accumulator itself;
+* `h_step`: on a non-halting accumulator, the body computes a next accumulator `v` (a
+  `computesFun₁`), the measure strictly decreases (`μ v < μ acc`, guaranteeing termination), and the
+  loop result is preserved (`result v = result acc`).
+
+This packages the `WhileComputes.halt`/`WhileComputes.step` chaining into a single well-founded
+recursion, so callers describe one step instead of unrolling the loop. -/
+theorem WhileComputes.rec' {body : PB → PB} (μ : Data → ℕ) (result : Data → Data)
+    (h_halt : ∀ acc : Data,
+      acc.asList.head?.getD (Data.l []) = Data.l [] → result acc = acc)
+    (h_step : ∀ acc : Data, acc.asList.head?.getD (Data.l []) ≠ Data.l [] →
+      ∃ v : Data, computesFun₁ env (.data acc) body (.data v) ∧
+        μ v < μ acc ∧ result v = result acc) :
+    ∀ acc : Data, WhileComputes env body acc (result acc) := by
+  intro acc
+  generalize hn : μ acc = n
+  induction n using Nat.strong_induction_on generalizing acc with
+  | _ n ih =>
+    by_cases h : acc.asList.head?.getD (Data.l []) = Data.l []
+    · rw [h_halt acc h]
+      exact WhileComputes.halt h
+    · obtain ⟨v, hbody, hlt, hres⟩ := h_step acc h
+      rw [← hres]
+      exact WhileComputes.step h hbody (ih (μ v) (hn ▸ hlt) v rfl)
 
 ------------------- Resource Consumption -------------------------
 

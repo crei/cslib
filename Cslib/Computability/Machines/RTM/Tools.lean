@@ -6,6 +6,9 @@ Authors: Christian Reitwiessner
 
 module
 
+public import Mathlib.Data.Fintype.Defs
+public import Mathlib.Data.Finset.Dedup
+public import Mathlib.Data.List.ReduceOption
 public import Cslib.Computability.Machines.RTM.PB
 public import Cslib.Computability.Machines.RTM.DataEncode
 
@@ -132,6 +135,10 @@ lemma constantEnc_computesEnc {α : Type} [DataEncode α] {a : α} :
     (constantEnc a).ComputesEnc env a := by
   simp [ComputesEnc, constantEnc]
 
+
+------------- while semantics ------------------------
+
+
 /-- `fold body init list`: left fold of `body` (taking `acc` then `el`) over `list`.
 
 Implemented with `while_` over a `[remaining, acc]` pair: the loop halts once `remaining`
@@ -143,6 +150,142 @@ def fold (body : PB → PB → PB) (init list : PB) : PB :=
     (fun st => elim (PB.fst st) empty
       (fun el rest => toPair rest (body (PB.snd st) el))))
 
+
+-- Evaluate a function `f` at `arg` where the function is given as a graph (list of pairs).
+-- Returns `some y` for the first `x` in the graph such that `f x = y` and `none` otherwise.
+def evalFunGraph (graph : PB) (arg : PB) : PB :=
+  snd (PB.while_
+    (toPair graph .empty)
+    (fun acc => .elim acc.fst
+      .empty -- cannot happen
+      fun pair rest =>
+        ifEq pair.fst arg
+          (toPair .empty (PB.some pair.snd))
+          (toPair rest .empty)))
+
+private def evalFunGraphInner : PB → PB → PB :=
+  fun arg acc => .elim acc.fst
+    .empty -- cannot happen
+    fun pair rest =>
+      ifEq pair.fst arg
+        (toPair .empty (PB.some pair.snd))
+        (toPair rest .empty)
+
+private lemma evalFunGraphInner_computesFun₁ [DecidableEq α]
+  (arg : α)
+  {p_arg : PB}
+  (h_arg : p_arg.ComputesEnc env arg)
+  {graph : List (α × β)}
+  {x : α}
+  {y : β} :
+  computesFun₁ env
+    (.data (DataEncode.encode (((x, y) :: graph), (.none : Option β))))
+    (evalFunGraphInner p_arg)
+    (.data (DataEncode.encode (if x == arg then
+      ([], Option.some y)
+    else
+      (graph, Option.none)))) := by
+  apply PB.computesFun₁_branch
+  intro ext
+  unfold evalFunGraphInner
+  refine PB.elim_cons_computes (PB.fst_ComputesEnc (PB.var_computes_fresh ext [])) ?_
+  apply PB.computesFun₂_branch2
+  intro ext2
+  -- Names for the extended environment and its fresh bindings.
+  set acc := Value.data (DataEncode.encode (((x, y) :: graph), (.none : Option β)))
+  set pv := Value.data (DataEncode.encode (x, y)) with hpv
+  set rv := Value.data (Data.l (graph.map DataEncode.encode)) with hrv
+  -- `arg` (= `p_arg`) is still available after the environment grows.
+  have h_arg' := ((h_arg.extend ext).extend [acc]).extend ext2 |>.extend [pv, rv]
+  by_cases h : x = arg
+  · subst h
+    simp only [beq_self_eq_true, if_true]
+    exact ifeq_eq_computes
+      (fst_ComputesEnc (var_computes_fresh ext2 [rv]))
+      h_arg'
+      (toPair_computesEnc
+        (empty_computes) (some_ComputesEnc (snd_ComputesEnc (var_computes_fresh ext2 [rv]))))
+  · refine PB.ifeq_ne_computes (PB.fst_ComputesEnc (var_computes_fresh ext2 [rv])) h_arg'
+      (fun he => h (DataEncode.h_inj he)) ?_
+    rw [if_neg (by simpa using h)]
+    exact PB.toPair_computesEnc
+      (var_computes_fresh' ext2 [pv, rv] (j := 1) (by simp)) (empty_computes)
+
+
+/-- Semantic spec of `eval_fun_graph`: given an encoded graph (list of
+`(α × β)`-pairs) and an encoded argument `a : α`, returns
+`(graph.find? (·.1 = a)).map (·.2)`, i.e. `some y` for the first pair `(a, y)`
+in the graph, else `none`. -/
+lemma evalFunGraph_computes
+    [DecidableEq α]
+    {p_graph p_arg : PB}
+    {graph : List (α × β)}
+    {a : α}
+    (h_graph : p_graph.ComputesEnc env graph)
+    (h_arg : p_arg.ComputesEnc env a) :
+    (evalFunGraph p_graph p_arg).ComputesEnc env
+      ((graph.find? (fun p => p.1 = a)).map (·.2)) := by
+  -- The loop iterates the body from `(g, none)` to `([], find-result)` for any remaining list `g`.
+  have h_loop : ∀ g : List (α × β),
+      WhileComputes env (evalFunGraphInner p_arg)
+        (DataEncode.encode (g, (none : Option β)))
+        (DataEncode.encode (([] : List (α × β)),
+          (g.find? (fun p => p.1 = a)).map (·.2))) := by
+    intro g
+    induction g with
+    | nil =>
+      -- Empty remaining list: the loop halts immediately on the empty head.
+      apply WhileComputes.halt
+      simp [DataEncode.encode]
+    | cons hd tl ih =>
+      obtain ⟨x, y⟩ := hd
+      by_cases h : x = a
+      · -- Match on the first element: body sets the result to `some y`, then the loop halts.
+        subst h
+        have hfind : (((x, y) :: tl).find? (fun p => p.1 = x)).map (·.2) = Option.some y := by
+          simp
+        rw [hfind]
+        have hb := evalFunGraphInner_computesFun₁ (env := env) x h_arg
+          (graph := tl) (x := x) (y := y)
+        simp only [beq_self_eq_true, if_true] at hb
+        refine WhileComputes.step ?_ hb ?_
+        · simp [DataEncode.encode]
+        · apply WhileComputes.halt
+          simp [DataEncode.encode]
+      · -- No match on the first element: body drops it, keeps `none`, and recurses.
+        have hfind : (((x, y) :: tl).find? (fun p => p.1 = a)).map (·.2)
+            = (tl.find? (fun p => p.1 = a)).map (·.2) := by
+          simp [h]
+        rw [hfind]
+        have hb := evalFunGraphInner_computesFun₁ (env := env) a h_arg
+          (graph := tl) (x := x) (y := y)
+        rw [if_neg (show ¬ ((x == a) = true) by simpa using h)] at hb
+        exact WhileComputes.step (by simp [DataEncode.encode]) hb ih
+  -- Initial accumulator: `(graph, none)`.
+  have h_init : (toPair p_graph .empty).ComputesEnc env (graph, (none : Option β)) :=
+    toPair_computesEnc h_graph (empty_computes)
+  exact snd_ComputesEnc (while_computes h_init (h_loop graph))
+
+
+lemma evalFunGraph_Computes_of_fun
+    [Fintype α]
+    {p_graph p_arg : PB}
+    {a : α}
+    {f : α → β}
+    (h_graph : p_graph.ComputesEnc env (Fintype.elems.toList.map (fun a => (a, f a))))
+    (h_arg : p_arg.ComputesEnc env a) :
+    (PB.evalFunGraph p_graph p_arg).head.ComputesEnc env (f a) := by
+  classical
+  have heq : ∀ (L : List α), a ∈ L →
+      ((L.map (fun a' => (a', f a'))).find?
+        (fun p => p.1 = a)).map (·.2) = Option.some (f a) := by
+    intro L hmem
+    induction L with
+    | nil => exact absurd hmem (by simp)
+    | cons hd tl ih => grind
+  have h := PB.evalFunGraph_computes h_graph h_arg
+  rw [heq _ (Finset.mem_toList.mpr (Fintype.complete a))] at h
+  apply PB.head_computes h
 
 
 end PB

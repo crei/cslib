@@ -44,13 +44,13 @@ lemma encode_biTape (t : Turing.BiTape Symbol) :
     DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
     simp [DataEncode.encode]
 
-def bitape_write (t v : PB) : PB := PB.cons v t.tail
+def bitapeWrite (t v : PB) : PB := PB.cons v t.tail
 
 lemma bitape_write_computes
     {p_tape p_sym : PB} {tape : BiTape Symbol} {sym : Option Symbol}
     (h_tape : p_tape.ComputesEnc env tape)
     (h_sym : p_sym.ComputesEnc env sym) :
-    (bitape_write p_tape p_sym).ComputesEnc env (tape.write sym) := by
+    (bitapeWrite p_tape p_sym).ComputesEnc env (tape.write sym) := by
   apply PB.cons_computes h_sym (PB.tail_computes h_tape)
 
 -- /-- Prepend an `Option` to the `StackTape` -/
@@ -207,165 +207,66 @@ lemma bitapeOptionMove_computes {p_t p_dir : PB}
     {t : BiTape Symbol} {d : Option Dir}
     (h_t : p_t.ComputesEnc env t)
     (h_dir : p_dir.ComputesEnc env d) :
-    (bitapeOptionMove p_t p_dir).ComputesEnc env (t.optionMove d) := by
-  cases d with
-  | none => exact PB.optionElim_computesEnc_none h_dir h_t
-  | some d =>
-    refine PB.optionElim_computesEnc_some h_dir (PB.computesFun₂_branch (fun ext => ?_))
-    exact bitapeMove_computes (h_t.extend_append ext _) (PB.var_computes_fresh ext _)
+    (bitapeOptionMove p_t p_dir).ComputesEnc env (t.optionMove d) :=
+  match d with
+  | none => PB.optionElim_computesEnc_none h_dir h_t
+  | some _ =>
+    PB.optionElim_computesEnc_some h_dir (PB.computesFun₂_branch (fun ext =>
+      bitapeMove_computes (h_t.extend ext |>.extend _) (PB.var_computes_fresh ext _)))
 
-instance (tm : SingleTapeTM Symbol) [DataEncode tm.State] :
+instance [Inhabited Symbol] [Fintype Symbol] (tm : SingleTapeTM Symbol) [DataEncode tm.State] :
     DataEncode (Turing.SingleTapeTM.Cfg tm) where
   encode cfg := DataEncode.encode (cfg.state, cfg.BiTape)
   h_inj := by
     intro ⟨s₁, t₁⟩ ⟨s₂, t₂⟩ h
     have heq := DataEncode.h_inj h
-    simp at heq
-    obtain ⟨hs, ht⟩ := heq
-    cases hs; cases ht; rfl
+    grind
 
--- Evaluate a function `f` at `arg` where the function is given as a graph.
--- Returns `some y` for the first `x` in the graph such that `f x = y` and `none` otherwise.
-def eval_fun_graph (graph : PB) (arg : PB) : PB :=
-  PB.fold
-    (fun acc x =>
-      PB.optionElim acc
-        (PB.ifEq x.fst arg (PB.some x.snd) PB.empty)
-        fun _ => acc)
-    PB.empty graph
+def cfgState (cfg : PB) : PB := cfg.fst
+def cfgBitape (cfg : PB) : PB := cfg.snd
 
-/-- Semantic spec of `eval_fun_graph`: given an encoded graph (list of
-`(α × β)`-pairs) and an encoded argument `a : α`, returns
-`(graph.find? (·.1 = a)).map (·.2)`, i.e. `some y` for the first pair `(a, y)`
-in the graph, else `none`. -/
-lemma eval_fun_graph_computes
-    {α β : Type} [DataEncode α] [DataEncode β] [DecidableEq α]
-    {env : List Data} {p_graph p_arg : PB}
-    {graph : List (α × β)} {a : α}
-    (h_graph : p_graph.computes_enc env graph)
-    (h_arg : p_arg.computes_enc env a) :
-    (eval_fun_graph p_graph p_arg).computes_enc env
-      ((graph.find? (fun p => p.1 = a)).map (·.2)) := by
-  -- The Lean-level step function for the fold.
-  let step : Option β → α × β → Option β :=
-    fun acc x => acc.elim (if x.1 = a then some x.2 else none) (fun _ => acc)
-  -- Once the accumulator is `some _`, it stays `some _`.
-  have stays : ∀ (l : List (α × β)) (b : β), l.foldl step (some b) = some b := by
-    intro l b
-    induction l with
-    | nil => simp
-    | cons hd tl ih => simp [step, ih]
-  -- `foldl step none` matches `find?`-then-`map snd`.
-  have key : ∀ l : List (α × β),
-      l.foldl step none = (l.find? (fun p => p.1 = a)).map (·.2) := by
-    intro l
-    induction l with
-    | nil => simp
-    | cons hd tl ih =>
-      simp only [List.foldl_cons, List.find?_cons]
-      by_cases h : hd.1 = a
-      · simp [step, h, stays]
-      · simp [step, h, ih]
-  rw [show (graph.find? (fun p => p.1 = a)).map (·.2)
-        = graph.foldl step none from (key graph).symm]
-  unfold eval_fun_graph
-  refine PB.fold_computes_enc (a := (none : Option β)) (f := step)
-    (by simp [PB.computes_enc, DataEncode.encode]) h_graph ?_
-  intro acc x ext
-  rcases acc with _ | v
-  · -- acc = none: step none x = if x.1 = a then some x.2 else none
-    refine PB.optionElim_computes_none (α := β)
-      PB.elim_cons_head_var_computes ?_
-    refine PB.ifEq_computes
-      (PB.fst_computes_enc PB.elim_cons_tail_var_computes)
-      (by simpa using h_arg.extend) ?_ ?_
-    · intro h_enc
-      have h_eq : x.1 = a := DataEncode.h_inj h_enc
-      change PB.computes_enc _ _ (step none x)
-      simp only [step, Option.elim_none, if_pos h_eq]
-      exact PB.some_computes_enc
-        (PB.snd_computes_enc PB.elim_cons_tail_var_computes)
-    · intro h_enc
-      have h_ne : x.1 ≠ a := fun h => h_enc (by rw [h])
-      simp [DataEncode.encode, step, h_ne]
-  · -- acc = some v: step (some v) x = some v
-    refine PB.optionElim_computes_some (α := β)
-      (PB.elim_cons_head_var_computes
-        (head := DataEncode.encode (some v : Option β))) ?_
-    intro ext'
-    simpa [List.append_assoc, step] using PB.elim_cons_head_var_computes.extend
-
--- def graphOf {α β : Type} [Fintype α] (f : α → β) : List (α × β) :=
---   Fintype.elems.toList.map (fun a => (a, f a))
-
-lemma eval_fun_graph_computes_of_fun
-    {α β : Type} [DataEncode α] [DataEncode β] [Fintype α]
-    {env : List Data} {p_graph p_arg : PB}
-    {a : α}
-    {f : α → β}
-    (h_graph : p_graph.computes_enc env (Fintype.elems.toList.map (fun a => (a, f a))))
-    (h_arg : p_arg.computes_enc env a) :
-    (eval_fun_graph p_graph p_arg).head.computes_enc env (f a) := by
-  classical
-  have heq : ∀ (L : List α), a ∈ L →
-      ((L.map (fun a' => (a', f a'))).find?
-        (fun p => p.1 = a)).map (·.2) = some (f a) := by
-    intro L hmem
-    induction L with
-    | nil => exact absurd hmem (by simp)
-    | cons hd tl ih => grind
-  have h := eval_fun_graph_computes h_graph h_arg
-  rw [heq _ (Finset.mem_toList.mpr (Fintype.complete a))] at h
-  simpa [DataEncode.encode, Data.asList] using PB.head_computes h
-
-def cfg_state (cfg : PB) : PB := cfg.fst
-def cfg_bitape (cfg : PB) : PB := cfg.snd
-
-lemma cfg_state_computes [Inhabited Symbol] [Fintype Symbol]
+lemma cfgState_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
-    {env : List Data} {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
-    (h : p.computes_enc env cfg) :
-    (cfg_state p).computes_enc env cfg.state :=
-  PB.fst_computes_enc (a := (cfg.state, cfg.BiTape)) h
+    {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
+    (h : p.ComputesEnc env cfg) :
+    (cfgState p).ComputesEnc env cfg.state :=
+  PB.fst_ComputesEnc (a := (cfg.state, cfg.BiTape)) h
 
 lemma cfg_bitape_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
-    {env : List Data} {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
-    (h : p.computes_enc env cfg) :
-    (cfg_bitape p).computes_enc env cfg.BiTape :=
-  PB.snd_computes_enc (a := (cfg.state, cfg.BiTape)) h
+    {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
+    (h : p.ComputesEnc env cfg) :
+    (cfgBitape p).ComputesEnc env cfg.BiTape :=
+  PB.snd_ComputesEnc (a := (cfg.state, cfg.BiTape)) h
 
 /-- Evaluate the transition function. Returns `((wr, dir), q')`.
  -- The return value is not wrapped inside an `Option` because the transition
  -- function is assumed to be total. -/
-def eval_tr (tr : PB) (q c : PB) : PB :=
-  (eval_fun_graph (eval_fun_graph tr q).head c).head
+def evalTr (tr : PB) (q c : PB) : PB :=
+  (PB.evalFunGraph (PB.evalFunGraph tr q).head c).head
 
 instance : DataEncode (SingleTapeTM.Stmt Symbol) where
   encode stmt := DataEncode.encode (stmt.symbol, stmt.movement)
   h_inj := by
     intro ⟨s₁, m₁⟩ ⟨s₂, m₂⟩ h
     have heq := DataEncode.h_inj h
-    simp at heq
-    obtain ⟨hs, hm⟩ := heq
-    cases hs; cases hm; rfl
+    grind
 
-lemma eval_tr_computes {State : Type} [Fintype State] [DataEncode State]
-    [DecidableEq State] [Fintype Symbol]
-    {env : List Data} {p_tr p_q p_c : PB}
+lemma evalTr_computes {State : Type} [Fintype State] [DataEncode State]
+    [Fintype Symbol]
+    {p_tr p_q p_c : PB}
     {tr : State → Option Symbol → SingleTapeTM.Stmt Symbol × Option State}
     {q : State}
     {c : Option Symbol}
-    (h_tr : p_tr.computes_enc env
+    (h_tr : p_tr.ComputesEnc env
       ((Fintype.elems : Finset State).toList.map (fun q' : State =>
         (q', (Fintype.elems : Finset (Option Symbol)).toList.map
           (fun c' : Option Symbol => (c', tr q' c'))))))
-    (h_q : p_q.computes_enc env q)
-    (h_c : p_c.computes_enc env c) :
-    (eval_tr p_tr p_q p_c).computes_enc env (tr q c) := by
-  unfold eval_tr
-  exact eval_fun_graph_computes_of_fun (α := Option Symbol) (f := tr q)
-    (eval_fun_graph_computes_of_fun (α := State) (f := fun q' =>
+    (h_q : p_q.ComputesEnc env q)
+    (h_c : p_c.ComputesEnc env c) :
+    (evalTr p_tr p_q p_c).ComputesEnc env (tr q c) := by
+  exact PB.evalFunGraph_Computes_of_fun (α := Option Symbol) (f := tr q)
+    (PB.evalFunGraph_Computes_of_fun (α := State) (f := fun q' =>
       (Fintype.elems : Finset (Option Symbol)).toList.map (fun c' => (c', tr q' c')))
       h_tr h_q) h_c
 
@@ -382,104 +283,73 @@ lemma eval_tr_computes {State : Type} [Fintype State] [DataEncode State]
 --     -- and tape updated according to the Stmt
 --     | ⟨⟨wr, dir⟩, q''⟩ => some ⟨q'', (t.write wr).optionMove dir⟩
 
+def applyTrVal (trVal cfg : PB) : PB :=
+  .some (PB.toPair
+      trVal.snd
+      (bitapeOptionMove (bitapeWrite (cfgBitape cfg) trVal.fst.fst) trVal.fst.snd))
+
+lemma applyTrVal_computes
+    [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol}
+    [DataEncode tm.State]
+    {p_trVal p_cfg : PB}
+    {cfg : tm.Cfg}
+    {trVal : SingleTapeTM.Stmt Symbol × Option tm.State}
+    (h_tr : p_trVal.ComputesEnc env trVal)
+    (h_cfg : p_cfg.ComputesEnc env cfg) :
+    (applyTrVal p_trVal p_cfg).ComputesEnc env
+      (Option.some
+        (⟨trVal.snd, (cfg.BiTape.write trVal.fst.1).optionMove trVal.fst.2⟩ : tm.Cfg)) := by
+  refine PB.some_ComputesEnc (PB.toPair_computesEnc (PB.snd_ComputesEnc h_tr) ?_)
+  refine bitapeOptionMove_computes (bitape_write_computes (cfg_bitape_computes h_cfg) ?_) ?_
+  · exact PB.fst_ComputesEnc (a := (trVal.fst.1, trVal.fst.2)) (PB.fst_ComputesEnc h_tr)
+  · exact PB.snd_ComputesEnc (a := (trVal.fst.1, trVal.fst.2)) (PB.fst_ComputesEnc h_tr)
+
 -- Compute the step function given a transition function (as its graph) and a configuration.
 -- Returns `Option Cfg`
-def singleTapeTM_step (tr : PB) (cfg : PB) : PB :=
-  PB.optionElim (cfg_state cfg)
+def singleTapeTMStep (tr : PB) (cfg : PB) : PB :=
+  PB.optionElim (cfgState cfg)
     PB.empty
-    (fun q' => PB.letIn (cfg_bitape cfg) (fun tape =>
-      PB.letIn (eval_tr tr q' tape.head) (fun tr_val =>
-        .some (to_pair
-          tr_val.snd
-          (bitape_optionMove (bitape_write tape tr_val.fst.fst) tr_val.fst.snd)))))
+    (fun q' => applyTrVal (evalTr tr q' (cfgBitape cfg).head) cfg)
 
--- TODO for space and time bounds, we need to prove for singleTapeTM_step, than:
--- for any `env`,
--- 1) the size of the output is the size of `env` plus a constant (not with a linear factor!)
--- 2) the time and space required is linear in the size of `env`.
--- the problematic bits are that we don't know what `tr` and `cfg` do, they are programs,
--- we cannot just look at their outputs
--- What is the right condition for `tr` and `cfg`?
-
-lemma singleTapeTM_step_computes [Inhabited Symbol] [Fintype Symbol]
-    [DecidableEq Symbol] {tm : SingleTapeTM Symbol}
-    [DataEncode tm.State] [DecidableEq tm.State]
-    {env : List Data} {p_tr p_cfg : PB} {cfg : tm.Cfg}
-    (h_tr : p_tr.computes_enc env
+lemma singleTapeTMStep_computes
+    [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol}
+    [DataEncode tm.State]
+    {p_tr p_cfg : PB} {cfg : tm.Cfg}
+    (h_tr : p_tr.ComputesEnc env
       ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
         (q', (Fintype.elems : Finset (Option Symbol)).toList.map
           (fun c' => (c', tm.tr q' c'))))))
-    (h_cfg : p_cfg.computes_enc env cfg) :
-    (singleTapeTM_step p_tr p_cfg).computes_enc env (tm.step cfg) := by
-  unfold singleTapeTM_step
+    (h_cfg : p_cfg.ComputesEnc env cfg) :
+    (singleTapeTMStep p_tr p_cfg).ComputesEnc env (tm.step cfg) := by
   obtain ⟨state, t⟩ := cfg
-  match hst : state with
+  cases h : state with
   | none =>
-    refine PB.optionElim_computes_none (cfg_state_computes h_cfg) ?_
-    change PB.empty.computes_enc env (none : Option tm.Cfg)
-    simp [PB.computes_enc, DataEncode.encode]
-  | some q' =>
-    refine PB.optionElim_computes_some (cfg_state_computes h_cfg) ?_
-    intro ext1
-    -- TODO letin makes this proof complicated.
-    -- Outer letIn: bind `tape := cfg_bitape p_cfg`, value `t`.
-    apply PB.letIn_computes_enc (v := t)
-      (by simpa [List.append_assoc] using cfg_bitape_computes h_cfg.extend)
-    intro ext2
-    set env2 := env ++ ext1 ++ [DataEncode.encode q'] with env2_def
-    -- The slot for `q'` at depth `env.length + ext1.length`.
-    have h_q'_slot : PB.computes_enc
-        (env2 ++ ext2 ++ [DataEncode.encode t])
-        (PB.atSlot (env.length + ext1.length)) q' := by
-      simpa [env2_def] using PB.atSlot_last_computes_enc.extend
-    -- The slot for `tape` at depth `env2.length + ext2.length`.
-    have h_tape_slot : PB.computes_enc
-        (env2 ++ ext2 ++ [DataEncode.encode t])
-        (PB.atSlot (env2.length + ext2.length)) t :=
-      PB.atSlot_last_computes_enc
-    apply PB.letIn_computes_enc
-      (eval_tr_computes
-        (by simpa [env2_def, List.append_assoc] using h_tr.extend)
-        h_q'_slot (bitape_head_computes h_tape_slot))
-    intro ext3
-    set env3 := env2 ++ ext2 ++ [DataEncode.encode t] with env3_def
-    set envS := env3 ++ ext3 ++ [DataEncode.encode (tm.tr q' t.head)] with envS_def
-    -- Re-derive tape slot at envS.
-    have h_tape_slot' : PB.computes_enc envS
-        (PB.atSlot (env2.length + ext2.length)) t := by
-      simpa [envS_def, env3_def, List.append_assoc] using
-        h_tape_slot.extend (ext := ext3 ++ [DataEncode.encode (tm.tr q' t.head)])
-    -- Destructure the transition result.
-    rcases htr_eq : tm.tr q' t.head with ⟨⟨wr, dir⟩, q''⟩
-    have h_trval : PB.computes_enc envS
-        (PB.atSlot (env3.length + ext3.length))
-        (SingleTapeTM.Stmt.mk (Symbol := Symbol) wr dir, q'') := by
-      simp [envS_def, htr_eq]
-    unfold SingleTapeTM.step
-    simp only [htr_eq]
-    exact PB.some_computes_enc
-      (to_pair_computes
-        (PB.snd_computes_enc h_trval)
-        (bitape_optionMove_computes
-          (bitape_write_computes h_tape_slot'
-            (PB.fst_computes_enc (a := (wr, dir))
-              (PB.fst_computes_enc h_trval)))
-          (PB.snd_computes_enc (a := (wr, dir))
-            (PB.fst_computes_enc h_trval))))
+    exact PB.optionElim_computesEnc_none
+      (by simpa [h] using (cfgState_computes h_cfg))
+      PB.empty_computes
+  | some cfg =>
+    refine PB.optionElim_computesEnc_some (by simpa [h] using (cfgState_computes h_cfg)) ?_
+    apply PB.computesFun₂_branch
+    intro ext
+    refine applyTrVal_computes ?_ (h_cfg.extend ext |>.extend _)
+    refine evalTr_computes (h_tr.extend ext |>.extend _) (PB.var_computes_fresh ext _) ?_
+    exact PB.head_computes (cfg_bitape_computes (h_cfg.extend ext |>.extend _))
 
 def tm_main_loop (tr : PB) (cfg : PB) : PB :=
   -- The accumulator is the current `Cfg`. The body applies `singleTapeTM_step`
   -- (an `Option Cfg`); on `some next` we continue with `next`, on `none` we keep
   -- the current `acc` (which has `state = none`, signalling halt to `while_`).
   PB.while_ cfg
-    (fun acc => PB.optionElim (singleTapeTM_step tr acc) acc (fun next => next))
+    (fun acc => PB.optionElim (singleTapeTMStep tr acc) acc (fun next => next))
 
 /-- The body of `tm_main_loop` computes one TM step (with `none` halt as fixed point). -/
 private lemma tm_main_loop_body_computes [Inhabited Symbol] [Fintype Symbol]
     [DecidableEq Symbol] {tm : SingleTapeTM Symbol}
     [DataEncode tm.State] [DecidableEq tm.State]
     {env : List Data} {p_tr : PB}
-    (h_tr : p_tr.computes_enc env
+    (h_tr : p_tr.ComputesEnc env
       ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
         (q', (Fintype.elems : Finset (Option Symbol)).toList.map
           (fun c' => (c', tm.tr q' c'))))))
@@ -491,13 +361,13 @@ private lemma tm_main_loop_body_computes [Inhabited Symbol] [Fintype Symbol]
   intro ext
   set E := env ++ ext with E_def
   have hE_len : E.length = env.length + ext.length := by simp [E_def]
-  have h_acc : PB.computes_enc (E ++ [DataEncode.encode c])
+  have h_acc : PB.ComputesEnc (E ++ [DataEncode.encode c])
       (PB.atSlot E.length) c := by
     simpa using PB.atSlot_last_computes_enc (env := E) (ext := []) (a := c)
   have h_step_eval :
-      (singleTapeTM_step p_tr (PB.atSlot E.length)).computes_enc
+      (singleTapeTM_step p_tr (PB.atSlot E.length)).ComputesEnc
         (E ++ [DataEncode.encode c]) (tm.step c) := by
-    have h_tr_ext : PB.computes_enc (E ++ [DataEncode.encode c]) p_tr
+    have h_tr_ext : PB.ComputesEnc (E ++ [DataEncode.encode c]) p_tr
         ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
           (q', (Fintype.elems : Finset (Option Symbol)).toList.map
             (fun c' => (c', tm.tr q' c'))))) := by
@@ -529,13 +399,13 @@ lemma tm_main_loop_computes [Inhabited Symbol] [Fintype Symbol]
     [DecidableEq Symbol] {tm : SingleTapeTM Symbol}
     [DataEncode tm.State] [DecidableEq tm.State]
     {env : List Data} {p_tr p_cfg : PB} {cfg : tm.Cfg}
-    (h_tr : p_tr.computes_enc env
+    (h_tr : p_tr.ComputesEnc env
       ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
         (q', (Fintype.elems : Finset (Option Symbol)).toList.map
           (fun c' => (c', tm.tr q' c'))))))
-    (h_cfg : p_cfg.computes_enc env cfg)
+    (h_cfg : p_cfg.ComputesEnc env cfg)
     (h_halts : ∃ n, (((fun c => (tm.step c).getD c)^[n] cfg)).state = none) :
-    (tm_main_loop p_tr p_cfg).computes_enc env
+    (tm_main_loop p_tr p_cfg).ComputesEnc env
       ((fun c => (tm.step c).getD c)^[Nat.find h_halts] cfg) := by
   -- Lift `tm.step` to a total `tm.Cfg → tm.Cfg` map.
   set step : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with step_def
@@ -564,12 +434,12 @@ def reverse (x : PB) : PB :=
 
 lemma reverse_computes {α : Type} [DataEncode α]
     {env : List Data} {p : PB} {l : List α}
-    (h : p.computes_enc env l) :
-    (reverse p).computes_enc env l.reverse := by
+    (h : p.ComputesEnc env l) :
+    (reverse p).ComputesEnc env l.reverse := by
   unfold reverse
   have h_fold : l.reverse = l.foldl (fun acc el => el :: acc) [] := by simp
   rw [h_fold]
-  apply PB.fold_computes_enc (by simp [PB.computes_enc]) h
+  apply PB.fold_computes_enc (by simp [PB.ComputesEnc]) h
   -- TODO at this point, we should actually be able to just apply a combinator on the semantics
   -- of PB.cons
   intro acc el ext
@@ -586,22 +456,22 @@ def list_map (x : PB) (f : PB → PB) : PB :=
 lemma list_map_computes {α β : Type} [DataEncode α] [DataEncode β]
     {env : List Data} {p : PB} {l : List α}
     {f : PB → PB} {g : α → β}
-    (h : p.computes_enc env l)
+    (h : p.ComputesEnc env l)
     (hf : ∀ x : α, PB.computes_at_body₁_encoded env x f (g x)) :
-    (list_map p f).computes_enc env (l.map g) := by
+    (list_map p f).ComputesEnc env (l.map g) := by
   unfold list_map
   -- TODO simplify proof
-  have h_fold : (PB.fold (fun acc el => PB.cons (f el) acc) PB.empty p).computes_enc
+  have h_fold : (PB.fold (fun acc el => PB.cons (f el) acc) PB.empty p).ComputesEnc
       env (l.foldl (fun acc el => g el :: acc) []) := by
     apply PB.fold_computes_enc (a := ([] : List β)) (f := fun acc el => g el :: acc)
-      (by simp [PB.computes_enc, DataEncode.encode]) h
+      (by simp [PB.ComputesEnc, DataEncode.encode]) h
     intro acc el ext
     have h_acc : PB.computes_at
         (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el])
         (PB.atSlot (env.length + ext.length)) (DataEncode.encode acc) := by
       simpa using (PB.atSlot_last_computes (env := env) (ext := ext)
         (d := DataEncode.encode acc)).extend (ext := [DataEncode.encode el])
-    have h_fel : (f (PB.atSlot (env.length + ext.length + 1))).computes_enc
+    have h_fel : (f (PB.atSlot (env.length + ext.length + 1))).ComputesEnc
         (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el]) (g el) := by
       simpa [List.append_assoc] using hf el (ext ++ [DataEncode.encode acc])
     simpa [DataEncode.encode, Data.asList] using PB.cons_computes h_fel h_acc
@@ -621,8 +491,8 @@ def list_reduceOption (x : PB) : PB :=
 
 lemma list_reduceOption_computes {α : Type} [DataEncode α]
     {env : List Data} {p : PB} {l : List (Option α)}
-    (h : p.computes_enc env l) :
-    (list_reduceOption p).computes_enc env l.reduceOption := by
+    (h : p.ComputesEnc env l) :
+    (list_reduceOption p).ComputesEnc env l.reduceOption := by
   unfold list_reduceOption
   set step : List α → Option α → List α :=
     fun acc el => match el with | none => acc | some y => y :: acc with step_def
@@ -644,18 +514,18 @@ lemma list_reduceOption_computes {α : Type} [DataEncode α]
         simp [List.reduceOption]
   have h_fold : (PB.fold
         (fun acc el => PB.optionElim el acc (fun y => PB.cons y acc)) PB.empty p
-      ).computes_enc env (l.foldl step []) := by
+      ).ComputesEnc env (l.foldl step []) := by
     apply PB.fold_computes_enc
       (a := ([] : List α)) (f := step)
-      (by simp [PB.computes_enc, DataEncode.encode]) h
+      (by simp [PB.ComputesEnc, DataEncode.encode]) h
     intro acc el ext
-    have h_el : (PB.atSlot (env.length + ext.length + 1)).computes_enc
+    have h_el : (PB.atSlot (env.length + ext.length + 1)).ComputesEnc
         (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el]) el := by
-      simpa [PB.computes_enc] using
+      simpa [PB.ComputesEnc] using
         (PB.atSlot_last_computes (ext := ext ++ [DataEncode.encode acc])).extend
-    have h_acc : (PB.atSlot (env.length + ext.length)).computes_enc
+    have h_acc : (PB.atSlot (env.length + ext.length)).ComputesEnc
         (env ++ ext ++ [DataEncode.encode acc, DataEncode.encode el]) acc := by
-      simpa [PB.computes_enc] using
+      simpa [PB.ComputesEnc] using
         (PB.atSlot_last_computes (env := env) (ext := ext)
           (d := DataEncode.encode acc)).extend (ext := [DataEncode.encode el])
     cases el with
@@ -699,8 +569,8 @@ def list_head_option (input : PB) : PB :=
 
 lemma list_head_option_computes {α : Type} [DataEncode α]
     {env : List Data} {p : PB} {l : List α}
-    (h : p.computes_enc env l) :
-    (list_head_option p).computes_enc env l.head? := by
+    (h : p.ComputesEnc env l) :
+    (list_head_option p).ComputesEnc env l.head? := by
   cases l with
   | nil =>
     apply PB.elim_nil_computes (em := PB.empty)
@@ -718,19 +588,19 @@ def string_to_tape (input : PB) : PB :=
   to_pair (list_head_option input) (to_pair .empty (list_map input.tail PB.some))
 
 lemma string_to_tape_computes {env : List Data} {p_input : PB} {input : List Symbol}
-    (h_input : p_input.computes_enc env input) :
-    (string_to_tape p_input).computes_enc env (BiTape.mk₁ input) := by
-  have h_tail : (PB.tail p_input).computes_enc env input.tail := by
-    simpa [PB.computes_enc, DataEncode.encode] using PB.tail_computes h_input
-  have h_map : (list_map (PB.tail p_input) PB.some).computes_enc env
+    (h_input : p_input.ComputesEnc env input) :
+    (string_to_tape p_input).ComputesEnc env (BiTape.mk₁ input) := by
+  have h_tail : (PB.tail p_input).ComputesEnc env input.tail := by
+    simpa [PB.ComputesEnc, DataEncode.encode] using PB.tail_computes h_input
+  have h_map : (list_map (PB.tail p_input) PB.some).ComputesEnc env
       (StackTape.map_some input.tail : Turing.StackTape Symbol) := by
-    simpa [PB.computes_enc, DataEncode.encode]
+    simpa [PB.ComputesEnc, DataEncode.encode]
       using list_map_computes h_tail (fun _ _ => by
         simpa [DataEncode.encode] using
           PB.cons_computes PB.atSlot_last_computes PB.empty_computes)
-  have h_empty : (PB.empty : PB).computes_enc env (∅ : Turing.StackTape Symbol) := by
-    simp [PB.computes_enc, DataEncode.encode]
-  simpa [PB.computes_enc, encode_biTape, BiTape.mk₁, DataEncode_pair, string_to_tape]
+  have h_empty : (PB.empty : PB).ComputesEnc env (∅ : Turing.StackTape Symbol) := by
+    simp [PB.ComputesEnc, DataEncode.encode]
+  simpa [PB.ComputesEnc, encode_biTape, BiTape.mk₁, DataEncode_pair, string_to_tape]
     using to_pair_computes (list_head_option_computes h_input)
       (to_pair_computes h_empty h_map)
 
@@ -753,9 +623,9 @@ def universal_tm (input : PB) :=
 lemma initial_config_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
     {env : List Data} {p_q₀ p_input : PB} {input : List Symbol}
-    (h_q₀ : p_q₀.computes_enc env tm.q₀)
-    (h_input : p_input.computes_enc env input) :
-    (initial_config p_q₀ p_input).computes_enc env (tm.initCfg input) := by
+    (h_q₀ : p_q₀.ComputesEnc env tm.q₀)
+    (h_input : p_input.ComputesEnc env input) :
+    (initial_config p_q₀ p_input).ComputesEnc env (tm.initCfg input) := by
   -- `tm.initCfg input = ⟨some tm.q₀, BiTape.mk₁ input⟩`, and `encode` on `Cfg` goes
   -- through the `(state, BiTape)` pair, so this matches `to_pair`.
   exact to_pair_computes (PB.some_computes_enc h_q₀) (string_to_tape_computes h_input)
@@ -763,17 +633,17 @@ lemma initial_config_computes [Inhabited Symbol] [Fintype Symbol]
 lemma final_config_to_output_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
     {env : List Data} {p_cfg : PB} {cfg : tm.Cfg}
-    (h_cfg : p_cfg.computes_enc env cfg) :
-    (final_config_to_output p_cfg).computes_enc env
+    (h_cfg : p_cfg.ComputesEnc env cfg) :
+    (final_config_to_output p_cfg).ComputesEnc env
       (cfg.BiTape.head :: cfg.BiTape.right.toList).reduceOption := by
   unfold final_config_to_output
-  have h_BiTape : (p_cfg.snd).computes_enc env cfg.BiTape :=
+  have h_BiTape : (p_cfg.snd).ComputesEnc env cfg.BiTape :=
     PB.snd_computes_enc (a := (cfg.state, cfg.BiTape)) h_cfg
   have h_head := bitape_head_computes h_BiTape
   have h_right := bitape_right_computes h_BiTape
   -- The inner `cons` builds the encoding of `head :: right.toList` (a `List (Option Symbol)`),
   -- then `list_reduceOption` discards the blanks.
-  have h_list : (PB.cons (bitape_head p_cfg.snd) (bitape_right p_cfg.snd)).computes_enc env
+  have h_list : (PB.cons (bitape_head p_cfg.snd) (bitape_right p_cfg.snd)).ComputesEnc env
       (cfg.BiTape.head :: cfg.BiTape.right.toList) := by
     change PB.computes_at env _ (DataEncode.encode (cfg.BiTape.head :: cfg.BiTape.right.toList))
     simpa [DataEncode.encode, Data.asList] using PB.cons_computes h_head h_right
@@ -782,7 +652,7 @@ lemma final_config_to_output_computes [Inhabited Symbol] [Fintype Symbol]
 lemma universal_tm_computes [Inhabited Symbol] [Fintype Symbol] [DecidableEq Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State] [DecidableEq tm.State]
     {env : List Data} {p_input : PB} {input : List Symbol}
-    (h_input : p_input.computes_enc env
+    (h_input : p_input.ComputesEnc env
       ((tm.q₀,
         (Fintype.elems : Finset tm.State).toList.map (fun q' =>
           (q', (Fintype.elems : Finset (Option Symbol)).toList.map
@@ -790,7 +660,7 @@ lemma universal_tm_computes [Inhabited Symbol] [Fintype Symbol] [DecidableEq Sym
        input))
     (h_halts : ∃ n,
         ((fun c => (tm.step c).getD c)^[n] (tm.initCfg input)).state = none) :
-    (universal_tm p_input).computes_enc env
+    (universal_tm p_input).ComputesEnc env
       (let cfg := (fun c => (tm.step c).getD c)^[Nat.find h_halts] (tm.initCfg input)
        (cfg.BiTape.head :: cfg.BiTape.right.toList).reduceOption) := by
   unfold universal_tm
@@ -820,14 +690,14 @@ The encoded input has the shape `((tm.q₀, transitionTable), w)`, where
 theorem universal_tm_simulates [Inhabited Symbol] [Fintype Symbol] [DecidableEq Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State] [DecidableEq tm.State]
     {env : List Data} {p_input : PB} {w w' : List Symbol}
-    (h_input : p_input.computes_enc env
+    (h_input : p_input.ComputesEnc env
       ((tm.q₀,
         (Fintype.elems : Finset tm.State).toList.map (fun q' =>
           (q', (Fintype.elems : Finset (Option Symbol)).toList.map
             (fun c' => (c', tm.tr q' c'))))),
        w))
     (h_out : tm.Outputs w w') :
-    (universal_tm p_input).computes_enc env w' := by
+    (universal_tm p_input).ComputesEnc env w' := by
   -- Lift `tm.step` to a total step function; halting states are fixed points.
   set step : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with hstep
   have halt_fix : ∀ {c : tm.Cfg}, c.state = none → step c = c := by
@@ -958,13 +828,13 @@ theorem universal_tm_simulates_converse [Inhabited Symbol] [Fintype Symbol]
     [DecidableEq Symbol] {tm : SingleTapeTM Symbol}
     [DataEncode tm.State] [DecidableEq tm.State]
     {env : List Data} {p_input : PB} {w w' : List Symbol}
-    (h_input : p_input.computes_enc env
+    (h_input : p_input.ComputesEnc env
       ((tm.q₀,
         (Fintype.elems : Finset tm.State).toList.map (fun q' =>
           (q', (Fintype.elems : Finset (Option Symbol)).toList.map
             (fun c' => (c', tm.tr q' c'))))),
        w))
-    (h_out : (universal_tm p_input).computes_enc env w') :
+    (h_out : (universal_tm p_input).ComputesEnc env w') :
     ∃ n : ℕ,
       let cfg := (fun c => (tm.step c).getD c)^[n] (tm.initCfg w)
       cfg.state = none ∧
@@ -1052,13 +922,13 @@ private def Outputs' {Symbol : Type} [Inhabited Symbol] [Fintype Symbol]
 private theorem universal_tm_simulates_iff [Inhabited Symbol] [Fintype Symbol] [DecidableEq Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State] [DecidableEq tm.State]
     {env : List Data} {p_input : PB} {w w' : List Symbol}
-    (h_input : p_input.computes_enc env
+    (h_input : p_input.ComputesEnc env
       ((tm.q₀,
         (Fintype.elems : Finset tm.State).toList.map (fun q' =>
           (q', (Fintype.elems : Finset (Option Symbol)).toList.map
             (fun c' => (c', tm.tr q' c'))))),
        w)) :
-    Outputs' tm w w' ↔ (universal_tm p_input).computes_enc env w' := by
+    Outputs' tm w w' ↔ (universal_tm p_input).ComputesEnc env w' := by
   set step : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with hstep_def
   have halt_fix : ∀ {c : tm.Cfg}, c.state = none → step c = c := by
     rintro ⟨_, _⟩ rfl; rfl

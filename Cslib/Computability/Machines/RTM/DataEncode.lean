@@ -22,6 +22,10 @@ class DataEncode (α : Type) where
   encode : α → Data
   h_inj : encode.Injective
 
+instance : DataEncode Data where
+  encode b := b
+  h_inj := by intros a b h_eq; grind
+
 instance : DataEncode Bool where
   encode b := if b then Data.l [ Data.l [] ] else Data.l []
   h_inj := by intros a b h_eq; grind
