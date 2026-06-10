@@ -240,16 +240,16 @@ theorem exists_complete_enumeration :
 /-- **Budgeted universal evaluator.** For a space-constructible `s` and any enumeration `enum`,
 there is an evaluator `eval` such that
 
-* its diagonal `i ↦ eval i i` is computable in space `O(s)` (so flipping it stays in `DSpace s`),
-  and
+* its diagonal `i ↦ eval i i` is computable in space `s` (constant factors absorbed by tape
+  compression, so flipping it stays in `DSpace s`), and
 * `eval i x = enum i x` whenever the machine `i` runs on `x` within the `2 ^ s(|i|)` time and
   `s(|i|)` space budget — i.e. whenever the enumerated function's own bounds fit the budget at that
   input (otherwise `eval` may fall back to a fixed value).
 
 This is the abstract repackaging of `exists_bounded_simulator`. -/
 theorem exists_bounded_evaluator (s : ℕ → ℕ) (hs : SpaceConstructible s) (enum : Enumeration) :
-    ∃ (eval : Enumeration) (a : ℕ) (t : ℕ → ℕ),
-      TMComputableInTimeAndSpace (fun i => eval i i) t (fun n => a * s n + a) ∧
+    ∃ (eval : Enumeration) (t : ℕ → ℕ),
+      TMComputableInTimeAndSpace (fun i => eval i i) t s ∧
       ∀ (i x : List Bool) (t' s' : ℕ → ℕ),
         TMComputableInTimeAndSpace (enum i) t' s' →
         t' x.length ≤ 2 ^ s i.length → s' x.length ≤ s i.length →
@@ -289,6 +289,23 @@ theorem exists_bounded_simulator (s : ℕ → ℕ) (hs : SpaceConstructible s) :
             t' s' := by
   sorry
 
+/-- **Post-processing a decision.** Flipping the `[true]`/`[false]` decision read off a space-`s`
+computation stays in space `s` (the flip inspects only whether the output is `[true]`, costing
+`O(1)` extra space, absorbed by tape compression). -/
+lemma flip_decision_in_space {g : List Bool → List Bool} {t s : ℕ → ℕ}
+    (hg : TMComputableInTimeAndSpace g t s) :
+    ∃ t', TMComputableInTimeAndSpace
+      (fun x => if g x = [true] then [false] else [true]) t' s := by
+  sorry
+
+/-- **Configuration counting.** A computation that always halts within space `s` also halts within
+`2 ^ (a * s + a)` steps for some constant `a`: a halting machine cannot repeat a configuration, and
+there are at most `2 ^ O(space)` configurations. -/
+lemma time_le_exp_space {f : List Bool → List Bool} {t s : ℕ → ℕ}
+    (h : TMComputableInTimeAndSpace f t s) :
+    ∃ (a : ℕ), TMComputableInTimeAndSpace f (fun n => 2 ^ (a * s n + a)) s := by
+  sorry
+
 theorem space_hierarchy
    (s₁ : ℕ → ℕ)
    (h_s₁ : SpaceConstructible s₁)
@@ -297,7 +314,57 @@ theorem space_hierarchy
    (h_s₂ : SpaceConstructible s₂)
    (h_lo : LittleO s₂ s₁) :
    ∃ L, L ∈ (DSpace s₁) ∧ L ∉ DSpace s₂ := by
-  sorry
+  -- An enumeration in which every TM-computable function occurs at arbitrarily long indices, and a
+  -- budgeted evaluator whose diagonal lives in `DSpace s₁`.
+  obtain ⟨enum, h_complete⟩ := exists_complete_enumeration
+  obtain ⟨eval, t_diag, h_diag_space, h_faithful⟩ := exists_bounded_evaluator s₁ h_s₁ enum
+  -- The diagonalizer flips the simulated self-application, and its language `L_D`.
+  set D : List Bool → List Bool := fun x => if eval x x = [true] then [false] else [true]
+    with hD_def
+  set L_D : Language Bool := {x | eval x x ≠ [true]} with hL_def
+  have h_ind : indicator L_D = D := by
+    funext x
+    simp only [indicator, hD_def, hL_def, Set.mem_setOf_eq]
+    by_cases hx : eval x x = [true] <;> simp [hx]
+  refine ⟨L_D, ?_, ?_⟩
+  · -- `L_D ∈ DSpace s₁`: the flipped diagonal is computable in space `s₁`.
+    obtain ⟨t', ht'⟩ := flip_decision_in_space h_diag_space
+    exact ⟨t', by rw [h_ind, hD_def]; exact ht'⟩
+  · -- `L_D ∉ DSpace s₂`: otherwise diagonalization contradicts itself.
+    rintro ⟨t₂, h₂⟩
+    rw [h_ind] at h₂
+    -- Replace the given time bound by the exponential-in-space one (config counting).
+    obtain ⟨a, hexp⟩ := time_le_exp_space h₂
+    -- `s₂ = o(s₁)` with slack `a + 1` provides the budget, for inputs at least `N` long.
+    obtain ⟨N, hN⟩ := h_lo (a + 1) (Nat.succ_pos a)
+    -- A long enough index `i` with `enum i = D`.
+    obtain ⟨i, hi_len, hi_enum⟩ :=
+      h_complete D (fun n => 2 ^ (a * s₂ n + a)) s₂ hexp (max N (a * a + a))
+    have hmN : N ≤ i.length := le_trans (le_max_left _ _) hi_len
+    have hmaa : a * a + a ≤ i.length := le_trans (le_max_right _ _) hi_len
+    have hstrict : (a + 1) * s₂ i.length < s₁ i.length := hN i.length hmN
+    have e : (a + 1) * s₂ i.length = s₂ i.length + a * s₂ i.length := by ring
+    -- The space budget fits.
+    have hspace : s₂ i.length ≤ s₁ i.length := by omega
+    -- The time budget fits.
+    have htime_exp : a * s₂ i.length + a ≤ s₁ i.length := by
+      rcases le_or_lt a (s₂ i.length) with hle | hlt
+      · omega
+      · have hmul : a * s₂ i.length ≤ a * a := Nat.mul_le_mul (le_refl a) (le_of_lt hlt)
+        have hge : i.length ≤ s₁ i.length := h_ge i.length
+        omega
+    have htime : (2 : ℕ) ^ (a * s₂ i.length + a) ≤ 2 ^ s₁ i.length :=
+      Nat.pow_le_pow_right (by norm_num) htime_exp
+    -- Faithfulness: the evaluator reproduces `enum i i = D i`.
+    have hfaith : eval i i = enum i i :=
+      h_faithful i i (fun n => 2 ^ (a * s₂ n + a)) s₂ (by rw [hi_enum]; exact hexp) htime hspace
+    rw [hi_enum] at hfaith
+    -- `D i = if eval i i = [true] then [false] else [true]`, but `eval i i = D i`: contradiction.
+    have hDi : D i = if eval i i = [true] then [false] else [true] := by simp only [hD_def]
+    rw [hfaith] at hDi
+    by_cases hc : D i = [true]
+    · rw [if_pos hc, hc] at hDi; exact absurd hDi (by decide)
+    · rw [if_neg hc] at hDi; exact hc hDi
 end V4
 
 end RoseTreeMachine
