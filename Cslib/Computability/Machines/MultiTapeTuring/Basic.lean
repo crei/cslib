@@ -226,13 +226,13 @@ public def headPosition (tapes : Fin k → BiTape Symbol) (t : ℕ) (i : Fin k) 
 /--
 The space used by a configuration is the sum of the space used by its tapes.
 -/
-public def Cfg.space_used (cfg : tm.Cfg) : ℕ := ∑ i, (cfg.tapes i).space_used
+public def Cfg.spaceUsed (cfg : tm.Cfg) : ℕ := ∑ i, (cfg.tapes i).spaceUsed
 
 /--
 The space used by a configuration grows by at most `k` each step.
 -/
-public lemma Cfg.space_used_step (cfg cfg' : tm.Cfg)
-    (hstep : tm.step cfg = some cfg') : cfg'.space_used ≤ cfg.space_used + k := by
+public lemma Cfg.spaceUsed_step (cfg cfg' : tm.Cfg)
+    (hstep : tm.step cfg = some cfg') : cfg'.spaceUsed ≤ cfg.spaceUsed + k := by
   obtain ⟨_ | q, tapes⟩ := cfg
   · simp [step] at hstep
   · simp only [step] at hstep
@@ -240,11 +240,11 @@ public lemma Cfg.space_used_step (cfg cfg' : tm.Cfg)
     obtain ⟨stmts, q''⟩ := result
     injection hstep with hstep
     subst hstep
-    simp only [space_used]
-    trans ∑ i : Fin k, ((tapes i).space_used + 1)
+    simp only [spaceUsed]
+    trans ∑ i : Fin k, ((tapes i).spaceUsed + 1)
     · refine Finset.sum_le_sum fun i _ => ?_
       unfold BiTape.optionMove
-      grind [BiTape.space_used_write, BiTape.space_used_move]
+      grind [BiTape.spaceUsed_write, BiTape.spaceUsed_move]
     · simp [Finset.sum_add_distrib]
 
 end Cfg
@@ -292,7 +292,7 @@ public def UsesSpaceUntilStep
     (s t : ℕ) : Prop :=
   ∀ t' ≤ t, match tm.configs tapes t' with
     | none => true
-    | some cfg => cfg.space_used ≤ s
+    | some cfg => cfg.spaceUsed ≤ s
 
 /-- A proof that the Turing machine `tm` transforms tapes `tapes` to `tapes'` in exactly `t` steps
 and uses at most `s` space. -/
