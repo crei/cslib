@@ -43,33 +43,12 @@ public structure MultiCell (k : ℕ) where
 
 public instance : StrEnc TapeCell where
   toData cell := StrEnc.toData (cell.c, cell.containsHead)
-  fromData d := do
-    let (c, containsHead) ← StrEnc.fromData d
-    pure { c, containsHead }
-  fromData_toData := by
-    intro c
-    simp
 
 public instance (α : Type) [StrEnc α] (k : ℕ) : StrEnc (Vector α k) where
   toData v := StrEnc.toData v.toList
-  fromData d := do
-      let ls : List α ← StrEnc.fromData d
-      if h : ls.length = k then
-        pure ⟨ls.toArray, h⟩
-      else
-        none
-  fromData_toData := by
-    intro v
-    simp [Vector.toList]
 
 public instance : StrEnc (MultiCell (k : ℕ)) where
   toData mc := StrEnc.toData (mc.cells, mc.isLeftEnd, mc.isRightEnd)
-  fromData d := do
-    let (cells, isLeftEnd, isRightEnd) <- StrEnc.fromData d
-    pure { cells, isLeftEnd, isRightEnd }
-  fromData_toData := by
-    intro v
-    simp
 
 /-
 Outline of UTM:

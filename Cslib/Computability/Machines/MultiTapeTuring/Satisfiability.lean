@@ -31,14 +31,6 @@ public instance : StrEnc Literal where
   toData
     | Literal.pos v => StrEnc.toData [0, v]
     | Literal.neg v => StrEnc.toData [1, v]
-  fromData d := do
-    match StrEnc.fromData d with
-    | some [0, v] => some (Literal.pos v)
-    | some [1, v] => some (Literal.neg v)
-    | _ => none
-  fromData_toData
-    | Literal.pos _ => by simp
-    | Literal.neg _ => by simp
 
 /-- TODO document -/
 public abbrev Clause := List Literal
@@ -56,14 +48,6 @@ public inductive SATInput where
 public instance : StrEnc SATInput where
   toData
     | SATInput.mk f a => Data.list [StrEnc.toData f, StrEnc.toData a]
-  fromData
-    | Data.list [fd, ad] => do
-      let f ← StrEnc.fromData fd
-      let a ← StrEnc.fromData ad
-      pure (SATInput.mk f a)
-    | _ => none
-  fromData_toData
-    | SATInput.mk f a => by simp [StrEnc.fromData_toData f, StrEnc.fromData_toData a]
 
 @[simp]
 lemma SatInput_toData (formula : Formula) (assignments : Assignments) :
@@ -156,7 +140,6 @@ public lemma case_literal.computes_fun {k : ℕ}
     simp_all [h_comp_pos v x, case_literal, h_neq.symm, h_ne'.symm]
   | Literal.neg v =>
     simp_all [h_comp_neg v x, case_literal, h_neq.symm, h_ne'.symm]
-
 
 -- TODO why does the simp linter complain here?
 public lemma case_literal.computes_fun' {k : ℕ}
