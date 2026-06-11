@@ -253,6 +253,18 @@ lemma listReduceOption_computes {p : PB} {l : List (Option α)} (h : p.ComputesE
     apply optionElim_computesEnc_some h_el (computesFun₂_branch (fun ext => ?_))
     exact cons_computesEnc (var_computes_fresh ext _) ((h_acc.extend ext).extend _)
 
+/-- Models `List.head?` -/
+def listHeadOption (input : PB) : PB :=
+  PB.elim input empty (fun hd _tl => some hd)
+
+lemma listHeadOption_computes {p : PB} {l : List α} (h : p.ComputesEnc env l) :
+    (listHeadOption p).ComputesEnc env l.head? := by
+  cases l with
+  | nil =>
+    apply PB.elim_nil_computes h (empty_computes)
+  | cons hd tl =>
+    apply PB.elim_cons_computes h (PB.computesFun₂_branch2 (fun ext => ?_))
+    refine PB.cons_computes (var_computes_fresh ext _) empty_computes
 
 -- Evaluate a function `f` at `arg` where the function is given as a graph (list of pairs).
 -- Returns `some y` for the first `x` in the graph such that `f x = y` and `none` otherwise.

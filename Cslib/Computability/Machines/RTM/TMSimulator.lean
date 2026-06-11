@@ -400,6 +400,62 @@ lemma tmMainLoop_computes
   apply PB.while_computes h_cfg
   exact loop (Nat.find h_halts) cfg (Nat.find_spec h_halts)
 
+def stringToTape (input : PB) : PB :=
+  PB.toPair input.listHeadOption (PB.toPair .empty (input.tail.listMap .some))
+
+def stringToTape_computes
+    {p_input : PB}
+    {input : List Symbol}
+    (h_input : p_input.ComputesEnc env input) :
+    (stringToTape p_input).ComputesEnc env (BiTape.mk₁ input) := by
+  sorry
+
+def initialConfig (q₀ : PB) (input : PB) : PB :=
+  PB.toPair (.some q₀) (stringToTape input)
+
+lemma initialConfig_computes [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
+    {p_q₀ p_input : PB} {input : List Symbol}
+    (h_q₀ : p_q₀.ComputesEnc env tm.q₀)
+    (h_input : p_input.ComputesEnc env input) :
+    (initialConfig p_q₀ p_input).ComputesEnc env (tm.initCfg input) := by
+  sorry
+
+def diverge : PB := .while_ (.toPair .empty .empty) fun acc => acc
+
+lemma diverge_computes {out : Value} : ¬ diverge.Computes env out := by
+  sorry
+
+def finalConfigToOutput (cfg : PB) : PB :=
+  PB.ifEq (bitapeLeft (cfgBitape cfg)) PB.empty
+    (PB.cons (bitapeHead (cfgBitape cfg)) (bitapeRight (cfgBitape cfg))).listReduceOption
+    diverge
+
+lemma finalConfigToOutput_computes [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
+    {p_cfg : PB} {cfg : tm.Cfg}
+    (h_cfg : p_cfg.ComputesEnc env cfg) :
+    (finalConfigToOutput p_cfg).ComputesEnc env
+      (cfg.BiTape.head :: cfg.BiTape.right.toList).reduceOption ↔
+        cfg.BiTape.left.toList = [] := by
+  sorry
+
+def tmSimulator (input : PB) :=
+  finalConfigToOutput (tmMainLoop input.fst.snd (initialConfig input.fst.fst input.snd))
+
+lemma tmSimulatorComputes [Inhabited Symbol] [Fintype Symbol] [DecidableEq Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State] [DecidableEq tm.State]
+    {p_input : PB}
+    {input output : List Symbol}
+    (h_input : p_input.ComputesEnc env
+      ((tm.q₀,
+        (Fintype.elems : Finset tm.State).toList.map (fun q' =>
+          (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+            (fun c' => (c', tm.tr q' c'))))),
+       input)) :
+    tm.Outputs input output ↔ (tmSimulator p_input).ComputesEnc env output := by
+  sorry
+
 
 
 /- TODO: What is left to do here is
