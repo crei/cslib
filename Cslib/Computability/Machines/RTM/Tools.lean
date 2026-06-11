@@ -26,7 +26,7 @@ pairs, `Option`, etc. plus a set of lemmas to help reasoning about the semantics
 - `PB.toPair` - encode a pair as a two-element list
 - `PB.constant` - build a builder that evaluates to a constant `Data` value
 
-- `PB.fold` - left fold of a body over a list, implemented with `while_`
+- `PB.foldl` - left fold of a body over a list, implemented with `while_`
 - `PB.evalFunGraph` - evaluate a function given as a graph (list of input-output pairs) at an
     argument, implemented with `while_`
 
@@ -149,19 +149,109 @@ lemma constantEnc_computesEnc {α : Type} [DataEncode α] {a : α} :
   simp [ComputesEnc, constantEnc]
 
 
-------------- while semantics ------------------------
+/-- `foldl f init list`: left fold of `f` (taking `acc` then `el`) over `list`. -/
+def foldl (f : PB → PB → PB) (init list : PB) : PB :=
+  snd (PB.while_ (toPair list init)
+    (fun st => elim st.fst empty
+      (fun el rest => toPair rest (f st.snd el))))
+
+lemma foldl_computes
+    {p_f : PB → PB → PB} {p_init p_list : PB}
+    {init : α} {list : List β} {f : α → β → α}
+    (h_init : p_init.ComputesEnc env init)
+    (h_list : p_list.ComputesEnc env list)
+    (h_f : ∀ {e : List Value} {pa pb : PB} {a : α} {b : β},
+      pa.ComputesEnc e a → pb.ComputesEnc e b → (p_f pa pb).ComputesEnc e (f a b)) :
+    (foldl p_f p_init p_list).ComputesEnc env (list.foldl f init) := by
+  -- One iteration of the loop body: from `(hd :: tl, acc)` to `(tl, f acc hd)`.
+  have foldl_step : ∀ (acc : α) (hd : β) (tl : List β),
+      computesFun₁ env (.data (DataEncode.encode (hd :: tl, acc)))
+        (fun st => elim st.fst empty (fun el rest => toPair rest (p_f st.snd el)))
+        (.data (DataEncode.encode (tl, f acc hd))) := by
+    intro acc hd tl
+    apply computesFun₁_branch
+    intro ext
+    refine elim_cons_computes
+      (fst_ComputesEnc (var_computes_fresh ext [])) (computesFun₂_branch2 ?_)
+    intro ext2
+    refine toPair_computesEnc (var_computes_fresh2 ext2 []) (h_f ?_ (var_computes_fresh ext2 _))
+    exact snd_ComputesEnc
+        (((var_computes_fresh ext []).extend ext2).extend [_, _])
+  -- Iterate the body from `(li, acc)` to its final folded accumulator `([], li.foldl f acc)`.
+  have h_loop : ∀ (li : List β) (acc : α),
+      WhileComputes env
+        (fun st => elim st.fst empty
+          (fun el rest => toPair rest (p_f st.snd el)))
+        (DataEncode.encode (li, acc))
+        (DataEncode.encode (([] : List β), li.foldl f acc)) := by
+    intro li
+    induction li with
+    | nil =>
+      intro acc
+      apply WhileComputes.halt
+      simp [DataEncode.encode]
+    | cons hd tl ih =>
+      intro acc
+      simp only [List.foldl_cons]
+      exact WhileComputes.step (by simp [DataEncode.encode]) (foldl_step acc hd tl) (ih (f acc hd))
+  exact snd_ComputesEnc (while_computes
+    (toPair_computesEnc h_list h_init) (h_loop list init))
+
+/-- Models `List.reverse`. -/
+def reverse (x : PB) : PB :=
+  foldl (fun acc el => cons el acc) empty x
+
+lemma reverse_computes {p : PB} {l : List α} (h : p.ComputesEnc env l) :
+    (reverse p).ComputesEnc env l.reverse := by
+  have h_fold : l.reverse = l.foldl (fun acc el => el :: acc) [] := by simp
+  rw [h_fold]
+  apply foldl_computes (by simp) h
+  intro env p_tl p_hd tl hd h_tl h_hd
+  exact cons_computesEnc h_hd h_tl
+
+/-- Models `List.map`. -/
+def listMap (x : PB) (f : PB → PB) : PB :=
+  reverse (foldl (fun acc el => cons (f el) acc) empty x)
+
+lemma listMap_computes
+    {p_l : PB} {p_f : PB → PB}
+    {l : List α}
+    {f : α → β}
+    (h_l : p_l.ComputesEnc env l)
+    (h_f : ∀ {e : List Value} {px : PB} {x : α},
+      px.ComputesEnc e x → (p_f px).ComputesEnc e (f x)) :
+    (listMap p_l p_f).ComputesEnc env (l.map f) := by
+  have : l.map f = (l.foldl (fun acc el => f el :: acc) []).reverse := by simp
+  rw [this]
+  apply reverse_computes (foldl_computes (empty_computesEnc β) h_l ?_)
+  intro e p_acc p_el acc el h_acc h_el
+  exact cons_computesEnc (h_f h_el) h_acc
 
 
-/-- `fold body init list`: left fold of `body` (taking `acc` then `el`) over `list`.
+/-- Models `List.reduceOption`, i.e. discards `none` elements, keeping the `some` payloads. -/
+def listReduceOption (x : PB) : PB :=
+  reverse (foldl
+    (fun acc el => optionElim el acc (fun y => PB.cons y acc))
+    empty x)
 
-Implemented with `while_` over a `[remaining, acc]` pair: the loop halts once `remaining`
-(the *head* of the accumulator, which is what `while_` inspects) becomes empty; otherwise it
-splits off the first element `el`, updates the accumulator to `[rest, body acc el]`, and
-continues. The fold's result is the final `acc` (the second component). -/
-def fold (body : PB → PB → PB) (init list : PB) : PB :=
-  snd (PB.while_ (PB.toPair list init)
-    (fun st => elim (PB.fst st) empty
-      (fun el rest => toPair rest (body (PB.snd st) el))))
+lemma listReduceOption_computes {p : PB} {l : List (Option α)} (h : p.ComputesEnc env l) :
+    (listReduceOption p).ComputesEnc env l.reduceOption := by
+  have h_reduceOption_via_fold (m : List (Option α)) : ∀ (a : List α),
+      (m.foldl (fun acc el => match el with | .none => acc | .some y => y :: acc) a).reverse
+        = a.reverse ++ m.reduceOption := by
+    induction m with
+    | nil => simp
+    | cons hd tl ih =>
+      cases hd with | none | some _ => simp [ih]
+  rw [show l.reduceOption = (l.foldl _ []).reverse
+      from by simpa using (h_reduceOption_via_fold l []).symm]
+  apply reverse_computes ((foldl_computes (empty_computesEnc α) h) ?_)
+  intro e p_acc p_el acc el h_acc h_el
+  cases el with
+  | none => exact optionElim_computesEnc_none h_el h_acc
+  | some y =>
+    apply optionElim_computesEnc_some h_el (computesFun₂_branch (fun ext => ?_))
+    exact cons_computesEnc (var_computes_fresh ext _) ((h_acc.extend ext).extend _)
 
 
 -- Evaluate a function `f` at `arg` where the function is given as a graph (list of pairs).

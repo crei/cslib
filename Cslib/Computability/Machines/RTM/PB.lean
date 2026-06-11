@@ -157,12 +157,25 @@ lemma empty_computes : Computes env empty (.data (.l [])) := by
   exact ⟨2, 2, ProgSem.empty⟩
 
 @[simp]
+lemma empty_computesEnc (α : Type) [DataEncode α] : empty.ComputesEnc env ([] : List α) := by
+  intro ext
+  exact ⟨2, 2, ProgSem.empty⟩
+
+@[simp]
 lemma cons_computes {h t : PB} {dh dt : Data}
     (hh : Computes env h (.data dh)) (ht : Computes env t (.data dt)) :
     Computes env (PB.cons h t) (.data (.l (dh :: dt.asList))) := by
   intro ext
   obtain ⟨th, sh, hh'⟩ := hh ext
   obtain ⟨tt, st, ht'⟩ := ht ext
+  exact ⟨_, _, ProgSem.cons hh' ht'⟩
+
+lemma cons_computesEnc {α : Type} [DataEncode α] {p_hd p_tl : PB} {hd : α} {tl : List α}
+    (h_hd : p_hd.ComputesEnc env hd) (h_tl : p_tl.ComputesEnc env tl) :
+    (PB.cons p_hd p_tl).ComputesEnc env (hd :: tl) := by
+  intro ext
+  obtain ⟨th, sh, hh'⟩ := h_hd ext
+  obtain ⟨tt, st, ht'⟩ := h_tl ext
   exact ⟨_, _, ProgSem.cons hh' ht'⟩
 
 /-- A `PB.var` at the absolute level of the `j`-th freshly-bound variable reads `binds[j]`. -/

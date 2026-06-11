@@ -401,6 +401,7 @@ lemma tmMainLoop_computes
   exact loop (Nat.find h_halts) cfg (Nat.find_spec h_halts)
 
 
+
 /- TODO: What is left to do here is
  - construct the initial configuration from the input string
  - extract the output string from the final configuration.
