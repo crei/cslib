@@ -10,6 +10,27 @@ public import Cslib.Computability.Machines.RTM.Tools
 public import Cslib.Computability.Machines.SingleTapeTuring.Basic
 public import Mathlib.Data.List.ReduceOption
 
+/-! # Universal Turing-machine simulator as a rose tree machine
+
+This file defines a rose tree machine that universally simulates all one-tape Turing machines
+(for a fixed alphabet).
+
+This means it constructs a `Prog` `p` such that for any Turing machine `tm`, and any input string
+`input` when `p` is run on `DataEncode.encode (tm, input)`, in outputs the result of the execution
+of the `tm` (if it halts), and does that with a linear overhead in space and a quadratic overhead
+in time (conjectured).
+
+TODO:
+
+Extend this such that `p` receives a time bound `t` and then simulates the Turing machine
+for exactly `t` steps, and also counts (and returns) the space usae of the Turing machine.
+This should allow us to prove most of the diagonalization results.
+
+Note that the proofs of semantic for loop-free programs directly model the computation. we should
+write a tactic to automate this.
+
+-/
+
 @[expose] public section
 
 namespace Turing
@@ -53,14 +74,7 @@ lemma bitape_write_computes
     (bitapeWrite p_tape p_sym).ComputesEnc env (tape.write sym) := by
   apply PB.cons_computes h_sym (PB.tail_computes h_tape)
 
--- /-- Prepend an `Option` to the `StackTape` -/
--- @[scoped grind]
--- def cons (x : Option Symbol) (xs : StackTape Symbol) : StackTape Symbol :=
---   match x, xs with
---   | none, ⟨[], _⟩ => ⟨[], by grind⟩
---   | none, ⟨hd :: tl, hl⟩ => ⟨none :: hd :: tl, by grind⟩
---   | some a, ⟨l, hl⟩ => ⟨some a :: l, by grind⟩
-
+/-- Models `StackTape.cons` -/
 def stackTapeCons (x st : PB) : PB :=
   PB.optionElim x
     (PB.elim st
@@ -129,9 +143,7 @@ lemma stackTapeTail_computes {p_st : PB} {st : StackTape Symbol}
   unfold PB.ComputesEnc
   simpa [← encode_stackTape_tail] using PB.tail_computes h_st
 
--- def move_left (t : BiTape Symbol) : BiTape Symbol :=
---   ⟨t.left.head, t.left.tail, StackTape.cons t.head t.right⟩
-
+/-- Models `BiTape.moveLeft` -/
 def bitapeMoveLeft (t : PB) : PB :=
   PB.toPair (bitapeLeft t).head
     (PB.toPair
@@ -146,9 +158,7 @@ lemma bitapeMoveLeft_computes {p_t : PB} {t : BiTape Symbol} (h_t : p_t.Computes
       (stackTapeTail_computes (bitapeLeft_computes h_t))
       (stackTapeCons_computes (bitapeHead_computes h_t) (bitapeRight_computes h_t)))
 
--- def move_right (t : BiTape Symbol) : BiTape Symbol :=
---   ⟨t.right.head, StackTape.cons t.head t.left, t.right.tail⟩
-
+/-- Models `BiTape.moveRight` -/
 def bitapeMoveRight (t : PB) : PB :=
   PB.toPair (bitapeRight t).head
     (PB.toPair
@@ -169,13 +179,7 @@ instance : DataEncode Dir where
     | Dir.right => DataEncode.encode false
   h_inj := by intro a b h; cases a <;> cases b <;> simp_all [DataEncode.encode]
 
--- /--
--- Move the head to the left or right, shifting the tape underneath it.
--- -/
--- def move (t : BiTape Symbol) : Dir → BiTape Symbol
---   | .left => t.move_left
---   | .right => t.move_right
-
+/-- Models `BiTape.move` -/
 def bitapeMove (tape dir : PB) : PB :=
   PB.ifEq dir (PB.constantEnc Dir.left)
     (bitapeMoveLeft tape)
@@ -191,13 +195,7 @@ lemma bitapeMove_computes {p_t p_dir : PB} {t : BiTape Symbol} {d : Dir}
   | .right =>
     PB.ifeq_ne_computes h_dir PB.constantEnc_computesEnc (by decide) (bitapeMoveRight_computes h_t)
 
--- /--
--- Optionally perform a `move`, or do nothing if `none`.
--- -/
--- def optionMove : BiTape Symbol → Option Dir → BiTape Symbol
---   | t, none => t
---   | t, some d => t.move d
-
+/-- Models `BiTape.optionMove` -/
 def bitapeOptionMove (t dir : PB) : PB :=
   PB.optionElim dir
     t
@@ -214,6 +212,7 @@ lemma bitapeOptionMove_computes {p_t p_dir : PB}
     PB.optionElim_computesEnc_some h_dir (PB.computesFun₂_branch (fun ext =>
       bitapeMove_computes (h_t.extend ext |>.extend _) (PB.var_computes_fresh ext _)))
 
+/-- Encoding of a `SingleTapeTM`, assuming the state set and alphabet are encodable. -/
 instance [Inhabited Symbol] [Fintype Symbol] (tm : SingleTapeTM Symbol) [DataEncode tm.State] :
     DataEncode (Turing.SingleTapeTM.Cfg tm) where
   encode cfg := DataEncode.encode (cfg.state, cfg.BiTape)
@@ -270,19 +269,8 @@ lemma evalTr_computes {State : Type} [Fintype State] [DataEncode State]
       (Fintype.elems : Finset (Option Symbol)).toList.map (fun c' => (c', tr q' c')))
       h_tr h_q) h_c
 
--- /-- The step function corresponding to a `SingleTapeTM`. -/
--- @[simp]
--- def step : tm.Cfg → Option tm.Cfg
---   | ⟨none, _⟩ =>
---     -- If in the halting state, there is no next configuration
---     none
---   | ⟨some q', t⟩ =>
---     -- If in state q', perform look up in the transition function
---     match tm.tr q' t.head with
---     -- and enter a new configuration with state q'' (or none for halting)
---     -- and tape updated according to the Stmt
---     | ⟨⟨wr, dir⟩, q''⟩ => some ⟨q'', (t.write wr).optionMove dir⟩
-
+/-- The part of `SingleTapeTM.step` that applies the output of the transition function to the
+configuration. -/
 def applyTrVal (trVal cfg : PB) : PB :=
   .some (PB.toPair
       trVal.snd
@@ -305,8 +293,8 @@ lemma applyTrVal_computes
   · exact PB.fst_ComputesEnc (a := (trVal.fst.1, trVal.fst.2)) (PB.fst_ComputesEnc h_tr)
   · exact PB.snd_ComputesEnc (a := (trVal.fst.1, trVal.fst.2)) (PB.fst_ComputesEnc h_tr)
 
--- Compute the step function given a transition function (as its graph) and a configuration.
--- Returns `Option Cfg`
+/-- Models `SingleTapeTM.step`: Compute the step function given a transition function
+(as its graph, a list of input-output pairs) and a configuration. Returns `Option Cfg`. -/
 def singleTapeTMStep (tr : PB) (cfg : PB) : PB :=
   PB.optionElim (cfgState cfg)
     PB.empty
@@ -338,20 +326,14 @@ lemma singleTapeTMStep_computes
     refine evalTr_computes (h_tr.extend ext |>.extend _) (PB.var_computes_fresh ext _) ?_
     exact PB.head_computes (cfg_bitape_computes (h_cfg.extend ext |>.extend _))
 
+/-- The main loop of the Turing machine simulation: Execute a step until we reach a halting
+configuration, then return it. -/
 def tmMainLoop (tr : PB) (cfg : PB) : PB :=
   -- The accumulator is the current `Cfg`. The body applies `singleTapeTM_step`
   -- (an `Option Cfg`); on `some next` we continue with `next`, on `none` we keep
   -- the current `acc` (which has `state = none`, signalling halt to `while_`).
   PB.while_ cfg
     (fun acc => PB.optionElim (singleTapeTMStep tr acc) acc (fun next => next))
-
-partial def simulateTM
-    [Inhabited Symbol] [Fintype Symbol]
-    {tm : SingleTapeTM Symbol}
-    (cfg : tm.Cfg) :=
-  match tm.step cfg with
-  | none => cfg
-  | some cfg' => simulateTM cfg'
 
 lemma tmMainLoop_computes
     [Inhabited Symbol] [Fintype Symbol]
@@ -418,6 +400,12 @@ lemma tmMainLoop_computes
   apply PB.while_computes h_cfg
   exact loop (Nat.find h_halts) cfg (Nat.find_spec h_halts)
 
+
+/- TODO: What is left to do here is
+ - construct the initial configuration from the input string
+ - extract the output string from the final configuration.
+ - and of course prove the resource bounds
+-/
 end RoseTreeMachine
 
 end Turing

@@ -9,6 +9,27 @@ module
 public import Cslib.Computability.Machines.RTM.Data
 public import Cslib.Computability.Machines.RTM.DataEncode
 
+
+/-!
+# Programs in a rose tree machine (RTM)
+
+This file contains the main definition of the rose tree machine, its programs including
+semantics and time and space resource consumption.
+
+## Main definitions and notations
+
+- `Prog` - the program
+- `ProgSem` - semantics and resource consumption
+- `InPlace` - a fragment of the language that can be easily simulated using multi-tape Turing
+    machines.
+- `Prog.ComputesInTimeAndSpace` - this defines the complexity notion for the RTM computation model,
+    based on `Data` values.
+- `Prog.ComputesBoolFunInTimeAndSpace` - the complexity notion transferred to functions on binary
+    strings, this making it compatible to all other computation models.
+- `ComputableInOTime` - generic time-complexity in the RTM model
+- `ComputableInOSpace` - generic space-complexity in the RTM model
+-/
+
 @[expose] public section
 
 namespace Turing
@@ -55,14 +76,10 @@ def Value.size : Value → ℕ
   | .data d => d.size
   | .closure _ env => 2 + (env.map Value.size).sum
 
-/-- The empty first-order value. -/
 abbrev Value.empty : Value := .data (Data.l [])
 
 @[simp]
 lemma Value.size_data {d : Data} : (Value.data d).size = d.size := by simp [Value.size]
-
-@[simp]
-lemma Value.size_empty : Value.empty.size = 2 := by simp
 
 mutual
 /-- Semantics of `Prog` including time and space resource bounds.
@@ -83,7 +100,7 @@ inductive ProgSem : (List Value) → Prog → Value → ℕ → ℕ → Prop
   /-- `elim`, cons branch: `v` destructures to `hd :: tl`; evaluate the function `cs` to a
       closure and apply it first to `hd` and then to `tl` (so `cs` is a curried
       two-argument function).
-      TODO: We could syntactically require that hte `cs` argument always has the form
+      TODO: We could syntactically require that the `cs` argument always has the form
       `.fn .fn ...`, then we could change the cost function so that we do not need to charge
       for creating the closure (and the same for all similar constructs).
        -/
@@ -121,10 +138,7 @@ inductive ProgSem : (List Value) → Prog → Value → ℕ → ℕ → Prop
       size of the resulting closure (mirroring `var`, which charges the size of the value it
       produces).
       TODO: We could charge only the size of the referenced variables, which would make it
-      more or less free to create a non-capturing closure.
-      TODO: An earlier version did not charge for the environment in case an abstraction is directly
-      applied (more specifically, it did not even have abstractions or closures),
-      which makes it easier to simulate on a Turing machine. -/
+      more or less free to create a non-capturing closure. -/
   | fn :
       ProgSem σ (.fn body) (.closure body σ)
         (Value.closure body σ).size (Value.closure body σ).size
@@ -141,8 +155,8 @@ inductive ProgSem : (List Value) → Prog → Value → ℕ → ℕ → Prop
 closure `f` to the argument `v` yields `r` using `t` time and `s` space. Only closures can be
 applied; applying a first-order value has no derivation (the program is stuck). -/
 inductive AppSem : Value → Value → Value → ℕ → ℕ → Prop
-  | mk (h_body : ProgSem (σ' ++ [v]) body r t s) :
-      AppSem (.closure body σ') v r t s
+  | mk (h_body : ProgSem (σ ++ [v]) body r t s) :
+      AppSem (.closure body σ) v r t s
 
 /-- Iterates the closure `bodyVal` of a `while_` loop, threading the accumulator.
 `WhileSem bodyVal acc r t s` means that, starting from accumulator `acc`, repeatedly applying
@@ -172,6 +186,14 @@ def Prog.ComputesBoolFunInTimeAndSpace
   (p : Prog) (f : List Bool → List Bool) (t : ℕ → ℕ) (s : ℕ → ℕ) : Prop :=
   ∀ x, ∃ t' ≤ t x.length, ∃ s' ≤ s x.length,
   Prog.ComputesInTimeAndSpace p (DataEncode.encode x) (DataEncode.encode (f x)) t' s'
+
+/-- The function `f` is computable in time `t` in the RTM model, up to constant factors -/
+def ComputableInOTime (f : List Bool → List Bool) (t : ℕ → ℕ) : Prop :=
+  ∃ p a s, Prog.ComputesBoolFunInTimeAndSpace p f (fun n => a * (t n) + a) s
+
+/-- The function `f` is computable in space `s` in the RTM model, up to constant factors -/
+def ComputableInOSpace (f : List Bool → List Bool) (s : ℕ → ℕ) : Prop :=
+  ∃ p a t, Prog.ComputesBoolFunInTimeAndSpace p f t (fun n => a * (s n) + a)
 
 /-- The *in-place* (first-order) fragment of the functional language.
 

@@ -10,6 +10,16 @@ public import Cslib.Computability.Machines.RTM.Data
 public import Mathlib.Data.Nat.Bits
 public import Mathlib.Data.List.Basic
 
+/-!
+# Encodings into `Data`
+
+This file defines the class that is used to encode arbitrary data structures into `Data`,
+so that RTMs (rose tree machines) can operate on them.
+
+Instances are provided for convenience for `Data` itself, `Bool`, `List α`, `Option α`, `α × β`,
+and `ℕ` (binary encoding via `List Bool`)
+
+-/
 
 @[expose] public section
 

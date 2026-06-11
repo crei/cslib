@@ -12,11 +12,24 @@ public import Mathlib.Data.List.ReduceOption
 public import Cslib.Computability.Machines.RTM.PB
 public import Cslib.Computability.Machines.RTM.DataEncode
 
-/-! # RoseTreeMachine V4 — Tools
+/-! # Tools for rose tree machines
 
-Derived program-builder combinators. Because the V4 builder keeps the same HOAS `elim`
-signature as the first-order development, these definitions are identical to their
-counterparts there; only the underlying semantics (functional `elim`/`while_`) differs.
+Derived program-builder combinators and their semantics for working with basic data types like
+pairs, `Option`, etc. plus a set of lemmas to help reasoning about the semantics of while loops.
+
+## Main definitions and notations
+
+- `PB.head`, `PB.tail` - get the head and tail of a list-valued builder
+- `PB.fst`, `PB.snd` - get the first and second component of a pair (encoded as a two-element list)
+- `PB.some` - encode an `Option.some` as a singleton list
+- `PB.optionElim` - eliminate an `Option` by branching on whether a builder is empty or not
+- `PB.toPair` - encode a pair as a two-element list
+- `PB.constant` - build a builder that evaluates to a constant `Data` value
+
+- `PB.fold` - left fold of a body over a list, implemented with `while_`
+- `PB.evalFunGraph` - evaluate a function given as a graph (list of input-output pairs) at an
+    argument, implemented with `while_`
+
 -/
 
 @[expose] public section

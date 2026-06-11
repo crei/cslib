@@ -9,6 +9,20 @@ module
 public import Cslib.Init
 public import Mathlib.Data.Part
 
+/-!
+# Main internal data type for the rose tree machine (RTM)
+
+This file contains the main internal data structure for the RTM, `Data`, a rose tree.
+
+## Main definitions and notations
+
+- `Data` - the main data structure
+- `Data.size` - the size of a `Data` object when encoded using parentheses, complexity results
+  use this size as the main measure.
+- `Data.recL` - the main recursion principle for `Data`
+- `Data.inductionL` - the main induction principle for `Data`
+
+-/
 
 @[expose] public section
 

@@ -9,10 +9,48 @@ module
 public import Cslib.Computability.Machines.RTM.Prog
 public import Cslib.Computability.Machines.RTM.DataEncode
 
-/-! # RoseTreeMachine — PB (program builder)
+/-! # Program builder for rose tree machines
 
-A thin builder layer over the de-Bruijn-levelled `Prog`.
+This is a thin layer over the `Prog`s of rose tree machines, allowing to better
+handle the absolute de-Bruijn levels of variables in `Prog`s.
+It contains the main atoms and combinators for constructing rose tree machines.
+
+The main idea is that a `PB` (program builder) receives the current variable depth as an argument
+and then returns a `Prog` that may refer to variables at that depth or below.
+
+Furthermore, this file contains routines to help reason about the semantics of constructed
+programs both in terms of computations on `Data` but also in terms of computations on arbitrary
+lean types that implement` DataEncode`.
+
+
+## Main definitions and notations
+
+The atoms and combinators mirroring the constructors of `Prog`:
+- `PB.var i` - read the `i`-th variable from the environment
+- `PB.empty` - the empty list `[]`
+- `PB.cons h t` - cons the head `h` and tail `t` into a list
+- `PB.elim v em cs` - elimination of `v` into a nil branch `em` and a curried cons branch `cs`
+- `PB.ifEq x y then_ else_` - if-then-else on the equality of `x` and `y`
+- `PB.while_ init body` - a `while` loop with initializer `init` and body `body`, the body receives
+  a builder for the loop body, which is passed the fresh variable for the accumulator
+- `PB.fn body` - a literal abstraction (a `let` binding), the body receives a builder for the
+  function body, which is passed the fresh variable for the parameter
+- `PB.app f a` - application of `f` to `a`
+
+Semantics:
+
+- `PB.Computes` - resource-erased relational semantics for the program builder
+- `PB.ComputesEnc` - variant of `PB.Computes` for `DataEncode`-able types.
+
+Resource consumption:
+
+- `PB.OutputsOSize` - the output size of the program is linear in the size of the input environment
+- `PB.UsesOTime` - the time used by the program is linear in the size of the input environment
+- `PB.UsesOSpace` - the space used by the program is linear in the size of the input environment
+- `PB.UsesLinearTimeAndSpace` - the program uses linear time and space in the size of the input
+
 -/
+
 
 @[expose] public section
 
@@ -29,13 +67,13 @@ namespace PB
 def var (i : ℕ) : PB := fun _ => .var i
 def empty : PB := fun _ => .empty
 def cons (h t : PB) : PB := fun n => .cons (h n) (t n)
-def fn (body : PB → PB) : PB := fun n => .fn (body (var n) (n + 1))
-def app (f a : PB) : PB := fun n => .app (f n) (a n)
 def elim (v em : PB) (cs : PB → PB → PB) : PB := fun n =>
   .elim (v n) (em n) (.fn (.fn (cs (var n) (var (n + 1)) (n + 2))))
 def ifEq (x y then_ else_ : PB) : PB := fun n => .ifEq (x n) (y n) (then_ n) (else_ n)
 def while_ (init : PB) (body : PB → PB) : PB := fun n =>
   .while_ (init n) (.fn (body (var n) (n + 1)))
+def fn (body : PB → PB) : PB := fun n => .fn (body (var n) (n + 1))
+def app (f a : PB) : PB := fun n => .app (f n) (a n)
 
 /-- Close a builder into a concrete `Prog`. -/
 def build (p : PB) : Prog := p 0
