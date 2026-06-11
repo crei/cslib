@@ -29,6 +29,18 @@ public def MultiTapeTM.eval_struct
     Part (Fin k → TapeView) :=
   tm.eval (TapeView.toBiTape ∘ views) >>= (TapeView.ofBiTapes? ·)
 
+/-- The Turing machine `tm` eventually halts starting from any initial TapeView and
+the tapes are all a valid encodings of TapeView. -/
+@[expose]
+public def AlwaysHaltsOnStruct (tm : MultiTapeTM k Char) : Prop :=
+  ∀ views, (tm.eval_struct views).Dom
+
+@[expose]
+public def MultiTapeTM.eval_struct_tot
+    (tm : MultiTapeTM k Char) (h_halts : AlwaysHaltsOnStruct tm) (views : Fin k → TapeView) :
+    Fin k → TapeView :=
+  (tm.eval_struct views).get (h_halts views)
+
 -- TODO clean up (AI)
 public theorem MultiTapeTM.eval_of_eval_struct
     {tm : MultiTapeTM k Char} {views views' : Fin k → TapeView}

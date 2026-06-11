@@ -29,8 +29,20 @@ public lemma pushList.computes_fun {k : ℕ} {d : Data} {i : Fin k} :
 public def copy_to_list {k : ℕ} (i j : Fin k) : MultiTapeTM k Char := sorry
 
 @[simp]
+public lemma copy_to_list.eval_struct {k : ℕ} {i j : Fin k} (h_ne : i ≠ j)
+  {views : Fin k → TapeView} :
+  (copy_to_list i j).eval_struct views = some
+    (Function.update views j ((views j).pushList (views i).current)) := by
+  sorry
+
+@[simp]
 public lemma copy_to_list.computes_fun {α : Type} [StrEnc α] {k : ℕ} {i j : Fin k} (h_ne : i ≠ j) :
   computes_function_read_push (α := α) (copy_to_list i j) id i j := by
+  sorry
+
+@[simp]
+public lemma copy_to_list.computes_fun' {α : Type} [StrEnc α] {k : ℕ} {i j : Fin k} (h_ne : i ≠ j) :
+  computes_function_read_push' (α := α) (copy_to_list i j) id i j := by
   sorry
 
 /-- Remove the first element from a list encoding on tape `i`.

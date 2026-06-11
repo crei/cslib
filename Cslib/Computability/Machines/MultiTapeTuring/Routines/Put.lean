@@ -86,17 +86,17 @@ public theorem clear.eval {i : Fin k} {tapes : Fin k → BiTape Char} {ls : List
 
 /-- Replace the contents of tape `i` by the encoding of `d`. -/
 public def replace {k : ℕ} (d : Data) (i : Fin k) : MultiTapeTM k Char :=
-  clear i;ₜ put d i
+  sorry
+  -- TODO move to the left and then
+  -- clear i;ₜ put d i
 
 @[simp]
-public lemma replace.eval_struct {k : ℕ} {d : Data} {i : Fin k} {views : Fin k → TapeView}
-  (h_data : (views i).path = [])
-  -- TODO remove this condition by skipping to the left end if we are on the right end.
-  (h_left : (views i).headPos = .leftEnd) :
+public lemma replace.eval_struct {k : ℕ} {d : Data} {i : Fin k} {views : Fin k → TapeView} :
   (replace d i).eval_struct views = some (Function.update views i (.ofData d)) := by
-  simp only [MultiTapeTM.eval_struct, replace, MultiTapeTM.seq_eval]
-  rw [clear.eval (ls := (views i).data.enc) (by simp [TapeView.toBiTape, h_data, h_left])]
-  simp [put_eval (old := []), ← TapeView.toBiTape_ofData]
+  sorry
+  -- simp only [MultiTapeTM.eval_struct, replace, MultiTapeTM.seq_eval]
+  -- rw [clear.eval (ls := (views i).data.enc) (by simp [TapeView.toBiTape, h_data, h_left])]
+  -- simp [put_eval (old := []), ← TapeView.toBiTape_ofData]
 
 
 end Routines
