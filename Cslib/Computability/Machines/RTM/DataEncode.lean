@@ -34,9 +34,7 @@ instance (α : Type) [DataEncode α] : DataEncode (List α) where
   encode xs := Data.l (xs.map DataEncode.encode)
   h_inj := by
     intro a b h
-    have h' : a.map (DataEncode.encode : α → Data) = b.map DataEncode.encode :=
-      Data.l.inj h
-    exact List.map_injective_iff.mpr DataEncode.h_inj h'
+    exact List.map_injective_iff.mpr DataEncode.h_inj (Data.l.inj h)
 
 @[simp, scoped grind =]
 lemma DataEncode_list_nil {α : Type} [DataEncode α] :
@@ -59,8 +57,7 @@ instance (α : Type) [DataEncode α] : DataEncode (Option α) where
     | some x => Data.l [DataEncode.encode x]
   h_inj := by
     intro a b h
-    cases a <;> cases b <;> simp_all
-    exact DataEncode.h_inj h
+    grind [DataEncode.h_inj]
 
 @[simp]
 lemma DataEncode_Option_empty {α : Type} [DataEncode α] (x : Option α) :
@@ -71,8 +68,7 @@ instance (α β : Type) [DataEncode α] [DataEncode β] : DataEncode (α × β) 
   encode := fun (a, b) => Data.l [DataEncode.encode a, DataEncode.encode b]
   h_inj := by
     intro ⟨a₁, b₁⟩ ⟨a₂, b₂⟩ h
-    simp at h
-    exact Prod.mk.injEq .. |>.mpr ⟨DataEncode.h_inj h.1, DataEncode.h_inj h.2⟩
+    grind [DataEncode.h_inj]
 
 lemma DataEncode_pair {α β : Type} [DataEncode α] [DataEncode β] (a : α) (b : β) :
   DataEncode.encode (a, b) = Data.l [DataEncode.encode a, DataEncode.encode b] := by
@@ -83,7 +79,6 @@ instance : DataEncode ℕ where
   h_inj := by
     intro a b h
     have hb : a.bits = b.bits := DataEncode.h_inj h
-    -- Reconstruct a from a.bits via binaryRec.
     have hrec : ∀ n : ℕ, n.bits.foldr (fun b acc => Nat.bit b acc) 0 = n := by
       intro n
       induction n using Nat.binaryRec' with

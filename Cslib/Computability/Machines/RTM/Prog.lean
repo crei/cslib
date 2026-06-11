@@ -82,7 +82,11 @@ inductive ProgSem : (List Value) → Prog → Value → ℕ → ℕ → Prop
       ProgSem σ (.elim val emp cs) r (t_v + t_emp) (max s_v s_emp)
   /-- `elim`, cons branch: `v` destructures to `hd :: tl`; evaluate the function `cs` to a
       closure and apply it first to `hd` and then to `tl` (so `cs` is a curried
-      two-argument function). -/
+      two-argument function).
+      TODO: We could syntactically require that hte `cs` argument always has the form
+      `.fn .fn ...`, then we could change the cost function so that we do not need to charge
+      for creating the closure (and the same for all similar constructs).
+       -/
   | elim_cons
       (h_v : ProgSem σ val (.data (Data.l (hd :: tl))) t_v s_v)
       (h_cs : ProgSem σ cs cv t_cs s_cs)
