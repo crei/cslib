@@ -78,6 +78,11 @@ This is the encoded size assuming an encoding into parenthesized expressions. -/
 def Data.size : Data → ℕ
   | Data.l xs => 2 + (xs.map Data.size |>.sum)
 
+@[simp]
+lemma Data.size_le {d : Data} : 0 < d.size := by
+  obtain ⟨xs⟩ := d
+  grind [Data.size]
+
 @[simp, scoped grind =]
 lemma Data.size_empty : Data.empty.size = 2 := by simp [Data.empty, Data.size]
 

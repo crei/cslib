@@ -231,7 +231,7 @@ lemma cfgState_computes [Inhabited Symbol] [Fintype Symbol]
     (cfgState p).ComputesEnc env cfg.state :=
   PB.fst_ComputesEnc (a := (cfg.state, cfg.BiTape)) h
 
-lemma cfg_bitape_computes [Inhabited Symbol] [Fintype Symbol]
+lemma cfgBitape_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
     {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
     (h : p.ComputesEnc env cfg) :
@@ -289,7 +289,7 @@ lemma applyTrVal_computes
       (Option.some
         (⟨trVal.snd, (cfg.BiTape.write trVal.fst.1).optionMove trVal.fst.2⟩ : tm.Cfg)) := by
   refine PB.some_ComputesEnc (PB.toPair_computesEnc (PB.snd_ComputesEnc h_tr) ?_)
-  refine bitapeOptionMove_computes (bitape_write_computes (cfg_bitape_computes h_cfg) ?_) ?_
+  refine bitapeOptionMove_computes (bitape_write_computes (cfgBitape_computes h_cfg) ?_) ?_
   · exact PB.fst_ComputesEnc (a := (trVal.fst.1, trVal.fst.2)) (PB.fst_ComputesEnc h_tr)
   · exact PB.snd_ComputesEnc (a := (trVal.fst.1, trVal.fst.2)) (PB.fst_ComputesEnc h_tr)
 
@@ -324,7 +324,7 @@ lemma singleTapeTMStep_computes
     intro ext
     refine applyTrVal_computes ?_ (h_cfg.extend ext |>.extend _)
     refine evalTr_computes (h_tr.extend ext |>.extend _) (PB.var_computes_fresh ext _) ?_
-    exact PB.head_computes (cfg_bitape_computes (h_cfg.extend ext |>.extend _))
+    exact PB.head_computes (cfgBitape_computes (h_cfg.extend ext |>.extend _))
 
 /-- The main loop of the Turing machine simulation: Execute a step until we reach a halting
 configuration, then return it. -/
@@ -377,10 +377,8 @@ lemma tmMainLoop_computes
       exact PB.optionElim_computesEnc_none (hsc ▸ h_step) h_acc
     | some next =>
       rw [show step c = next from by simp only [step_def, hsc, Option.getD_some]]
-      refine PB.optionElim_computesEnc_some (hsc ▸ h_step) ?_
-      apply PB.computesFun₂_branch
-      intro ext2
-      exact PB.var_computes_fresh ext2 [.data (Data.l [])]
+      refine PB.optionElim_computesEnc_some (hsc ▸ h_step)
+        (PB.computesFun₂_branch (fun ext2 => PB.var_computes_fresh ext2 _))
   -- Iterate the body from `c` to its halting configuration after `n` steps.
   have loop : ∀ (n : ℕ) (c : tm.Cfg), (step^[n] c).state = none →
       PB.WhileComputes env
@@ -397,18 +395,27 @@ lemma tmMainLoop_computes
       · rw [Function.iterate_succ, Function.comp_apply] at hc ⊢
         exact PB.WhileComputes.step
           (fun h => hstate ((headEmpty_iff c).mp h)) (body_computes c) (ih (step c) hc)
-  apply PB.while_computes h_cfg
-  exact loop (Nat.find h_halts) cfg (Nat.find_spec h_halts)
+  exact PB.while_computes h_cfg (loop (Nat.find h_halts) cfg (Nat.find_spec h_halts))
 
 def stringToTape (input : PB) : PB :=
   PB.toPair input.listHeadOption (PB.toPair .empty (input.tail.listMap .some))
 
-def stringToTape_computes
+lemma stringToTape_computes
     {p_input : PB}
     {input : List Symbol}
     (h_input : p_input.ComputesEnc env input) :
     (stringToTape p_input).ComputesEnc env (BiTape.mk₁ input) := by
-  sorry
+  cases input with
+  | nil =>
+    refine PB.toPair_computesEnc (PB.listHeadOption_computes h_input)
+      (PB.toPair_computesEnc PB.empty_computes ?_)
+    exact PB.listMap_computes (l := [])
+      (PB.tail_computes h_input) (fun {e} px x hpx => PB.some_ComputesEnc hpx)
+  | cons hd tl =>
+    refine PB.toPair_computesEnc (PB.listHeadOption_computes h_input)
+      (PB.toPair_computesEnc PB.empty_computes ?_)
+    exact PB.listMap_computes
+      (PB.tail_computes h_input) (fun {e} px x hpx => PB.some_ComputesEnc hpx)
 
 def initialConfig (q₀ : PB) (input : PB) : PB :=
   PB.toPair (.some q₀) (stringToTape input)
@@ -418,18 +425,18 @@ lemma initialConfig_computes [Inhabited Symbol] [Fintype Symbol]
     {p_q₀ p_input : PB} {input : List Symbol}
     (h_q₀ : p_q₀.ComputesEnc env tm.q₀)
     (h_input : p_input.ComputesEnc env input) :
-    (initialConfig p_q₀ p_input).ComputesEnc env (tm.initCfg input) := by
-  sorry
+    (initialConfig p_q₀ p_input).ComputesEnc env (tm.initCfg input) :=
+  PB.toPair_computesEnc (PB.some_ComputesEnc h_q₀) (stringToTape_computes h_input)
 
-def diverge : PB := .while_ (.toPair .empty .empty) fun acc => acc
-
-lemma diverge_computes {out : Value} : ¬ diverge.Computes env out := by
-  sorry
-
+/-- Compute the final output from the tape contents.
+Note that since the single tape Turing machine requires the "left" part of the tape to be empty,
+we need to produce "no output" if the left part of the tape is non-empty. The only way
+for us to achieve that is to go into an infinite loop. This makes the semantics theorems a bit
+more awkward. -/
 def finalConfigToOutput (cfg : PB) : PB :=
   PB.ifEq (bitapeLeft (cfgBitape cfg)) PB.empty
     (PB.cons (bitapeHead (cfgBitape cfg)) (bitapeRight (cfgBitape cfg))).listReduceOption
-    diverge
+    PB.diverge
 
 lemma finalConfigToOutput_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
@@ -438,13 +445,115 @@ lemma finalConfigToOutput_computes [Inhabited Symbol] [Fintype Symbol]
     (finalConfigToOutput p_cfg).ComputesEnc env
       (cfg.BiTape.head :: cfg.BiTape.right.toList).reduceOption ↔
         cfg.BiTape.left.toList = [] := by
-  sorry
+  constructor
+  · intro h_comp
+    by_contra h_left
+    obtain ⟨t, s, hps⟩ := h_comp []
+    simp only [List.append_nil, List.length_nil, Nat.add_zero,
+      finalConfigToOutput, PB.ifEq, PB.empty] at hps
+    cases hps with
+    | ifEq_then h_x h_y h_then =>
+      cases h_y
+      obtain ⟨tbl, sbl, hbl⟩ := (bitapeLeft_computes (cfgBitape_computes h_cfg)) []
+      simp only [List.append_nil, List.length_nil, Nat.add_zero] at hbl
+      injection (ProgSem.det h_x hbl) with e1
+      apply h_left
+      exact (DataEncode_list_eq_nil_iff_nil _).mp (e1.symm)
+    | ifEq_else h_x h_y hne h_else => exact PB.diverge_not_progSem h_else
+  · intro h_left
+    have h_bitape_left : cfg.BiTape.left = StackTape.nil :=
+      DataEncode.h_inj (by
+        change DataEncode.encode (cfg.BiTape.left.toList)
+           = DataEncode.encode ((StackTape.nil : StackTape Symbol).toList)
+        rw [h_left, StackTape.nil_toList])
+    apply PB.ifeq_eq_computes
+      (bitapeLeft_computes (cfgBitape_computes h_cfg))
+      (by rw [h_bitape_left];  exact PB.empty_computesEnc (Option Symbol))
+      (PB.listReduceOption_computes
+        (PB.cons_computesEnc
+          (bitapeHead_computes (cfgBitape_computes h_cfg))
+          (bitapeRight_computes (cfgBitape_computes h_cfg))))
 
 def tmSimulator (input : PB) :=
   finalConfigToOutput (tmMainLoop input.fst.snd (initialConfig input.fst.fst input.snd))
 
-lemma tmSimulatorComputes [Inhabited Symbol] [Fintype Symbol] [DecidableEq Symbol]
-    {tm : SingleTapeTM Symbol} [DataEncode tm.State] [DecidableEq tm.State]
+/-- Translate Relation.ReflTransGen, the construct underlying `SingleTapeTM.Outputs`, into
+iteration of the step function. -/
+private lemma reflTransGen_iff_exists_iter {α : Type} (step : α → Option α) {x y : α} :
+    Relation.ReflTransGen (fun a b => step a = some b) x y ↔
+      ∃ n, (fun a => ((step a).getD a))^[n] x = y := by
+  constructor
+  · intro h
+    obtain ⟨n, h_relates⟩ := Relation.ReflTransGen.relatesInSteps h
+    clear h
+    refine ⟨n, ?_⟩
+    induction n generalizing x with
+    | zero => simpa using h_relates
+    | succ n ih =>
+      obtain ⟨c, h_step, h_rel⟩ := Relation.RelatesInSteps.succ' h_relates
+      rw [Function.iterate_succ_apply]
+      have hc : (step x).getD x = c := by simp [h_step]
+      simpa [hc] using ih h_rel
+  · intro h
+    obtain ⟨n, h⟩ := h
+    induction n generalizing x with
+    | zero =>
+      simp only [Function.iterate_zero, id_eq] at h
+      subst h
+      exact Relation.ReflTransGen.refl
+    | succ n ih =>
+      rw [Function.iterate_succ_apply] at h
+      refine Relation.ReflTransGen.trans ?_ (ih h)
+      cases hs : step x with
+      | none => simpa using Relation.ReflTransGen.refl
+      | some c =>
+        simp only [Option.getD_some]
+        exact Relation.ReflTransGen.single hs
+
+omit env [DataEncode Symbol] in
+/-- If the totalised step function reaches a halting configuration `y` after `N` iterations,
+then it also reaches `y` at the *first* halting index `Nat.find h_halts` (halting configurations
+are fixpoints of the totalised step, so the orbit stabilises). This bridges
+`reflTransGen_iff_exists_iter` (which gives *some* witness `N`) and `tmMainLoop_computes` (whose
+result is indexed by `Nat.find h_halts`). -/
+private lemma iterate_find_state_eq [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol} {x y : tm.Cfg} {N : ℕ}
+    (hN : (fun c => (tm.step c).getD c)^[N] x = y) (hy : y.state = none)
+    (h_halts : ∃ n, ((fun c => (tm.step c).getD c)^[n] x).state = none) :
+    (fun c => (tm.step c).getD c)^[Nat.find h_halts] x = y := by
+  set g : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with hg
+  have halt_fix : ∀ c : tm.Cfg, c.state = none → g c = c := by
+    intro c hc
+    obtain ⟨s, t⟩ := c
+    cases s with
+    | none => simp [hg]
+    | some q => simp at hc
+  have hNw : (g^[N] x).state = none := by rw [hN]; exact hy
+  have hkN : Nat.find h_halts ≤ N := Nat.find_le hNw
+  have hfix : g (g^[Nat.find h_halts] x) = g^[Nat.find h_halts] x :=
+    halt_fix _ (Nat.find_spec h_halts)
+  have heq : g^[N] x = g^[Nat.find h_halts] x := by
+    conv_lhs => rw [show N = (N - Nat.find h_halts) + Nat.find h_halts by omega,
+      Function.iterate_add_apply]
+    exact Function.iterate_fixed hfix (N - Nat.find h_halts)
+  rw [← heq]; exact hN
+
+omit env [DataEncode Symbol] in
+/-- The output list is recovered from the `BiTape` built by `mk₁`:
+its head followed by the right-hand contents, with the padding `none`s removed. -/
+private lemma mk₁_reduceOption (l : List Symbol) :
+    ((BiTape.mk₁ l).head :: (BiTape.mk₁ l).right.toList).reduceOption = l := by
+  cases l with
+  | nil => rfl
+  | cons h t =>
+    change h :: (t.map Option.some).reduceOption = h :: t
+    simp only [List.cons.injEq, true_and]
+    induction t with
+    | nil => rfl
+    | cons a s ih => simp [ih]
+
+lemma tmSimulatorComputes [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
     {p_input : PB}
     {input output : List Symbol}
     (h_input : p_input.ComputesEnc env
@@ -454,7 +563,30 @@ lemma tmSimulatorComputes [Inhabited Symbol] [Fintype Symbol] [DecidableEq Symbo
             (fun c' => (c', tm.tr q' c'))))),
        input)) :
     tm.Outputs input output ↔ (tmSimulator p_input).ComputesEnc env output := by
-  sorry
+  constructor
+  · intro h_outputs
+    -- Build the initial-configuration computation from the encoded input `((q₀, table), input)`.
+    have h_cfg := initialConfig_computes (tm := tm)
+      (PB.fst_ComputesEnc (PB.fst_ComputesEnc h_input)) (PB.snd_ComputesEnc h_input)
+    -- From `Outputs`, the totalised step reaches `haltCfg output` after some `N` iterations.
+    obtain ⟨N, hN⟩ := (reflTransGen_iff_exists_iter
+      tm.step (x := tm.initCfg input) (y := tm.haltCfg output)).mp h_outputs
+    -- Hence it eventually reaches a halting state, and `tmMainLoop` computes that config.
+    have h_halts : ∃ n, ((fun c => (tm.step c).getD c)^[n] (tm.initCfg input)).state = none :=
+      ⟨N, by rw [hN]; rfl⟩
+    have h_main :
+        (tmMainLoop p_input.fst.snd (initialConfig p_input.fst.fst p_input.snd)).ComputesEnc
+          env (tm.haltCfg output) := by
+      have := tmMainLoop_computes (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input)) h_cfg h_halts
+      rwa [iterate_find_state_eq hN rfl h_halts] at this
+    -- The simulator extracts the output from the halting configuration's tape.
+    have h_left : (tm.haltCfg output).BiTape.left.toList = [] := by
+      cases output <;> rfl
+    have hval : ((tm.haltCfg output).BiTape.head ::
+        (tm.haltCfg output).BiTape.right.toList).reduceOption = output := mk₁_reduceOption output
+    simpa only [hval, tmSimulator] using (finalConfigToOutput_computes h_main).mpr h_left
+  · intro h_comp
+    sorry
 
 
 

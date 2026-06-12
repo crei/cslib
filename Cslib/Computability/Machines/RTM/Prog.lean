@@ -81,6 +81,11 @@ abbrev Value.empty : Value := .data (Data.l [])
 @[simp]
 lemma Value.size_data {d : Data} : (Value.data d).size = d.size := by simp [Value.size]
 
+lemma Value.size_pos {v : Value} : 0 < v.size := by
+  cases v with
+  | data d => simp only [Value.size]; exact Data.size_le
+  | closure _ env => simp only [Value.size]; omega
+
 mutual
 /-- Semantics of `Prog` including time and space resource bounds.
 `ProgSem σ p x t s` means that on environment `σ`, the program `p` evaluates to the value
@@ -175,6 +180,38 @@ inductive WhileSem : Value → Data → Data → ℕ → ℕ → Prop
       (h_rest : WhileSem bodyVal v r t_r s_r) :
       WhileSem bodyVal acc r (t_b + t_r) (max s_b s_r)
 end
+
+/-- Every `ProgSem` derivation uses strictly positive time. -/
+theorem ProgSem.time_pos {σ : List Value} {p : Prog} {v : Value} {t s : ℕ}
+    (h : ProgSem σ p v t s) : 0 < t := by
+  induction p generalizing σ v t s <;> cases h <;> grind [Value.size_pos]
+
+/-- Every `AppSem` derivation uses strictly positive time. -/
+theorem AppSem.time_pos {f a v : Value} {t s : ℕ} (h : AppSem f a v t s) : 0 < t := by
+  cases h with
+  | mk hb => exact ProgSem.time_pos hb
+
+/-- Every `WhileSem` derivation uses strictly positive time. -/
+theorem WhileSem.time_pos {b : Value} {acc r : Data} {t s : ℕ} (h : WhileSem b acc r t s) :
+    0 < t := by
+  cases h with
+  | halt => exact Data.size_le
+  | step hc hap hr => have := AppSem.time_pos hap; omega
+
+/-- The value produced by `ProgSem` is uniquely determined by the program and environment:
+evaluation is deterministic (the time and space may in principle differ, but the result
+cannot).
+
+TODO -/
+theorem ProgSem.det {σ : List Value} {p : Prog} {v₁ v₂ : Value} {t₁ s₁ t₂ s₂ : ℕ}
+    (h₁ : ProgSem σ p v₁ t₁ s₁) (h₂ : ProgSem σ p v₂ t₂ s₂) : v₁ = v₂ := by
+  induction t₁ using Nat.strong_induction_on generalizing σ p v₁ v₂ s₁ t₂ s₂
+  rename_i t ih
+  cases p with
+  | var i =>
+    have : v₂ = (σ[i]?.getD Value.empty) := by sorry --simp_all [h₂]
+    sorry
+  | _ => sorry
 
 /-- The program `p` computes the value `y` from the value `x` in time `t` and space `s`. -/
 def Prog.ComputesInTimeAndSpace (p : Prog) (x y : Data) (t : ℕ) (s : ℕ) : Prop :=
