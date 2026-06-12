@@ -148,55 +148,6 @@ lemma constantEnc_computesEnc {α : Type} [DataEncode α] {a : α} :
     (constantEnc a).ComputesEnc env a := by
   simp [ComputesEnc, constantEnc]
 
-/-- The infinite loop. -/
-def diverge : PB := .while_ (.toPair (.cons .empty .empty) .empty) fun acc => acc
-
-/-- Inversion for `ProgSem` on a variable: the result is exactly the looked-up value, and the
-time charged equals the size of that value. -/
-private lemma progSem_var_inv {σ : List Value} {i : ℕ} {r : Value} {t s : ℕ}
-    (h : ProgSem σ (.var i) r t s) : r = σ[i]?.getD Value.empty ∧ t = r.size := by
-  cases h
-  exact ⟨rfl, rfl⟩
-
-/-- Helper for `diverge_not_progSem`: a `while_` loop whose body is the identity closure
-`fun acc => acc` never terminates as long as the current accumulator's head is non-empty,
-so it has no `WhileSem` derivation. Proved by strong induction on the loop's running time. -/
-private lemma diverge_while_false : ∀ (t_w : ℕ) {σ : List Value} {acc r : Data} {s_w : ℕ},
-    WhileSem (.closure (.var σ.length) σ) acc r t_w s_w →
-    acc.asList.head?.getD (Data.l []) ≠ Data.l [] → False := by
-  intro t_w
-  induction t_w using Nat.strong_induction_on with
-  | _ t_w ih =>
-    intro σ acc r s_w hw h_head
-    cases hw with
-    | halt h_stop => exact h_head h_stop
-    | step h_cont h_app h_rest =>
-      rename_i v t_b s_b t_r s_r
-      cases h_app with
-      | mk h_b =>
-        obtain ⟨hval, ht⟩ := progSem_var_inv h_b
-        have : v = acc := by simpa using hval
-        subst this
-        have hpos : 0 < t_b := by rw [ht, Value.size_data]; simp
-        exact ih t_r (by omega) h_rest h_head
-
-/-- `diverge` has no `ProgSem` derivation: it genuinely diverges. -/
-lemma diverge_not_progSem {out : Value} {t s : ℕ} :
-    ¬ ProgSem env (diverge env.length) out t s := by
-  intro h
-  cases h with
-  | while_ h_init h_body h_while =>
-    cases h_body
-    cases h_init with
-    | cons h₁ h₂ => exact diverge_while_false _ h_while (by cases h₁; simp)
-
-lemma diverge_computes {out : Value} : ¬ diverge.Computes env out := by
-  intro h_div
-  obtain ⟨t, s, hps⟩ := h_div []
-  simp only [List.append_nil, List.length_nil, Nat.add_zero] at hps
-  exact diverge_not_progSem hps
-
-
 /-- `foldl f init list`: left fold of `f` (taking `acc` then `el`) over `list`. -/
 def foldl (f : PB → PB → PB) (init list : PB) : PB :=
   snd (PB.while_ (toPair list init)

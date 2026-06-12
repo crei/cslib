@@ -428,51 +428,24 @@ lemma initialConfig_computes [Inhabited Symbol] [Fintype Symbol]
     (initialConfig p_q₀ p_input).ComputesEnc env (tm.initCfg input) :=
   PB.toPair_computesEnc (PB.some_ComputesEnc h_q₀) (stringToTape_computes h_input)
 
-/-- Compute the final output from the tape contents.
-Note that since the single tape Turing machine requires the "left" part of the tape to be empty,
-we need to produce "no output" if the left part of the tape is non-empty. The only way
-for us to achieve that is to go into an infinite loop. This makes the semantics theorems a bit
-more awkward. -/
+/-- Compute the final output from the tape contents: the symbol under the head followed by the
+contents to its right, with blank (`none`) cells removed.
+
+This is only meaningful for halting configurations whose tape is in canonical (`mk₁`) form, i.e.
+with an empty left part — which is exactly the shape of the `haltCfg`s produced by `Outputs`. -/
 def finalConfigToOutput (cfg : PB) : PB :=
-  PB.ifEq (bitapeLeft (cfgBitape cfg)) PB.empty
-    (PB.cons (bitapeHead (cfgBitape cfg)) (bitapeRight (cfgBitape cfg))).listReduceOption
-    PB.diverge
+  (PB.cons (bitapeHead (cfgBitape cfg)) (bitapeRight (cfgBitape cfg))).listReduceOption
 
 lemma finalConfigToOutput_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
     {p_cfg : PB} {cfg : tm.Cfg}
     (h_cfg : p_cfg.ComputesEnc env cfg) :
     (finalConfigToOutput p_cfg).ComputesEnc env
-      (cfg.BiTape.head :: cfg.BiTape.right.toList).reduceOption ↔
-        cfg.BiTape.left.toList = [] := by
-  constructor
-  · intro h_comp
-    by_contra h_left
-    obtain ⟨t, s, hps⟩ := h_comp []
-    simp only [List.append_nil, List.length_nil, Nat.add_zero,
-      finalConfigToOutput, PB.ifEq, PB.empty] at hps
-    cases hps with
-    | ifEq_then h_x h_y h_then =>
-      cases h_y
-      obtain ⟨tbl, sbl, hbl⟩ := (bitapeLeft_computes (cfgBitape_computes h_cfg)) []
-      simp only [List.append_nil, List.length_nil, Nat.add_zero] at hbl
-      injection (ProgSem.det h_x hbl) with e1
-      apply h_left
-      exact (DataEncode_list_eq_nil_iff_nil _).mp (e1.symm)
-    | ifEq_else h_x h_y hne h_else => exact PB.diverge_not_progSem h_else
-  · intro h_left
-    have h_bitape_left : cfg.BiTape.left = StackTape.nil :=
-      DataEncode.h_inj (by
-        change DataEncode.encode (cfg.BiTape.left.toList)
-           = DataEncode.encode ((StackTape.nil : StackTape Symbol).toList)
-        rw [h_left, StackTape.nil_toList])
-    apply PB.ifeq_eq_computes
-      (bitapeLeft_computes (cfgBitape_computes h_cfg))
-      (by rw [h_bitape_left];  exact PB.empty_computesEnc (Option Symbol))
-      (PB.listReduceOption_computes
-        (PB.cons_computesEnc
-          (bitapeHead_computes (cfgBitape_computes h_cfg))
-          (bitapeRight_computes (cfgBitape_computes h_cfg))))
+      (cfg.BiTape.head :: cfg.BiTape.right.toList).reduceOption :=
+  PB.listReduceOption_computes
+    (PB.cons_computesEnc
+      (bitapeHead_computes (cfgBitape_computes h_cfg))
+      (bitapeRight_computes (cfgBitape_computes h_cfg)))
 
 def tmSimulator (input : PB) :=
   finalConfigToOutput (tmMainLoop input.fst.snd (initialConfig input.fst.fst input.snd))
@@ -517,8 +490,11 @@ are fixpoints of the totalised step, so the orbit stabilises). This bridges
 `reflTransGen_iff_exists_iter` (which gives *some* witness `N`) and `tmMainLoop_computes` (whose
 result is indexed by `Nat.find h_halts`). -/
 private lemma iterate_find_state_eq [Inhabited Symbol] [Fintype Symbol]
-    {tm : SingleTapeTM Symbol} {x y : tm.Cfg} {N : ℕ}
-    (hN : (fun c => (tm.step c).getD c)^[N] x = y) (hy : y.state = none)
+    {tm : SingleTapeTM Symbol}
+    {x y : tm.Cfg}
+    {N : ℕ}
+    (hN : (fun c => (tm.step c).getD c)^[N] x = y)
+    (hy : y.state = none)
     (h_halts : ∃ n, ((fun c => (tm.step c).getD c)^[n] x).state = none) :
     (fun c => (tm.step c).getD c)^[Nat.find h_halts] x = y := by
   set g : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with hg
@@ -536,7 +512,8 @@ private lemma iterate_find_state_eq [Inhabited Symbol] [Fintype Symbol]
     conv_lhs => rw [show N = (N - Nat.find h_halts) + Nat.find h_halts by omega,
       Function.iterate_add_apply]
     exact Function.iterate_fixed hfix (N - Nat.find h_halts)
-  rw [← heq]; exact hN
+  rw [← heq]
+  exact hN
 
 omit env [DataEncode Symbol] in
 /-- The output list is recovered from the `BiTape` built by `mk₁`:
@@ -562,39 +539,28 @@ lemma tmSimulatorComputes [Inhabited Symbol] [Fintype Symbol]
           (q', (Fintype.elems : Finset (Option Symbol)).toList.map
             (fun c' => (c', tm.tr q' c'))))),
        input)) :
-    tm.Outputs input output ↔ (tmSimulator p_input).ComputesEnc env output := by
-  constructor
-  · intro h_outputs
-    -- Build the initial-configuration computation from the encoded input `((q₀, table), input)`.
-    have h_cfg := initialConfig_computes (tm := tm)
-      (PB.fst_ComputesEnc (PB.fst_ComputesEnc h_input)) (PB.snd_ComputesEnc h_input)
-    -- From `Outputs`, the totalised step reaches `haltCfg output` after some `N` iterations.
-    obtain ⟨N, hN⟩ := (reflTransGen_iff_exists_iter
-      tm.step (x := tm.initCfg input) (y := tm.haltCfg output)).mp h_outputs
-    -- Hence it eventually reaches a halting state, and `tmMainLoop` computes that config.
-    have h_halts : ∃ n, ((fun c => (tm.step c).getD c)^[n] (tm.initCfg input)).state = none :=
-      ⟨N, by rw [hN]; rfl⟩
-    have h_main :
-        (tmMainLoop p_input.fst.snd (initialConfig p_input.fst.fst p_input.snd)).ComputesEnc
-          env (tm.haltCfg output) := by
-      have := tmMainLoop_computes (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input)) h_cfg h_halts
-      rwa [iterate_find_state_eq hN rfl h_halts] at this
-    -- The simulator extracts the output from the halting configuration's tape.
-    have h_left : (tm.haltCfg output).BiTape.left.toList = [] := by
-      cases output <;> rfl
-    have hval : ((tm.haltCfg output).BiTape.head ::
-        (tm.haltCfg output).BiTape.right.toList).reduceOption = output := mk₁_reduceOption output
-    simpa only [hval, tmSimulator] using (finalConfigToOutput_computes h_main).mpr h_left
-  · intro h_comp
-    sorry
+    tm.Outputs input output → (tmSimulator p_input).ComputesEnc env output := by
+  intro h_outputs
+  -- Build the initial-configuration computation from the encoded input `((q₀, table), input)`.
+  have h_cfg := initialConfig_computes (tm := tm)
+    (PB.fst_ComputesEnc (PB.fst_ComputesEnc h_input)) (PB.snd_ComputesEnc h_input)
+  -- From `Outputs`, the totalised step reaches `haltCfg output` after some `N` iterations.
+  obtain ⟨N, hN⟩ := (reflTransGen_iff_exists_iter
+    tm.step (x := tm.initCfg input) (y := tm.haltCfg output)).mp h_outputs
+  -- Hence it eventually reaches a halting state, and `tmMainLoop` computes that config.
+  have h_halts : ∃ n, ((fun c => (tm.step c).getD c)^[n] (tm.initCfg input)).state = none :=
+    ⟨N, by rw [hN]; rfl⟩
+  have h_main :
+      (tmMainLoop p_input.fst.snd (initialConfig p_input.fst.fst p_input.snd)).ComputesEnc
+        env (tm.haltCfg output) := by
+    have := tmMainLoop_computes (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input)) h_cfg h_halts
+    rwa [iterate_find_state_eq hN rfl h_halts] at this
+  -- The simulator extracts the output from the halting configuration's canonical tape.
+  have hval : ((tm.haltCfg output).BiTape.head ::
+      (tm.haltCfg output).BiTape.right.toList).reduceOption = output := mk₁_reduceOption output
+  simpa only [hval, tmSimulator] using finalConfigToOutput_computes h_main
 
 
-
-/- TODO: What is left to do here is
- - construct the initial configuration from the input string
- - extract the output string from the final configuration.
- - and of course prove the resource bounds
--/
 end RoseTreeMachine
 
 end Turing
