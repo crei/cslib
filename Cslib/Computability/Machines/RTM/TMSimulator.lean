@@ -65,14 +65,10 @@ lemma encode_biTape (t : Turing.BiTape Symbol) :
     DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
     simp [DataEncode.encode]
 
-def bitapeWrite (t v : PB) : PB := PB.cons v t.tail
-
-lemma bitape_write_computes
-    {p_tape p_sym : PB} {tape : BiTape Symbol} {sym : Option Symbol}
-    (h_tape : p_tape.ComputesEnc env tape)
-    (h_sym : p_sym.ComputesEnc env sym) :
-    (bitapeWrite p_tape p_sym).ComputesEnc env (tape.write sym) := by
-  apply PB.cons_computes h_sym (PB.tail_computes h_tape)
+def bitapeWrite (sym : Routine env (Option Symbol)) (tape : Routine env (BiTape Symbol)) :
+    Routine env (BiTape Symbol) :=
+  ⟨PB.cons sym.impl tape.impl.tail, tape.out.write sym.out,
+    PB.cons_computes sym.h (PB.tail_computes tape.h)⟩
 
 /-- Models `StackTape.cons` -/
 def stackTapeCons (x st : PB) : PB :=

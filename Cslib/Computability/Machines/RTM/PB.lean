@@ -114,6 +114,62 @@ This allows statements that `PB`s compute functions on lean datatypes. -/
 def ComputesEnc {α : Type} [DataEncode α] (env : List Value) (impl : PB) (x : α) :=
   Computes env impl (.data (DataEncode.encode x))
 
+end PB
+
+/-- Combines the implementation (as a `PB`), the value (`v`) and a proof of this fact. -/
+structure Routine (env : List Value) (α : Type) [DataEncode α] where
+  impl : PB
+  out : α
+  h : impl.ComputesEnc env out
+
+def Routine.empty {env : List Value} : Routine env Data where
+  impl := PB.empty
+  out := Data.l []
+  h := by intro ext; exact ⟨2, 2, ProgSem.empty⟩
+
+def Routine.cons {env : List Value} {α : Type} [DataEncode α]
+    (hd : Routine env Data) (tl : Routine env Data) :
+    Routine env Data where
+  impl := PB.cons hd.impl tl.impl
+  out := Data.l (hd.out :: tl.out.asList)
+  h := by
+    intro ext
+    obtain ⟨_, _, hh'⟩ := hd.h ext
+    obtain ⟨_, _, ht'⟩ := tl.h ext
+    exact ⟨_, _, ProgSem.cons hh' ht'⟩
+
+def Routines.listCons {env : List Value} {α : Type} [DataEncode α]
+    (hd : Routine env α) (tl : Routine env (List α)) :
+    Routine env (List α) where
+  impl := PB.cons hd.impl tl.impl
+  out := hd.out :: tl.out
+  h := by
+    intro ext
+    obtain ⟨_, _, hh'⟩ := hd.h ext
+    obtain ⟨_, _, ht'⟩ := tl.h ext
+    exact ⟨_, _, ProgSem.cons hh' ht'⟩
+
+-- TODO .elim is a bit more difficult because of the variables.
+
+def Routines.ifEq {env : List Value} {α β : Type} [DataEncode α] [DecidableEq α] [DataEncode β]
+    (x y : Routine env α) (then_ else_ : Routine env β) :
+    Routine env β where
+  impl := PB.ifEq x.impl y.impl then_.impl else_.impl
+  out := if x.out = y.out then then_.out else else_.out
+  h := by
+    intro ext
+    obtain ⟨_, _, hx'⟩ := x.h ext
+    obtain ⟨_, _, hy'⟩ := y.h ext
+    obtain ⟨_, _, hthen'⟩ := then_.h ext
+    obtain ⟨_, _, helse'⟩ := else_.h ext
+    split_ifs with hxy
+    · rw [← hxy] at hy'
+      exact ⟨_, _, ProgSem.ifEq_then hx' hy' hthen'⟩
+    · have hne : x.out ≠ y.out := by simp [hxy]
+      exact ⟨_, _, ProgSem.ifEq_else hx' hy' (by sorry /- injectivity? -/) helse'⟩
+
+namespace PB
+
 /-- Var-lookup: `PB.var i` reads the `i`-th entry of the environment. -/
 @[simp]
 lemma var_computes {i : ℕ} (h : i < env.length) :
