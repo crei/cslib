@@ -114,6 +114,62 @@ This allows statements that `PB`s compute functions on lean datatypes. -/
 def ComputesEnc {α : Type} [DataEncode α] (env : List Value) (impl : PB) (x : α) :=
   Computes env impl (.data (DataEncode.encode x))
 
+end PB
+
+/-- Combines the implementation (as a `PB`), the value (`v`) and a proof of this fact. -/
+structure Routine (env : List Value) (α : Type) [DataEncode α] where
+  impl : PB
+  out : α
+  h : impl.ComputesEnc env out
+
+def Routine.empty {env : List Value} : Routine env Data where
+  impl := PB.empty
+  out := Data.l []
+  h := by intro ext; exact ⟨2, 2, ProgSem.empty⟩
+
+def Routine.cons {env : List Value} {α : Type} [DataEncode α]
+    (hd : Routine env Data) (tl : Routine env Data) :
+    Routine env Data where
+  impl := PB.cons hd.impl tl.impl
+  out := Data.l (hd.out :: tl.out.asList)
+  h := by
+    intro ext
+    obtain ⟨_, _, hh'⟩ := hd.h ext
+    obtain ⟨_, _, ht'⟩ := tl.h ext
+    exact ⟨_, _, ProgSem.cons hh' ht'⟩
+
+def Routines.listCons {env : List Value} {α : Type} [DataEncode α]
+    (hd : Routine env α) (tl : Routine env (List α)) :
+    Routine env (List α) where
+  impl := PB.cons hd.impl tl.impl
+  out := hd.out :: tl.out
+  h := by
+    intro ext
+    obtain ⟨_, _, hh'⟩ := hd.h ext
+    obtain ⟨_, _, ht'⟩ := tl.h ext
+    exact ⟨_, _, ProgSem.cons hh' ht'⟩
+
+-- TODO .elim is a bit more difficult because of the variables.
+
+def Routines.ifEq {env : List Value} {α β : Type} [DataEncode α] [DecidableEq α] [DataEncode β]
+    (x y : Routine env α) (then_ else_ : Routine env β) :
+    Routine env β where
+  impl := PB.ifEq x.impl y.impl then_.impl else_.impl
+  out := if x.out = y.out then then_.out else else_.out
+  h := by
+    intro ext
+    obtain ⟨_, _, hx'⟩ := x.h ext
+    obtain ⟨_, _, hy'⟩ := y.h ext
+    obtain ⟨_, _, hthen'⟩ := then_.h ext
+    obtain ⟨_, _, helse'⟩ := else_.h ext
+    split_ifs with hxy
+    · rw [← hxy] at hy'
+      exact ⟨_, _, ProgSem.ifEq_then hx' hy' hthen'⟩
+    · have hne : x.out ≠ y.out := by simp [hxy]
+      exact ⟨_, _, ProgSem.ifEq_else hx' hy' (by sorry /- injectivity? -/) helse'⟩
+
+namespace PB
+
 /-- Var-lookup: `PB.var i` reads the `i`-th entry of the environment. -/
 @[simp]
 lemma var_computes {i : ℕ} (h : i < env.length) :
@@ -415,6 +471,102 @@ def UsesLinearTimeAndSpace (impl : PB) : Prop :=
   PB.UsesOSpace impl (fun env => (env.map fun x => x.size).sum)
 
 end PB
+
+/-! ### Two-argument open routines (`Fun2Routine`) and `Routine.elim`
+
+A `Fun2Routine env A B C` packages the *code* of a two-argument branch (`body : PB → PB → PB`),
+the function it realizes (`f : A → B → C`), and a proof — via `PB.computesFun₂` — that `body`, run
+on the two freshly-bound arguments, computes `encode (f a b)` for *all* typed inputs `a b`. It is
+exactly the interface that `Routine.elim`'s cons-branch consumes (`PB.elim_cons_computes`).
+
+Because the bound variables live *after* the (universally quantified) extension `ext` in the
+runtime environment, a branch cannot be assembled by feeding fixed-`env` `Routine`s to a higher
+order `Routine → Routine → Routine`: such a function would bake in absolute indices valid only at
+`ext = []`. Instead, branches are built compositionally from the `Fun2Routine` combinators below
+(`var0`, `var1`, `lift`, `cons`), whose variable references are computed at the correct dynamic
+offset. -/
+structure Fun2Routine (env : List Value) (A B C : Type)
+    [DataEncode A] [DataEncode B] [DataEncode C] where
+  /-- The branch code, as a function of its two (freshly-bound) arguments. -/
+  body : PB → PB → PB
+  /-- The function realized by the branch. -/
+  f : A → B → C
+  /-- `body` run on the two freshly-bound arguments computes `encode (f a b)`. -/
+  h : ∀ (a : A) (b : B),
+    PB.computesFun₂ env (.data (DataEncode.encode a)) (.data (DataEncode.encode b)) body
+      (.data (DataEncode.encode (f a b)))
+
+namespace Fun2Routine
+
+variable {env : List Value} {A B C D : Type}
+  [DataEncode A] [DataEncode B] [DataEncode C] [DataEncode D]
+
+/-- The first bound argument. -/
+def var0 : Fun2Routine env A B A where
+  body := fun vhd _ => vhd
+  f := fun a _ => a
+  h := by
+    intro a b ext
+    simpa [PB.var] using
+      PB.var_computesFun (env := env)
+        (binds := [.data (DataEncode.encode a), .data (DataEncode.encode b)]) (j := 0) ext
+
+/-- The second bound argument. -/
+def var1 : Fun2Routine env A B B where
+  body := fun _ vtl => vtl
+  f := fun _ b => b
+  h := by
+    intro a b ext
+    simpa [PB.var] using
+      PB.var_computesFun (env := env)
+        (binds := [.data (DataEncode.encode a), .data (DataEncode.encode b)]) (j := 1) ext
+
+/-- Lift a closed `Routine` into a branch that ignores both arguments. -/
+def lift (r : Routine env C) : Fun2Routine env A B C where
+  body := fun _ _ => r.impl
+  f := fun _ _ => r.out
+  h := by
+    intro a b
+    exact PB.computesFun₂_const r.h
+
+/-- `cons` of two branches: builds the list `hd.f a b :: (tl.f a b).asList`. -/
+def cons (hd tl : Fun2Routine env A B Data) : Fun2Routine env A B Data where
+  body := fun vhd vtl => PB.cons (hd.body vhd vtl) (tl.body vhd vtl)
+  f := fun a b => Data.l (hd.f a b :: (tl.f a b).asList)
+  h := by
+    intro a b ext
+    obtain ⟨_, _, h1⟩ := hd.h a b ext
+    obtain ⟨_, _, h2⟩ := tl.h a b ext
+    exact ⟨_, _, ProgSem.cons h1 h2⟩
+
+end Fun2Routine
+
+/-- List elimination as a `Routine`. On `[]` run `em`; on `hd :: tl` run the branch `cs`, which is
+an open `Fun2Routine` binding the head (`A`) and the tail (`List A`). -/
+def Routine.elim {env : List Value} {A C : Type} [DataEncode A] [DataEncode C]
+    (v : Routine env (List A)) (em : Routine env C)
+    (cs : Fun2Routine env A (List A) C) : Routine env C where
+  impl := PB.elim v.impl em.impl cs.body
+  out := match v.out with
+    | [] => em.out
+    | hd :: tl => cs.f hd tl
+  h := by
+    cases hv : v.out with
+    | nil =>
+      have hvc : PB.Computes env v.impl (.data (.l [])) := by
+        have hh := v.h; rw [hv] at hh
+        simpa [PB.ComputesEnc, DataEncode.encode] using hh
+      simpa [PB.ComputesEnc, hv] using PB.elim_nil_computes hvc em.h
+    | cons hd tl =>
+      have hvc : PB.Computes env v.impl
+          (.data (.l (DataEncode.encode hd :: tl.map DataEncode.encode))) := by
+        have hh := v.h; rw [hv] at hh
+        simpa [PB.ComputesEnc, DataEncode.encode] using hh
+      have hcs : PB.computesFun₂ env (.data (DataEncode.encode hd))
+          (.data (.l (tl.map DataEncode.encode))) cs.body
+          (.data (DataEncode.encode (cs.f hd tl))) := by
+        simpa [DataEncode.encode] using cs.h hd tl
+      simpa [PB.ComputesEnc, hv] using PB.elim_cons_computes hvc hcs
 
 end RoseTreeMachine
 

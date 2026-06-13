@@ -44,51 +44,41 @@ variable {env : List Value}
 variable {α : Type} [DataEncode α]
 variable {β : Type} [DataEncode β]
 
-/-- Returns the tail of a list-valued builder (`[]` when empty). -/
-def tail (x : PB) : PB := .elim x .empty (fun _hd tl => tl)
+def Routine.asData (x : Routine env α) : Routine env Data :=
+  ⟨x.impl, DataEncode.encode x.out, x.h⟩
 
-/-- Returns the head of a list-valued builder (`Data.l []` when empty). -/
-def head (x : PB) : PB := .elim x .empty (fun hd _tl => hd)
+def Routine.tail (x : Routine env Data) : Routine env Data :=
+  ⟨.elim x.impl .empty (fun _hd tl => tl), Data.l x.out.asList.tail, by
+    obtain ⟨x_impl, x_out, hx⟩ := x
+    obtain ⟨dx⟩ := x_out
+    cases dx with
+    | nil => exact elim_nil_computes hx empty_computes
+    | cons hd tl =>
+      exact elim_cons_computes hx fun ext => var_computesFun (binds := [_, _]) ext⟩
 
-@[simp]
-lemma tail_computes {x : PB} {dx : Data} (hx : x.Computes env (.data dx)) :
-    (tail x).Computes env (.data (Data.l dx.asList.tail)) := by
-  obtain ⟨dx⟩ := dx
-  cases dx with
-  | nil => simpa [PB.tail] using elim_nil_computes hx empty_computes
-  | cons hd tl =>
-    refine elim_cons_computes hx ?_
-    intro ext
-    simpa [PB.computesFun₂, var] using
-      var_computesFun (binds := [.data hd, .data (Data.l tl)]) (j := 1) ext
+def Routine.listTail (x : Routine env (List α)) : Routine env (List α) :=
+  ⟨(Routine.tail (asData x)).impl, x.out.tail, by
+    simpa [Routine.tail, asData, ComputesEnc, DataEncode.encode]
+      using (Routine.tail (asData x)).h⟩
 
-@[simp]
-lemma head_computes {x : PB} {dx : Data} (hx : x.Computes env (.data dx)) :
-    Computes env (PB.head x) (.data (dx.asList.headD (Data.l []))) := by
-  obtain ⟨dx⟩ := dx
-  cases dx with
-  | nil => simpa [PB.head] using elim_nil_computes hx empty_computes
-  | cons hd tl =>
-    refine elim_cons_computes hx ?_
-    intro ext
-    simpa [PB.computesFun₂, var] using
-      var_computesFun (binds := [.data hd, .data (Data.l tl)]) (j := 0) ext
+def Routine.head (x : Routine env Data) : Routine env Data :=
+  ⟨.elim x.impl .empty (fun hd tl => hd), x.out.asList.headD (Data.l []), by
+    obtain ⟨x_impl, x_out, hx⟩ := x
+    obtain ⟨dx⟩ := x_out
+    cases dx with
+    | nil => exact elim_nil_computes hx empty_computes
+    | cons hd tl =>
+      exact elim_cons_computes hx fun ext => var_computesFun (binds := [_, _]) (j := 0) ext⟩
 
-/-- First projection (`head`). -/
-def fst (x : PB) : PB := head x
-
-lemma fst_ComputesEnc {x : PB} {a : α × β} (hx : x.ComputesEnc env a) :
-    (fst x).ComputesEnc env a.fst := by
-  obtain ⟨a, b⟩ := a
-  apply PB.head_computes hx
+def Routine.fst (x : Routine env (α × β)) : Routine env α :=
+  ⟨(Routine.head (Routine.asData x)).impl, x.out.fst, by
+    simpa [Routine.head, asData, ComputesEnc, DataEncode.encode] using (Routine.head (asData x)).h⟩
 
 /-- Second projection (`head` of `tail`). -/
-def snd (x : PB) : PB := head (PB.tail x)
-
-lemma snd_ComputesEnc {x : PB} {a : α × β} (hx : x.ComputesEnc env a) :
-    (snd x).ComputesEnc env a.snd := by
-  obtain ⟨a, b⟩ := a
-  apply PB.head_computes (PB.tail_computes hx)
+def Routine.snd (x : Routine env (α × β)) : Routine env β :=
+  ⟨(head (tail (asData x))).impl, x.out.snd, by
+    simpa [Routine.head, Routine.tail, asData, ComputesEnc, DataEncode.encode]
+      using (head (tail (asData x))).h⟩
 
 /-- `Option.some` as a singleton list. -/
 def some (x : PB) : PB := cons x empty
