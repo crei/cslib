@@ -100,6 +100,42 @@ lemma stackTapeCons_computes
     apply PB.optionElim_computesEnc_some h_x
       (PB.computesFun₂_const (PB.cons_computes h_x h_st))
 
+/-! ### Proof-of-concept: `stackTapeCons` rebuilt from the composable `RTMFun` combinators
+
+The block below demonstrates the `RTMFun` combinator library (`Tools.lean`). `stackTapeConsF` is the
+applicative-style combinator: it takes the head and tail transformers (over an arbitrary ambient
+input `I`) and produces the consed list, mirroring the direct `PB.optionElim`/`PB.elim`/`PB.cons`
+version. The program and its correctness proof are *derived*; only a small bridge from the derived
+list-valued `φ` to `StackTape.cons` is proven by hand (`stackTapeConsF_φ`). -/
+
+/-- A `StackTape` is encoded exactly as its `toList`, so the identity program retyped at
+`List (Option Symbol)` computes `StackTape.toList`. -/
+def toListF : PB.RTMFun (α := StackTape Symbol) (β := List (Option Symbol)) :=
+  ⟨StackTape.toList, id, fun _ _ _ h => h⟩
+
+open scoped PB in
+/-- `stackTapeCons` in applicative style: a combinator over an ambient input `I` taking the head
+transformer `x` and tail transformer `st`. The body mirrors the direct `PB.optionElim`/`PB.elim`/
+`PB.cons` version almost verbatim; both the program and the correctness proof are derived. -/
+def stackTapeConsF {I : Type} [DataEncode I]
+    (x : PB.RTMFun (α := I) (β := Option Symbol))
+    (st : PB.RTMFun (α := I) (β := StackTape Symbol)) :
+    PB.RTMFun (α := I) (β := List (Option Symbol)) :=
+  let stl := st >>> toListF
+  PB.RTMFun.optionElimC x
+    (PB.RTMFun.elimC stl PB.RTMFun.emptyF (PB.RTMFun.consF x stl))
+    (PB.RTMFun.consF x stl)
+
+/-- Bridge: the derived `φ` of `stackTapeConsF` computes `StackTape.cons` pointwise. -/
+lemma stackTapeConsF_φ {I : Type} [DataEncode I]
+    (x : PB.RTMFun (α := I) (β := Option Symbol))
+    (st : PB.RTMFun (α := I) (β := StackTape Symbol)) (i : I) :
+    (stackTapeConsF x st).φ i = (StackTape.cons (x.φ i) (st.φ i)).toList := by
+  simp only [stackTapeConsF, PB.RTMFun.optionElimC, PB.RTMFun.elimC, PB.RTMFun.consF,
+    PB.RTMFun.comp, toListF, Function.comp]
+  obtain ⟨l, hl⟩ := st.φ i
+  cases x.φ i <;> cases l <;> rfl --simp [StackTape.cons]
+
 --- The head component of the bitape
 def bitapeHead (t : PB) : PB := t.fst
 --- The left component of the bitape

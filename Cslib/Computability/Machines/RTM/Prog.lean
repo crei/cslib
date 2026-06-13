@@ -86,6 +86,12 @@ lemma Value.size_pos {v : Value} : 0 < v.size := by
   | data d => simp only [Value.size]; exact Data.size_le
   | closure _ env => simp only [Value.size]; omega
 
+instance : DataEncode Value where
+  encode
+    | .data d => sorry
+    | .closure body env => sorry
+  h_inj := sorry
+
 mutual
 /-- Semantics of `Prog` including time and space resource bounds.
 `ProgSem σ p x t s` means that on environment `σ`, the program `p` evaluates to the value

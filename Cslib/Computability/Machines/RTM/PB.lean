@@ -114,6 +114,23 @@ This allows statements that `PB`s compute functions on lean datatypes. -/
 def ComputesEnc {α : Type} [DataEncode α] (env : List Value) (impl : PB) (x : α) :=
   Computes env impl (.data (DataEncode.encode x))
 
+def ComputesFunEnc {α β : Type} [DataEncode α] [DataEncode β]
+    (p : PB → PB) (φ : α → β) : Prop :=
+  ∀ (env : List Value) (a : PB) (x : α), a.ComputesEnc env x → (p a).ComputesEnc env (φ x)
+
+structure RTMFun (α : Type) [DataEncode α] where
+  φ : Data → α
+  impl : PB → PB
+  h_impl : ComputesFunEnc impl φ
+
+structure RTMFun' (α : Type) [DataEncode α] where
+  φ : (List Value) → α
+  impl : PB
+  h_impl : ∀ env, ∃ t s, ProgSem env (impl env.length) (.data (DataEncode.encode (φ env))) t s
+
+def RTMFun'.var (i : ℕ) : RTMFun' Value :=
+  ⟨fun env => env[i]?.getD Value.empty, PB.var i, sorry⟩
+
 /-- Var-lookup: `PB.var i` reads the `i`-th entry of the environment. -/
 @[simp]
 lemma var_computes {i : ℕ} (h : i < env.length) :
@@ -319,6 +336,96 @@ lemma app_fn_computes {body : PB → PB} {arg : PB} {dx out : Value}
       out tb sb := by
     rw [hmap]; exact hb
   exact ⟨_, _, ProgSem.app ProgSem.fn ha (AppSem.mk hb')⟩
+
+/-- Lift `PB.elim` into `RTMFun`. The scrutinee `v` produces a list-shaped `Data`; on the empty
+list the `em` branch runs, and on a `head :: tail` the cons branch `cs` is run with `head` and
+`tail` supplied as `RTMFun`s over the same input (computed by projecting from `v`). Both the
+program and the correctness proof are derived. -/
+def RTMFun.elim (v em : RTMFun Data) (cs : RTMFun Data → RTMFun Data → RTMFun Data) :
+    RTMFun Data :=
+  let hd : RTMFun Data :=
+    ⟨fun d => (v.φ d).asList.headD .empty,
+     fun a => PB.elim (v.impl a) PB.empty (fun h _ => h),
+     by
+       intro env a d h
+       have hv := v.h_impl env a d h
+       simp only [ComputesEnc, DataEncode.encode] at hv ⊢
+       cases hvd : v.φ d with
+       | l xs =>
+         cases xs with
+         | nil =>
+           rw [hvd] at hv
+           exact elim_nil_computes hv empty_computes
+         | cons hd0 tl0 =>
+           rw [hvd] at hv
+           exact elim_cons_computes hv
+             (computesFun₂_branch (fun ext => var_computes_fresh ext [.data (Data.l tl0)]))⟩
+  let tl : RTMFun Data :=
+    ⟨fun d => Data.l (v.φ d).asList.tail,
+     fun a => PB.elim (v.impl a) PB.empty (fun _ t => t),
+     by
+       intro env a d h
+       have hv := v.h_impl env a d h
+       simp only [ComputesEnc, DataEncode.encode] at hv ⊢
+       cases hvd : v.φ d with
+       | l xs =>
+         cases xs with
+         | nil =>
+           rw [hvd] at hv
+           exact elim_nil_computes hv empty_computes
+         | cons hd0 tl0 =>
+           rw [hvd] at hv
+           exact elim_cons_computes hv
+             (computesFun₂_branch2 (body := fun _ t => t)
+               (fun ext => var_computes_fresh' ext (binds := [.data hd0, .data (Data.l tl0)])
+                 (j := 1) (by simp)))⟩
+  ⟨fun d => match v.φ d with
+    | Data.l [] => em.φ d
+    | Data.l (_ :: _) => (cs hd tl).φ d,
+   fun a => PB.elim (v.impl a) (em.impl a) (fun _ _ => (cs hd tl).impl a),
+   by
+     intro env a d h
+     have hv := v.h_impl env a d h
+     simp only [ComputesEnc, DataEncode.encode] at hv ⊢
+     cases hvd : v.φ d with
+     | l xs =>
+       cases xs with
+       | nil =>
+         rw [hvd] at hv
+         exact elim_nil_computes hv (em.h_impl env a d h)
+       | cons hd0 tl0 =>
+         rw [hvd] at hv
+         exact elim_cons_computes hv
+           (computesFun₂_const ((cs hd tl).h_impl env a d h))⟩
+
+def RTMFun'.cons (hd tl : RTMFun' Data) :
+    RTMFun' Data :=
+  ⟨fun env => Data.l (hd.φ env :: (tl.φ env).asList),
+  PB.cons hd.impl tl.impl, sorry ⟩
+
+
+def RTMFun'.elim (v em : RTMFun' Data) (cs : RTMFun' Data → RTMFun' Data → RTMFun' Data) :
+    RTMFun' Data :=
+  ⟨fun env => match v.φ env with
+    | Data.l [] => em.φ env
+    | Data.l (hd :: tl) =>
+      (cs (.var (env.length)) (.var (env.length + 1))).φ (env ++ [Value.data hd, Value.data (Data.l tl)]),
+   fun a => PB.elim (v.impl a) (em.impl a) (fun h t => (cs ⟨fun _ => h, sorry⟩ ⟨fun _ => t, sorry⟩).impl a),
+   by
+     intro env a d h
+     have hv := v.h_impl env a d h
+     simp only [ComputesEnc, DataEncode.encode] at hv ⊢
+     cases hvd : v.φ env with
+     | l xs =>
+       cases xs with
+       | nil =>
+         rw [hvd] at hv
+         exact elim_nil_computes hv (em.h_impl env a d h)
+       | cons hd0 tl0 =>
+         rw [hvd] at hv
+         exact elim_cons_computes hv
+           (computesFun₂_const ((cs ⟨fun _ => hd0, sorry⟩ ⟨fun _ => Data.l tl0, sorry⟩).h_impl env a d h))⟩
+
 
 /-- Resource-erased iteration of a `while_` loop body. `WhileComputes env body acc r` says that,
 under any outer extension `ext`, repeatedly applying the loop-body closure (the closure produced by
