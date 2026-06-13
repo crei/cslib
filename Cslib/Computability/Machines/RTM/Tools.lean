@@ -265,6 +265,7 @@ lemma listHeadOption_computes {p : PB} {l : List α} (h : p.ComputesEnc env l) :
     apply PB.elim_cons_computes h (PB.computesFun₂_branch2 (fun ext => ?_))
     refine PB.cons_computes (var_computes_fresh ext _) empty_computes
 
+
 -- Evaluate a function `f` at `arg` where the function is given as a graph (list of pairs).
 -- Returns `some y` for the first `x` in the graph such that `f x = y` and `none` otherwise.
 def evalFunGraph (graph : PB) (arg : PB) : PB :=
@@ -400,6 +401,37 @@ lemma evalFunGraph_Computes_of_fun
   have h := PB.evalFunGraph_computes h_graph h_arg
   rw [heq _ (Finset.mem_toList.mpr (Fintype.complete a))] at h
   apply PB.head_computes h
+
+
+def bitEq (x y : PB) : PB :=
+  ifEq x y (constantEnc true) (constantEnc false)
+
+def bitNot (x : PB) : PB :=
+  ifEq x (constantEnc true) (constantEnc false) (constantEnc true)
+
+def bitXor (x y : PB) : PB :=
+  ifEq x y (constantEnc false) (constantEnc true)
+
+def succ (x : PB) : PB :=
+  let loop_result := foldl
+    (fun st bit =>
+      let carry := st.fst
+      let acc := st.snd
+      let new_carry := PB.ifEq carry (constantEnc true)
+        (PB.ifEq bit (constantEnc true) (constantEnc true) (constantEnc false))
+        (constantEnc false)
+      let new_bit := PB.ifEq carry (constantEnc true)
+        (PB.ifEq bit (constantEnc true) (constantEnc false) (constantEnc true))
+        bit
+      toPair new_carry (cons new_bit acc))
+    (toPair (constantEnc true) empty)
+    x
+  let final_carry := loop_result.fst
+  let result_rev := loop_result.snd
+  -- If final carry, prepend 1; otherwise just reverse back
+  reverse (PB.ifEq final_carry (constantEnc true)
+    (cons (constantEnc true) result_rev)
+    result_rev)
 
 
 end PB

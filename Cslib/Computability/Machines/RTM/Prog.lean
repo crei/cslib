@@ -225,6 +225,10 @@ inductive InPlace : Prog → Prop
       accumulator. -/
   | while_ (hinit : InPlace init) (hbody : InPlace body) :
       InPlace (.while_ init (.fn body))
+  /-- `app` whose operator is a literal one-argument function `fn body` (a `let` binding):
+      the abstraction is created and immediately consumed, so no closure escapes. -/
+  | app (hbody : InPlace body) (harg : InPlace arg) :
+      InPlace (.app (.fn body) arg)
 
 
 end RoseTreeMachine
