@@ -82,6 +82,10 @@ lemma fst_ComputesEnc {x : PB} {a : α × β} (hx : x.ComputesEnc env a) :
   obtain ⟨a, b⟩ := a
   apply PB.head_computes hx
 
+def fst' (p : RTMFun (α × β)) : RTMFun α :=
+  ⟨fun d => (p.φ d).fst, fun a => head (p.impl a), fun env a d h_x =>
+    PB.head_computes (p.h_impl env a d h_x)⟩
+
 /-- Second projection (`head` of `tail`). -/
 def snd (x : PB) : PB := head (PB.tail x)
 
@@ -89,6 +93,10 @@ lemma snd_ComputesEnc {x : PB} {a : α × β} (hx : x.ComputesEnc env a) :
     (snd x).ComputesEnc env a.snd := by
   obtain ⟨a, b⟩ := a
   apply PB.head_computes (PB.tail_computes hx)
+
+def snd' (p : RTMFun (α × β)) : RTMFun β :=
+  ⟨fun d => (p.φ d).snd, fun x => (p.impl x).tail.head,
+    fun env a d h_x => PB.head_computes (PB.tail_computes (p.h_impl env a d h_x))⟩
 
 /-- `Option.some` as a singleton list. -/
 def some (x : PB) : PB := cons x empty
@@ -100,6 +108,26 @@ lemma some_ComputesEnc {x : PB} {a : α} (hx : x.ComputesEnc env a) :
 /-- Eliminate an `Option`: on `none` (empty) run `noneCase`, on `some v` run `someCase v`. -/
 def optionElim (x noneCase : PB) (someCase : PB → PB) : PB :=
   elim x noneCase (fun v _ => someCase v)
+
+def optionElim' (x : RTMFun (Option α)) (noneCase : RTMFun β) (someCase : RTMFun α → RTMFun β) :
+    RTMFun β :=
+  ⟨fun d => match x.φ d with
+      | .none => noneCase.φ d
+      | .some v => (someCase (⟨fun _ => v, fun _ => PB.empty, fun _ _ _ _ => empty_computes⟩)).φ d,
+   fun a => optionElim (x.impl a) (noneCase.impl a) (fun v => someCase.impl a v),
+   by
+     intro env a d h_x
+     dsimp only
+     have hcond := x.h_impl env a d h_x
+     cases hc : x.φ d with
+     | none =>
+       rw [hc] at hcond
+       exact optionElim_computesEnc_none hcond (noneCase.h_impl env a d h_x)
+     | some v =>
+       rw [hc] at hcond
+       exact optionElim_computesEnc_some hcond
+         (computesFun₂_branch2 (someCase.h_impl env a d h_x))⟩
+
 
 lemma optionElim_computesEnc_none
     {x noneCase : PB} {someCase : PB → PB}
@@ -147,6 +175,132 @@ def constantEnc {α : Type} [DataEncode α] (a : α) : PB := constant (DataEncod
 lemma constantEnc_computesEnc {α : Type} [DataEncode α] {a : α} :
     (constantEnc a).ComputesEnc env a := by
   simp [ComputesEnc, constantEnc]
+
+/-! ### Composable `RTMFun` combinators
+
+`RTMFun` bundles a mathematical function `φ`, a program builder `impl`, and a proof that `impl`
+computes `φ`. The combinators below are closed under this bundle: each derives the resulting `φ`,
+the resulting `impl`, and the correctness proof in one go. Branching combinators (`optionElimC`,
+`elimC`, `ifEqC`) pay their `cases` proof obligation *once*, here, so user code never repeats it.
+
+The function `φ` is automatically *derived* (verifiable by `rfl`), so a program built from these
+combinators needs no separate `_computes` lemma. The combinators operate on the structural encoding
+types (products, lists, `Option`); connecting to abstractions carrying invariants (e.g. `StackTape`)
+still requires a small bridge lemma relating the derived `φ` to the abstraction. -/
+
+/-- Identity transformer: computes `id`. -/
+def RTMFun.idF : RTMFun (α := α) (β := α) :=
+  ⟨id, id, fun _ _ _ h => h⟩
+
+/-- Composition: `g.comp f` computes `g.φ ∘ f.φ` via `fun a => g.impl (f.impl a)`. -/
+def RTMFun.comp {γ : Type} [DataEncode γ]
+    (g : RTMFun (α := β) (β := γ)) (f : RTMFun (α := α) (β := β)) :
+    RTMFun (α := α) (β := γ) :=
+  ⟨g.φ ∘ f.φ, fun a => g.impl (f.impl a),
+    fun env a x h => g.h_impl env (f.impl a) (f.φ x) (f.h_impl env a x h)⟩
+
+@[inherit_doc RTMFun.comp]
+scoped infixr:90 " >>> " => fun f g => RTMFun.comp g f
+
+/-- First projection of a pair-valued transformer: `f.fst` computes `Prod.fst ∘ f.φ`. Lets you write
+`x.fst` to project a sub-result, keeping the "arrow" style close to direct `PB` code. -/
+def RTMFun.fst {I A B : Type} [DataEncode I] [DataEncode A] [DataEncode B]
+    (f : RTMFun (α := I) (β := A × B)) : RTMFun (α := I) (β := A) :=
+  RTMFun.comp fst' f
+
+/-- Second projection of a pair-valued transformer: `f.snd` computes `Prod.snd ∘ f.φ`. -/
+def RTMFun.snd {I A B : Type} [DataEncode I] [DataEncode A] [DataEncode B]
+    (f : RTMFun (α := I) (β := A × B)) : RTMFun (α := I) (β := B) :=
+  RTMFun.comp snd' f
+
+/-- Fanout: run `f` and `g` on the same input and pair the results. -/
+def RTMFun.fanout {γ : Type} [DataEncode γ]
+    (f : RTMFun (α := α) (β := β)) (g : RTMFun (α := α) (β := γ)) :
+    RTMFun (α := α) (β := β × γ) :=
+  ⟨fun a => (f.φ a, g.φ a), fun a => toPair (f.impl a) (g.impl a),
+    fun env a x h => toPair_computesEnc (f.h_impl env a x h) (g.h_impl env a x h)⟩
+
+/-- Constant transformer: ignores the input, computes a fixed value `c`. -/
+def RTMFun.const (c : β) : RTMFun (α := α) (β := β) :=
+  ⟨fun _ => c, fun _ => constantEnc c, fun _ _ _ _ => constantEnc_computesEnc⟩
+
+/-- Lifted empty list. -/
+def RTMFun.emptyF : RTMFun (α := α) (β := (List β)) :=
+  ⟨fun _ => [], fun _ => empty, fun _ _ _ _ => empty_computesEnc β⟩
+
+/-- Lifted `cons`: prepend the head transformer's result to the tail transformer's list. -/
+def RTMFun.consF (h : RTMFun (α := α) (β := β)) (t : RTMFun (α := α) (β := (List β))) :
+    RTMFun (α := α) (β := (List β)) :=
+  ⟨fun a => h.φ a :: t.φ a, fun a => cons (h.impl a) (t.impl a),
+    fun env a x hx => cons_computesEnc (h.h_impl env a x hx) (t.h_impl env a x hx)⟩
+
+/-- Lifted `Option.some`. -/
+def RTMFun.someF (h : RTMFun (α := α) (β := β)) : RTMFun (α := α) (β := (Option β)) :=
+  ⟨fun a => Option.some (h.φ a), fun a => PB.some (h.impl a),
+    fun env a x hx => some_ComputesEnc (h.h_impl env a x hx)⟩
+
+/-- Lifted `optionElim` with constant branches: branches on whether the condition is `none` or
+`some`, ignoring the wrapped value. The `cases` proof is paid once. -/
+def RTMFun.optionElimC {I : Type} [DataEncode I]
+    (cond : RTMFun (α := I) (β := Option α))
+    (noneCase someCase : RTMFun (α := I) (β := β)) : RTMFun (α := I) (β := β) :=
+  ⟨fun i => (cond.φ i).elim (noneCase.φ i) (fun _ => someCase.φ i),
+   fun a => optionElim (cond.impl a) (noneCase.impl a) (fun _ => someCase.impl a),
+   by
+     intro env a x h
+     dsimp only
+     have hcond := cond.h_impl env a x h
+     cases hc : cond.φ x with
+     | none =>
+       rw [hc] at hcond
+       exact optionElim_computesEnc_none hcond (noneCase.h_impl env a x h)
+     | some v =>
+       rw [hc] at hcond
+       exact optionElim_computesEnc_some hcond
+         (computesFun₂_const (someCase.h_impl env a x h))⟩
+
+/-- Lifted list `elim` with constant branches: branches on whether the condition is `[]` or
+`hd :: tl`, ignoring `hd`/`tl`. The `cases` proof is paid once. -/
+def RTMFun.elimC {I : Type} [DataEncode I]
+    (cond : RTMFun (α := I) (β := List α))
+    (nilCase consCase : RTMFun (α := I) (β := β)) : RTMFun (α := I) (β := β) :=
+  ⟨fun i => (cond.φ i).casesOn (nilCase.φ i) (fun _ _ => consCase.φ i),
+   fun a => elim (cond.impl a) (nilCase.impl a) (fun _ _ => consCase.impl a),
+   by
+     intro env a x h
+     dsimp only
+     have hcond := cond.h_impl env a x h
+     cases hc : cond.φ x with
+     | nil =>
+       rw [hc] at hcond
+       exact elim_nil_computes hcond (nilCase.h_impl env a x h)
+     | cons hd tl =>
+       rw [hc] at hcond
+       refine elim_cons_computes (head := DataEncode.encode hd)
+         (tail := (tl.map DataEncode.encode)) ?_
+         (computesFun₂_const (consCase.h_impl env a x h))
+       simpa [ComputesEnc, DataEncode.encode] using hcond⟩
+
+/-- Lifted `ifEq` against a constant `c`: takes `thenCase` when the condition equals `c` (decided by
+`DecidableEq`), else `elseCase`. The case split is paid once. -/
+def RTMFun.ifEqC {I : Type} [DataEncode I] [DecidableEq α]
+    (cond : RTMFun (α := I) (β := α)) (c : α)
+    (thenCase elseCase : RTMFun (α := I) (β := β)) : RTMFun (α := I) (β := β) :=
+  ⟨fun i => if cond.φ i = c then thenCase.φ i else elseCase.φ i,
+   fun a => PB.ifEq (cond.impl a) (constantEnc c) (thenCase.impl a) (elseCase.impl a),
+   by
+     intro env a x h
+     dsimp only
+     have hcond := cond.h_impl env a x h
+     by_cases hx : cond.φ x = c
+     · rw [if_pos hx]
+       rw [hx] at hcond
+       exact ifeq_eq_computes hcond constantEnc_computesEnc (thenCase.h_impl env a x h)
+     · rw [if_neg hx]
+       refine ifeq_ne_computes hcond constantEnc_computesEnc ?_ (elseCase.h_impl env a x h)
+       intro heq
+       exact hx (DataEncode.h_inj heq)⟩
+
 
 /-- `foldl f init list`: left fold of `f` (taking `acc` then `el`) over `list`. -/
 def foldl (f : PB → PB → PB) (init list : PB) : PB :=
