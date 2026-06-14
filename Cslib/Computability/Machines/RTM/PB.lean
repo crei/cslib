@@ -343,6 +343,20 @@ lemma ifeq_eq_computes {x y then_ else_ : PB} {vx : Data} {out : Value}
   simp only [PB.ifEq]
   exact ⟨_, _, ProgSem.ifEq_then hx' hy' hthen'⟩
 
+
+lemma ifeq_eq_computesEnc {α β : Type} [DataEncode α] [DataEncode β]
+    {x y then_ else_ : PB} {vx : α} {out : β}
+    (hx : ComputesEnc env x vx)
+    (hy : ComputesEnc env y vx)
+    (hthen : ComputesEnc env then_ out) :
+    ComputesEnc env (PB.ifEq x y then_ else_) out := by
+  intro ext
+  obtain ⟨tx, sx, hx'⟩ := hx ext
+  obtain ⟨ty, sy, hy'⟩ := hy ext
+  obtain ⟨tthen, sthen, hthen'⟩ := hthen ext
+  simp only [PB.ifEq]
+  exact ⟨_, _, ProgSem.ifEq_then hx' hy' hthen'⟩
+
 @[simp]
 lemma ifeq_ne_computes {x y then_ else_ : PB} {vx vy : Data} {out : Value}
     (hx : Computes env x (.data vx))
@@ -356,6 +370,21 @@ lemma ifeq_ne_computes {x y then_ else_ : PB} {vx vy : Data} {out : Value}
   obtain ⟨telse, selse, helse'⟩ := helse ext
   simp only [PB.ifEq]
   exact ⟨_, _, ProgSem.ifEq_else hx' hy' hne helse'⟩
+
+lemma ifeq_ne_computesEnc {α β : Type} [DataEncode α] [DataEncode β]
+    {x y then_ else_ : PB} {vx vy : α} {out : β}
+    (hx : ComputesEnc env x vx)
+    (hy : ComputesEnc env y vy)
+    (hne : vx ≠ vy)
+    (helse : ComputesEnc env else_ out) :
+    ComputesEnc env (PB.ifEq x y then_ else_) out := by
+  intro ext
+  obtain ⟨tx, sx, hx'⟩ := hx ext
+  obtain ⟨ty, sy, hy'⟩ := hy ext
+  obtain ⟨telse, selse, helse'⟩ := helse ext
+  simp only [PB.ifEq]
+  exact ⟨_, _, ProgSem.ifEq_else hx' hy' (fun heq => hne (DataEncode.h_inj heq)) helse'⟩
+
 
 /-- In-place application of a literal abstraction (a `let` binding): if `arg` computes `dx`
 and `body` computes `out` with its parameter bound to `dx`, then `app (fn body) arg` computes

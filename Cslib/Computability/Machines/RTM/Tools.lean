@@ -406,33 +406,85 @@ lemma evalFunGraph_Computes_of_fun
 def bitEq (x y : PB) : PB :=
   ifEq x y (constantEnc true) (constantEnc false)
 
-def bitNot (x : PB) : PB :=
+lemma bitEq_computes {p_x p_y : PB} {a b : Bool}
+    (h_x : p_x.ComputesEnc env a) (h_y : p_y.ComputesEnc env b) :
+    (bitEq p_x p_y).ComputesEnc env (a == b) := by
+  by_cases h : a = b
+  · subst h
+    apply PB.ifeq_eq_computesEnc h_x h_y
+    simp
+  · apply PB.ifeq_ne_computesEnc h_x h_y h
+    simp [beq_false_of_ne h]
+
+def boolNot (x : PB) : PB :=
   ifEq x (constantEnc true) (constantEnc false) (constantEnc true)
 
-def bitXor (x y : PB) : PB :=
-  ifEq x y (constantEnc false) (constantEnc true)
+lemma boolNot.computes {p_x : PB} {a : Bool} (h_x : p_x.ComputesEnc env a) :
+    (boolNot p_x).ComputesEnc env (!a) := by
+  cases a
+  · exact PB.ifeq_ne_computesEnc h_x constantEnc_computesEnc Bool.false_ne_true
+      constantEnc_computesEnc
+  · exact PB.ifeq_eq_computesEnc h_x constantEnc_computesEnc constantEnc_computesEnc
 
+def boolXor (x y : PB) : PB := boolNot (bitEq x y)
+
+lemma boolXor.computes {p_x p_y : PB} {a b : Bool}
+    (h_x : p_x.ComputesEnc env a) (h_y : p_y.ComputesEnc env b) :
+    (boolXor p_x p_y).ComputesEnc env (Bool.xor a b) :=
+  boolNot.computes (bitEq_computes h_x h_y)
+
+def ifBool (cond then_ else_ : PB) : PB :=
+  ifEq cond (constantEnc true) then_ else_
+
+lemma ifBool_computes {p_cond p_then p_else : PB} {cond : Bool} {then_ else_ : α}
+    (h_cond : p_cond.ComputesEnc env cond)
+    (h_then : p_then.ComputesEnc env then_)
+    (h_else : p_else.ComputesEnc env else_) :
+    (ifBool p_cond p_then p_else).ComputesEnc env (if cond then then_ else else_) := by
+  cases cond
+  · exact PB.ifeq_ne_computesEnc h_cond constantEnc_computesEnc Bool.false_ne_true h_else
+  · exact PB.ifeq_eq_computesEnc h_cond constantEnc_computesEnc h_then
+
+def succ_fold_body : PB → PB → PB :=
+  fun acc bit =>
+    let carry := acc.fst
+    let new_carry := ifBool carry bit (constantEnc false)
+    let new_bit := boolXor bit carry
+    toPair new_carry (cons new_bit acc.snd)
+
+/-- Successor function in binary encocding. -/
 def succ (x : PB) : PB :=
   let loop_result := foldl
-    (fun st bit =>
-      let carry := st.fst
-      let acc := st.snd
-      let new_carry := PB.ifEq carry (constantEnc true)
-        (PB.ifEq bit (constantEnc true) (constantEnc true) (constantEnc false))
-        (constantEnc false)
-      let new_bit := PB.ifEq carry (constantEnc true)
-        (PB.ifEq bit (constantEnc true) (constantEnc false) (constantEnc true))
-        bit
-      toPair new_carry (cons new_bit acc))
+    succ_fold_body
     (toPair (constantEnc true) empty)
     x
   let final_carry := loop_result.fst
   let result_rev := loop_result.snd
   -- If final carry, prepend 1; otherwise just reverse back
-  reverse (PB.ifEq final_carry (constantEnc true)
-    (cons (constantEnc true) result_rev)
-    result_rev)
+  reverse (ifBool final_carry (cons (constantEnc true) result_rev) result_rev)
 
+lemma succ_computes {p_x : PB} {n : ℕ} (h_x : p_x.ComputesEnc env n) :
+    (succ p_x).ComputesEnc env (n + 1) := by
+  let fold_body_sem := fun (acc : (Bool × List Bool)) (bit : Bool) =>
+    let carry := acc.fst
+    let new_carry := if carry then bit else false
+    let new_bit := Bool.xor bit carry
+    (new_carry, new_bit :: acc.snd)
+  have h_fold_body (e : List Value) (p_acc p_bit : PB) (acc : Bool × List Bool) (bit : Bool)
+        (h_acc : p_acc.ComputesEnc e acc) (h_bit : p_bit.ComputesEnc e bit) :
+      (succ_fold_body p_acc p_bit).ComputesEnc e (fold_body_sem acc bit) := by
+    apply PB.toPair_computesEnc
+    · exact ifBool_computes (PB.fst_ComputesEnc h_acc) h_bit constantEnc_computesEnc
+    · exact cons_computesEnc
+        (boolXor.computes h_bit (PB.fst_ComputesEnc h_acc)) (PB.snd_ComputesEnc h_acc)
+  have h_loop_result :
+      (foldl succ_fold_body (toPair (constantEnc true) empty) p_x).ComputesEnc env
+      (List.foldl fold_body_sem (true, []) (Nat.bits n)) := by
+    exact foldl_computes
+      (toPair_computesEnc constantEnc_computesEnc (empty_computesEnc Bool))
+      h_x
+      fun h_acc h_bit => h_fold_body _ _ _ _ _ h_acc h_bit
+  sorry
 
 end PB
 
