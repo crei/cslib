@@ -170,6 +170,49 @@ def ComputesFunEncInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
     (∀ ext : List Value, ProgSem (env ++ ext) (p a (env.length + ext.length))
       (.data (DataEncode.encode (φ x))) (t x + ta) (max (s x) sa))
 
+/-- Code that computes a value of type `α`, bundled with its semantics.
+TODO also bundle resource usage. -/
+structure Routine (α : Type) [DataEncode α] where
+  /-- The code -/
+  impl : PB
+  /-- A condition on the input under which we make a statement about the semantics. -/
+  valid : List Value → Prop := fun _ => True
+  /-- The computed value depending on the environment and the condition. -/
+  val (env : List Value) (h : valid env) : α
+  /-- A proof that the computed value is correct.
+  TODO bundle with val? -/
+  h (env : List Value) (h : valid env) :
+    ∀ ext : List Value, -- TODO do we need this?
+    ∃ t s, ProgSem (env ++ ext) (impl (env.length + ext.length))
+      (.data (DataEncode.encode (val env h))) t s
+  -- sem (env : List Value) (h : valid env) : ((v : α) ×
+  --   (∀ ext : List Value, -- TODO do we need this?
+  --   ∃ t s, ProgSem (env ++ ext) (impl (env.length + ext.length))
+  --     (.data (DataEncode.encode v)) t s))
+
+-- def Routine.val (α : Type) [DataEncode α] (r : Routine α) :=
+--   fun env h => r.sem env h
+
+def Routine.var (i : ℕ) : Routine Data where
+  impl : PB := PB.var i
+  valid env := match env[i]? with | some (.data _) => true | _ => false
+  val env h := match env[i]? with | some (.data d) => d | _ => Data.empty
+  h env h' ext := by sorry
+
+variable {α β γ : Type} [DataEncode α] [DataEncode β] [DataEncode γ]
+
+def Routine.elim (v : Routine Data) (em : Routine Data)
+    (cs : Routine Data → Routine Data → Routine Data) : Routine Data where
+  impl n := .elim (v.impl n) (em.impl n) (.fn (.fn ((cs (var n) (var (n + 1))).impl (n + 2))))
+  valid env := ∃ h : v.valid env, (match v.val env h with
+    | .l [] => em.valid env
+    | .l (hd :: tl) => (cs (Routine.var env.length) (Routine.var (env.length + 1))).valid env)
+  val env h := match (v.val env (h.1)) with
+    | .l [] => em.val env sorry
+    | .l (hd :: tl) => (cs (Routine.var env.length) (Routine.var (env.length + 1))).val env sorry
+  h env h' ext := by sorry
+
+
 
 /-- Var-lookup: `PB.var i` reads the `i`-th entry of the environment. -/
 @[simp]

@@ -43,6 +43,7 @@ namespace PB
 variable {env : List Value}
 variable {α : Type} [DataEncode α]
 variable {β : Type} [DataEncode β]
+variable {γ δ : Type} [DataEncode γ] [DataEncode δ]
 
 /-- Returns the tail of a list-valued builder (`[]` when empty). -/
 def tail (x : PB) : PB := .elim x .empty (fun _hd tl => tl)
@@ -403,35 +404,133 @@ lemma evalFunGraph_Computes_of_fun
   apply PB.head_computes h
 
 
-def bitEq (x y : PB) : PB :=
-  ifEq x y (constantEnc true) (constantEnc false)
+-- def bitEq (x y : PB) : PB :=
+--   ifEq x y (constantEnc true) (constantEnc false)
 
-lemma bitEq_computes {p_x p_y : PB} {a b : Bool}
-    (h_x : p_x.ComputesEnc env a) (h_y : p_y.ComputesEnc env b) :
-    (bitEq p_x p_y).ComputesEnc env (a == b) := by
-  by_cases h : a = b
-  · subst h
-    apply PB.ifeq_eq_computesEnc h_x h_y
-    simp
-  · apply PB.ifeq_ne_computesEnc h_x h_y h
-    simp [beq_false_of_ne h]
+-- lemma bitEq_computes {p_x p_y : PB} {a b : Bool}
+--     (h_x : p_x.ComputesEnc env a) (h_y : p_y.ComputesEnc env b) :
+--     (bitEq p_x p_y).ComputesEnc env (a == b) := by
+--   by_cases h : a = b
+--   · subst h
+--     apply PB.ifeq_eq_computesEnc h_x h_y
+--     simp
+--   · apply PB.ifeq_ne_computesEnc h_x h_y h
+--     simp [beq_false_of_ne h]
 
-def boolNot (x : PB) : PB :=
-  ifEq x (constantEnc true) (constantEnc false) (constantEnc true)
 
-lemma boolNot.computes {p_x : PB} {a : Bool} (h_x : p_x.ComputesEnc env a) :
-    (boolNot p_x).ComputesEnc env (!a) := by
-  cases a
-  · exact PB.ifeq_ne_computesEnc h_x constantEnc_computesEnc Bool.false_ne_true
-      constantEnc_computesEnc
-  · exact PB.ifeq_eq_computesEnc h_x constantEnc_computesEnc constantEnc_computesEnc
+structure Builder (α : Type) [DataEncode α] where
+  impl : PB
+  valid : List Value → Prop := fun _ => True
+  sem : (env : List Value) → (h: valid env) → α
+  h : ∀ env (h : valid env), impl.ComputesEnc env (sem env h)
 
-def boolXor (x y : PB) : PB := boolNot (bitEq x y)
+/-- A *binary* program-builder combinator: a code transformer `impl`, its semantic action `sem`,
+and a proof `h` that whenever the two argument programs compute `a` and `b` (in any environment),
+the transformed program computes `sem a b`. This is the binary analogue of `Builder` for operations
+that genuinely take two runtime inputs (e.g. a fold body), where the code must *not* be allowed to
+depend on the semantic values. -/
+structure Fun2 (α β γ : Type) [DataEncode α] [DataEncode β] [DataEncode γ] where
+  impl : PB → PB → PB
+  sem : α → β → γ
+  h : ∀ {env : List Value} {pa pb : PB} {a : α} {b : β},
+    pa.ComputesEnc env a → pb.ComputesEnc env b → (impl pa pb).ComputesEnc env (sem a b)
+
+/-- Translation **to** `Builder → Builder → Builder`: apply a binary combinator to two builders.
+The result is valid exactly when both inputs are, its semantics is `sem` of the inputs' semantics,
+and its correctness proof is assembled from the combinator's `h`. -/
+def Fun2.apply (f : Fun2 α β γ) (x : Builder α) (y : Builder β) : Builder γ where
+  impl := f.impl x.impl y.impl
+  valid env := x.valid env ∧ y.valid env
+  sem env h := f.sem (x.sem env h.left) (y.sem env h.right)
+  h env h := f.h (x.h env h.left) (y.h env h.right)
+
+/-- A binary combinator can be used directly as a function on builders. -/
+instance : CoeFun (Fun2 α β γ) (fun _ => Builder α → Builder β → Builder γ) := ⟨Fun2.apply⟩
+
+/-- Left fold as a builder combinator: the body is a binary combinator `Fun2 α β α` (its code may
+not depend on the runtime accumulator/element), folded over the list computed by `list` starting
+from `init`. The result is valid when both `init` and `list` are, and its semantics is the ordinary
+`List.foldl` of the body's semantics. -/
+def foldlB (body : Fun2 α β α) (init : Builder α) (list : Builder (List β)) : Builder α where
+  impl := foldl body.impl init.impl list.impl
+  valid env := init.valid env ∧ list.valid env
+  sem env h := (list.sem env h.right).foldl body.sem (init.sem env h.left)
+  h env h := foldl_computes (init.h env h.left) (list.h env h.right) body.h
+
+/-- Boolean equality as a bundled binary combinator (the primitive); the `Builder`-level `bitEq`
+below is derived from it. -/
+def bitEqF : Fun2 Bool Bool Bool where
+  impl x y := ifEq x y (constantEnc true) (constantEnc false)
+  sem a b := a == b
+  h := by
+    intro env pa pb a b h_x h_y
+    by_cases hab : a = b
+    · subst hab
+      apply PB.ifeq_eq_computesEnc h_x h_y
+      simp
+    · apply PB.ifeq_ne_computesEnc h_x h_y hab
+      simp [beq_false_of_ne hab]
+
+/-- Boolean equality on builders, obtained from `bitEqF` via the `Fun2 → Builder → Builder → Builder`
+translation. -/
+def bitEq : Builder Bool → Builder Bool → Builder Bool := bitEqF.apply
+
+def constantEncBuilder {α : Type} [DataEncode α] (a : α) : Builder α where
+  impl := constantEnc a
+  valid := fun _ => True
+  sem _ _ := a
+  h _ _ := constantEnc_computesEnc
+
+def boolNot (p : Builder Bool) : Builder Bool where
+  impl := ifEq p.impl (constantEnc true) (constantEnc false) (constantEnc true)
+  valid := p.valid
+  sem env valid := Bool.not (p.sem env valid)
+  h env valid := by
+    cases h : (p.sem env valid)
+    · exact PB.ifeq_ne_computesEnc (p.h env valid) constantEnc_computesEnc (by simp [h])
+        constantEnc_computesEnc
+    · exact PB.ifeq_eq_computesEnc (p.h env valid)
+        (by simp [h, constantEnc_computesEnc]) constantEnc_computesEnc
+
+def boolNot₂ (p : Builder Bool) : Builder Bool :=
+  let beq := bitEq p (constantEncBuilder false)
+  {
+    impl := beq.impl
+    valid := p.valid
+    sem env valid := Bool.not (p.sem env valid)
+    h env valid := by sorry
+      -- have h_v_eq : ∀ env, p.valid env = beq.valid env := by
+      --   simp [beq, bitEq, bitEqF, Fun2.apply, constantEncBuilder]
+      -- let r := beq.h env (h_v_eq env ▸ valid)
+      -- have h₂ : ∀ v₁ v₂, beq.sem env v₁ =
+      -- exact r
+      -- have h_beq := beq.h env valid (p.h env valid) (constantEncBuilder false).h env valid
+      -- sorry
+  }
+
+example : ∀ (p : Builder Bool) env h₁ h₂ x (h2 : x = p.sem env h₁),
+    (boolNot₂ p).sem env h₂ = !x := by
+  unfold boolNot₂
+  simp
+  sorry
+
+/-- Boolean exclusive-or as a bundled binary combinator. -/
+def boolXorF : Fun2 Bool Bool Bool where
+  impl x y := ifEq x y (constantEnc false) (constantEnc true)
+  sem a b := Bool.xor a b
+  h := by
+    intro env pa pb a b h_x h_y
+    cases a <;> cases b <;>
+      first
+        | (apply PB.ifeq_eq_computesEnc h_x h_y; simp)
+        | (apply PB.ifeq_ne_computesEnc h_x h_y (by decide); simp)
+
+def boolXor (x y : PB) : PB := boolXorF.impl x y
 
 lemma boolXor.computes {p_x p_y : PB} {a b : Bool}
     (h_x : p_x.ComputesEnc env a) (h_y : p_y.ComputesEnc env b) :
     (boolXor p_x p_y).ComputesEnc env (Bool.xor a b) :=
-  boolNot.computes (bitEq_computes h_x h_y)
+  boolXorF.h h_x h_y
 
 def ifBool (cond then_ else_ : PB) : PB :=
   ifEq cond (constantEnc true) then_ else_
