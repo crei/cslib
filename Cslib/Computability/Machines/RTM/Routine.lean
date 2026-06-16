@@ -55,6 +55,79 @@ def var (i : ℕ) : Routine α where
       have hv : env[i]?.getD Value.empty = .data (DataEncode.encode x) := by rw [hx]; rfl
       exact ⟨_, _, hget ▸ hv ▸ ProgSem.var⟩⟩
 
+/-- The value computed by `var i` is `x` whenever slot `i` holds the encoding of `x`. -/
+lemma var_sem_val {env : List Value} {i : ℕ} {x : α} (h : (var i : Routine α).valid env)
+    (hx : env[i]? = some (.data (DataEncode.encode x))) :
+    ((var i : Routine α).sem env h).val = x := by
+  have hsome : DataEncode.decode (α := α)
+      (match env[i]? with | some (.data d) => d | _ => Data.l []) = some x := by
+    rw [hx, DataEncode.encodek]
+  exact Option.get_of_mem _ hsome
+
+/-- Reading slot `env.length` (the first captured slot) of `env ++ [.data (encode x), y]`
+yields `x`. Stated structurally so that `simp` can recover `x` from the environment. -/
+@[simp]
+lemma var_sem_val_length₂ {env : List Value} {x : α} {y : Value}
+    (h : (var env.length : Routine α).valid (env ++ [.data (DataEncode.encode x), y])) :
+    ((var env.length : Routine α).sem (env ++ [.data (DataEncode.encode x), y]) h).val = x := by
+  apply var_sem_val
+  simp
+
+/-- Reading slot `env.length + 1` (the second captured slot) of `env ++ [y, .data (encode x)]`
+yields `x`. Stated structurally so that `simp` can recover `x` from the environment. -/
+@[simp]
+lemma var_sem_val_length_succ {env : List Value} {x : α} {y : Value}
+    (h : (var (env.length + 1) : Routine α).valid (env ++ [y, .data (DataEncode.encode x)])) :
+    ((var (env.length + 1) : Routine α).sem
+      (env ++ [y, .data (DataEncode.encode x)]) h).val = x := by
+  apply var_sem_val
+  simp
+
+
+/-- Indexing into the appended part of an environment. -/
+lemma getElem?_append_length_add (e xs : List Value) (k : ℕ) :
+    (e ++ xs)[e.length + k]? = xs[k]? := by
+  rw [List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
+
+/-- The element appended at the end of an environment sits at index `e.length`. -/
+lemma getElem?_append_singleton (e : List Value) (v : Value) :
+    (e ++ [v])[e.length]? = some v := by
+  rw [List.getElem?_append_right (le_refl _)]; simp
+
+/-- `var (env.length + k)` is valid in `env ++ xs` when slot `k` of `xs` holds `encode x`. -/
+lemma var_valid_add {env : List Value} {x : α} (xs : List Value) (k : ℕ)
+    (hk : xs[k]? = some (.data (DataEncode.encode x))) :
+    (var (env.length + k) : Routine α).valid (env ++ xs) :=
+  ⟨x, by rw [getElem?_append_length_add]; exact hk⟩
+
+/-- The value of `var (env.length + k)` in `env ++ xs` is `x` when slot `k` of `xs` holds
+`encode x`. -/
+lemma var_sem_val_add {env : List Value} {x : α} (xs : List Value) (k : ℕ)
+    (hk : xs[k]? = some (.data (DataEncode.encode x)))
+    (h : (var (env.length + k) : Routine α).valid (env ++ xs)) :
+    ((var (env.length + k) : Routine α).sem (env ++ xs) h).val = x := by
+  apply var_sem_val
+  rw [getElem?_append_length_add]
+  exact hk
+
+/-- `ComputesFun f g env`: the unary routine-transformer `f` computes the value-function `g`, in
+every extension `env ++ extra` of `env` (so `f` may capture `env`). This is the correctness spec a
+caller supplies for a `Routine`-valued function argument. -/
+def ComputesFun (f : Routine α → Routine β) (g : α → β) (env : List Value) : Prop :=
+  ∀ (extra : List Value) (a : Routine α) (ha : a.valid (env ++ extra)),
+    ∃ (hf : (f a).valid (env ++ extra)),
+      ((f a).sem (env ++ extra) hf).val = g ((a.sem (env ++ extra) ha).val)
+
+/-- `ComputesFun₂ f g env`: the binary routine-transformer `f` computes the value-function `g`, in
+every extension `env ++ extra` of `env` (so `f` may capture `env`). -/
+def ComputesFun₂ (f : Routine α → Routine β → Routine γ) (g : α → β → γ) (env : List Value) :
+    Prop :=
+  ∀ (extra : List Value) (a : Routine α) (b : Routine β)
+    (ha : a.valid (env ++ extra)) (hb : b.valid (env ++ extra)),
+    ∃ (hf : (f a b).valid (env ++ extra)),
+      ((f a b).sem (env ++ extra) hf).val
+        = g ((a.sem (env ++ extra) ha).val) ((b.sem (env ++ extra) hb).val)
+
 def empty : Routine Data where
   impl _ := Prog.empty
   sem _ _ := ⟨.l [], ⟨_, _, ProgSem.empty⟩⟩
@@ -168,6 +241,30 @@ noncomputable def while_ (init : Routine (α × β))
       obtain ⟨_, _, h_init'⟩ := (init.sem env h_init).property
       obtain ⟨_, _, h_while⟩ := (Classical.choose_spec hr).toMachine
       exact ⟨_, _, ProgSem.while_ h_init' ProgSem.fn h_while⟩⟩
+
+/-- `WhileSem` is deterministic: a starting state reaches at most one final state. -/
+lemma WhileSem.det {env : List Value} {body : Routine (α × β) → Routine (α × β)}
+    {p r r' : α × β} (h : WhileSem env body p r) (h' : WhileSem env body p r') : r = r' := by
+  induction h generalizing r' with
+  | halt a b h_enc =>
+    cases h' with
+    | halt => rfl
+    | step h_ne _ _ => exact absurd h_enc h_ne
+  | step h_ne h_valid h_rest ih =>
+    cases h' with
+    | halt _ _ h_enc => exact absurd h_enc h_ne
+    | step h_ne' h_valid' h_rest' => exact ih h_rest'
+
+/-- The value of `while_` is the unique `WhileSem`-reachable final state. -/
+lemma while_sem_val {env : List Value} (i : Routine (α × β))
+    (body : Routine (α × β) → Routine (α × β))
+    (h : (while_ i body).valid env) (h_init : i.valid env) {r : α × β}
+    (hr : WhileSem env body (i.sem env h_init).val r) :
+    ((while_ i body).sem env h).val = r := by
+  have key : WhileSem env body (i.sem env h_init).val ((while_ i body).sem env h).val :=
+    Classical.choose_spec (h.elim (fun _ h'' => h'') :
+      ∃ r', WhileSem env body (i.sem env h_init).val r')
+  exact WhileSem.det key hr
 
 -- ------------------- Resource Consumption -------------------------
 
