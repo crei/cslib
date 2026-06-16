@@ -558,11 +558,11 @@ def add (x y : PB) : PB :=
   let loop := foldl add_foldl_body (toPair y (toPair (constantEnc false) empty)) x
   listAppend (reverse loop.snd.snd) (boolIte loop.snd.fst (succ loop.fst) loop.fst)
 
-lemma add_computes {px py : PB} {x y : ℕ}
-    (hx : px.ComputesEnc env x) (hy : py.ComputesEnc env y) :
-    (add px py).ComputesEnc env (x + y) := by
-  have hx' : px.ComputesEnc env x.bits := hx
-  have hy' : py.ComputesEnc env y.bits := hy
+/-- The `add` program computes `addBin` on the underlying bit lists, for any lists (not just
+canonical ℕ encodings). -/
+lemma add_computes_list {px py : PB} {l1 l2 : List Bool}
+    (hx : px.ComputesEnc env l1) (hy : py.ComputesEnc env l2) :
+    (add px py).ComputesEnc env (addBin l1 l2) := by
   have h_body : ∀ {e : List Value} {pa pb : PB}
       {a : List Bool × Bool × List Bool} {b : Bool},
       pa.ComputesEnc e a → pb.ComputesEnc e b →
@@ -596,19 +596,114 @@ lemma add_computes {px py : PB} {x y : ℕ}
               (fst_ComputesEnc (snd_ComputesEnc ha')))
             (snd_ComputesEnc (snd_ComputesEnc ha'))))
   have h_fold := foldl_computes
-    (toPair_computesEnc hy'
+    (toPair_computesEnc hy
       (toPair_computesEnc (constantEnc_computesEnc (a := false)) (empty_computesEnc Bool)))
-    hx' h_body
-  change (add px py).ComputesEnc env (x + y).bits
-  rw [← addBin_correct]
+    hx h_body
   unfold addBin addCarry
-  generalize hE : x.bits.foldl addBinStep (y.bits, false, []) = E at h_fold ⊢
+  generalize hE : l1.foldl addBinStep (l2, false, []) = E at h_fold ⊢
   obtain ⟨tA, fC, rv⟩ := E
   unfold add
   exact listAppend_computes (reverse_computes (snd_ComputesEnc (snd_ComputesEnc h_fold)))
     (boolIte_computes (fst_ComputesEnc (snd_ComputesEnc h_fold))
       (succ_computes_list (fst_ComputesEnc h_fold))
       (fst_ComputesEnc h_fold))
+
+lemma add_computes {px py : PB} {x y : ℕ}
+    (hx : px.ComputesEnc env x) (hy : py.ComputesEnc env y) :
+    (add px py).ComputesEnc env (x + y) := by
+  change (add px py).ComputesEnc env (x + y).bits
+  rw [← addBin_correct]
+  exact add_computes_list hx hy
+
+/-- Doubles a binary number (the math-level `· * 2`), keeping the canonical encoding: prepend a
+`false` low bit, except for `0` (the empty list) which stays empty. -/
+def doubleBin (l : List Bool) : List Bool :=
+  match l with
+  | [] => []
+  | _ => false :: l
+
+lemma doubleBin_bits (Y : ℕ) : doubleBin Y.bits = (2 * Y).bits := by
+  cases Y using Nat.binaryRec' with
+  | zero => simp [doubleBin, Nat.zero_bits]
+  | bit b m hb =>
+    have hYne : Nat.bit b m ≠ 0 := Nat.bit_ne_zero_iff.mpr hb
+    rw [Nat.bits_append_bit m b hb, Nat.bit0_bits _ hYne, Nat.bits_append_bit m b hb]
+    rfl
+
+/-- One shift-and-add step of binary multiplication. The state `(shiftedY, product)` holds the
+second addend shifted left by the current position and the running product. Each step doubles
+`shiftedY` and, when the current bit of the multiplier is set, adds `shiftedY` into `product`. -/
+def mulBinStep (st : List Bool × List Bool) (bit : Bool) : List Bool × List Bool :=
+  (doubleBin st.1, if bit then addBin st.2 st.1 else st.2)
+
+/-- Multiplies the bit lists `x` and `y` by folding `mulBinStep` over `x`. -/
+def mulBin (x y : List Bool) : List Bool :=
+  (x.foldl mulBinStep (y, [])).2
+
+/-- Generalised correctness of the multiplication fold: folding `mulBinStep` over `n.bits`
+starting from `(Y, P)` accumulates `P + n * Y` into the product component. -/
+lemma mulBin_foldl (n Y P : ℕ) :
+    (n.bits.foldl mulBinStep (Y.bits, P.bits)).2 = (P + n * Y).bits := by
+  induction n using Nat.binaryRec' generalizing Y P with
+  | zero => simp [Nat.zero_bits]
+  | bit b m hb ih =>
+    rw [Nat.bits_append_bit m b hb, List.foldl_cons]
+    have hstep : mulBinStep (Y.bits, P.bits) b
+        = ((2 * Y).bits, (if b then P + Y else P).bits) := by
+      cases b <;> simp [mulBinStep, doubleBin_bits, addBin_correct]
+    rw [hstep, ih]
+    congr 1
+    have hb2 : (if b then P + Y else P) = P + b.toNat * Y := by cases b <;> simp
+    rw [hb2, Nat.bit_val, ← Nat.mul_assoc, Nat.mul_comm m 2, Nat.add_mul]
+    omega
+
+lemma mulBin_correct (x y : ℕ) : mulBin x.bits y.bits = (x * y).bits := by
+  have h := mulBin_foldl x y 0
+  rw [Nat.zero_bits] at h
+  unfold mulBin
+  rw [h]
+  simp
+
+/-- The PB builder doubling a binary number, implementing `doubleBin`. -/
+def doublePB (l : PB) : PB :=
+  elim l empty (fun hd tl => cons (constantEnc false) (cons hd tl))
+
+lemma doublePB_computes {p : PB} {l : List Bool} (h : p.ComputesEnc env l) :
+    (doublePB p).ComputesEnc env (doubleBin l) := by
+  cases l with
+  | nil => exact elim_nil_computes h (empty_computesEnc Bool)
+  | cons hd tl =>
+    refine elim_cons_computes h (computesFun₂_branch2 ?_)
+    intro ext
+    exact cons_computesEnc constantEnc_computesEnc
+      (cons_computesEnc (var_computes_fresh ext _) (var_computes_fresh2 ext []))
+
+/-- The fold body implementing `mulBinStep`: double the shifted second addend and conditionally
+add it to the running product. -/
+def mulFoldlBody (st bit : PB) : PB :=
+  toPair (doublePB st.fst) (boolIte bit (add st.snd st.fst) st.snd)
+
+/-- Compute binary multiplication in the default ℕ encoding. Fold `mul_foldl_body` over the first
+factor `x`, starting from state `(y, [])`; the product component of the final state is the result.
+The second factor `y` is copied into the accumulator (rather than read from the environment). -/
+def mul (x y : PB) : PB :=
+  snd (foldl mulFoldlBody (toPair y empty) x)
+
+lemma mul_computes {px py : PB} {x y : ℕ}
+    (hx : px.ComputesEnc env x) (hy : py.ComputesEnc env y) :
+    (mul px py).ComputesEnc env (x * y) := by
+  have h_body : ∀ {e : List Value} {pa pb : PB}
+      {a : List Bool × List Bool} {b : Bool},
+      pa.ComputesEnc e a → pb.ComputesEnc e b →
+      (mulFoldlBody pa pb).ComputesEnc e (mulBinStep a b) := by
+    intro e pa pb a b ha hb
+    refine toPair_computesEnc (doublePB_computes (fst_ComputesEnc ha)) ?_
+    exact boolIte_computes hb
+      (add_computes_list (snd_ComputesEnc ha) (fst_ComputesEnc ha)) (snd_ComputesEnc ha)
+  change (mul px py).ComputesEnc env (x * y).bits
+  rw [← mulBin_correct]
+  exact snd_ComputesEnc (foldl_computes
+    (toPair_computesEnc hy (empty_computesEnc Bool)) hx h_body)
 
 -- Evaluate a function `f` at `arg` where the function is given as a graph (list of pairs).
 -- Returns `some y` for the first `x` in the graph such that `f x = y` and `none` otherwise.
