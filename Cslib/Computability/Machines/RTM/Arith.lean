@@ -20,6 +20,7 @@ program builder.
 - `PB.succ` - the successor `n + 1`
 - `PB.add` - binary addition `x + y`
 - `PB.mul` - binary multiplication `x * y`
+- `PB.forLoop` - a bounded `for` loop running a body `f i acc` for `i = 0, …, n - 1`
 
 -/
 
@@ -397,6 +398,100 @@ lemma mul_computes {px py : PB} {x y : ℕ}
   rw [← mulBin_correct]
   exact snd_ComputesEnc (foldl_computes
     (toPair_computesEnc hy (empty_computesEnc Bool)) hx h_body)
+
+/-! ### Bounded `for` loops
+
+`forLoop n init f` runs `acc := f i acc` for `i = 0, 1, …, n - 1` and returns the final
+accumulator, where `n` is given in binary. It is a `while_` loop counting an index `i` up from `0`
+to `n`. The loop state is the quadruple `(continue?, i, n, acc)`: the counter `i`, the bound `n` and
+the user accumulator `acc` are all threaded through the state (so the body never reaches into the
+surrounding environment), and the loop terminates once `i = n`, detected by comparing `i` and `n`
+for equality. Crucially the loop does **not** materialise the list of indices, so its state stays
+proportional to `n`'s binary size rather than to `n`. -/
+
+/-- One iteration of the `forLoop` loop. The state is the quadruple `(continue?, i, n, acc)`
+(encoded as nested pairs): update the accumulator to `f i acc`, increment `i`, and recompute the
+guard `i + 1 ≠ n`. The bound `n` is threaded through unchanged. -/
+def forLoopBody (pf : PB → PB → PB) (st : PB) : PB :=
+  toPair (boolNot (isEq (succ st.snd.fst) st.snd.snd.fst))
+    (toPair (succ st.snd.fst)
+      (toPair st.snd.snd.fst (pf st.snd.fst st.snd.snd.snd)))
+
+private lemma forLoopBody_step {pf : PB → PB → PB} {f : ℕ → α → α}
+    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α},
+      pi.ComputesEnc e i → pacc.ComputesEnc e a → (pf pi pacc).ComputesEnc e (f i a))
+    (i n : ℕ) (acc : α) :
+    computesFun₁ env
+      (.data (DataEncode.encode ((!(i == n), i, n, acc) : Bool × ℕ × ℕ × α)))
+      (forLoopBody pf)
+      (.data (DataEncode.encode
+        ((!(i + 1 == n), i + 1, n, f i acc) : Bool × ℕ × ℕ × α))) := by
+  apply computesFun₁_branch
+  intro ext
+  have hst : (PB.var (env.length + ext.length)).ComputesEnc
+      (env ++ ext ++ [Value.data (DataEncode.encode
+        ((!(i == n), i, n, acc) : Bool × ℕ × ℕ × α))])
+      ((!(i == n), i, n, acc) : Bool × ℕ × ℕ × α) := var_computes_fresh ext []
+  have hpi := fst_ComputesEnc (snd_ComputesEnc hst)
+  have hpn := fst_ComputesEnc (snd_ComputesEnc (snd_ComputesEnc hst))
+  have hpacc := snd_ComputesEnc (snd_ComputesEnc (snd_ComputesEnc hst))
+  simp only [forLoopBody]
+  exact toPair_computesEnc (boolNot_computes (isEq_computes (succ_computes hpi) hpn))
+    (toPair_computesEnc (succ_computes hpi)
+      (toPair_computesEnc hpn (hf hpi hpacc)))
+
+private lemma forLoop_loop {pf : PB → PB → PB} {f : ℕ → α → α}
+    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α},
+      pi.ComputesEnc e i → pacc.ComputesEnc e a → (pf pi pacc).ComputesEnc e (f i a))
+    (n : ℕ) (init : α) : ∀ (k i : ℕ) (acc : α),
+    i + k = n → acc = (List.range i).foldl (fun a j => f j a) init →
+    WhileComputes env (forLoopBody pf)
+      (DataEncode.encode ((!(i == n), i, n, acc) : Bool × ℕ × ℕ × α))
+      (DataEncode.encode ((!(n == n), n, n,
+        (List.range n).foldl (fun a j => f j a) init) : Bool × ℕ × ℕ × α)) := by
+  intro k
+  induction k with
+  | zero =>
+    intro i acc hik hacc
+    obtain rfl : i = n := by omega
+    subst hacc
+    apply WhileComputes.halt
+    simp [DataEncode.encode]
+  | succ k ih =>
+    intro i acc hik hacc
+    have hne : i ≠ n := by omega
+    refine WhileComputes.step ?_ (forLoopBody_step hf i n acc) ?_
+    · simp [DataEncode.encode, show (i == n) = false from by simpa using hne]
+    · refine ih (i + 1) (f i acc) (by omega) ?_
+      simp only [List.range_succ, List.foldl_append, List.foldl_cons, List.foldl_nil, ← hacc]
+
+/-- Bounded `for` loop: given the bound `n` in binary, an initial accumulator `init`, and a body
+`f i acc`, runs `acc := f i acc` for `i = 0, 1, …, n - 1` and returns the final accumulator.
+Implemented directly as a `while_` loop on the state `(continue?, i, n, acc)`, comparing the
+counter `i` with `n` for termination; it never builds the list of indices. -/
+def forLoop (pn pinit : PB) (pf : PB → PB → PB) : PB :=
+  snd (snd (snd (PB.while_
+    (toPair (boolNot (isEq (constantEnc (0 : ℕ)) pn))
+      (toPair (constantEnc (0 : ℕ)) (toPair pn pinit)))
+    (forLoopBody pf))))
+
+lemma forLoop_computes {pn pinit : PB} {pf : PB → PB → PB}
+    {n : ℕ} {init : α} {f : ℕ → α → α}
+    (hn : pn.ComputesEnc env n) (hinit : pinit.ComputesEnc env init)
+    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α},
+      pi.ComputesEnc e i → pacc.ComputesEnc e a → (pf pi pacc).ComputesEnc e (f i a)) :
+    (forLoop pn pinit pf).ComputesEnc env
+      ((List.range n).foldl (fun acc i => f i acc) init) := by
+  have h_init : (toPair (boolNot (isEq (constantEnc (0 : ℕ)) pn))
+      (toPair (constantEnc (0 : ℕ)) (toPair pn pinit))).ComputesEnc env
+      ((!(0 == n), 0, n, init) : Bool × ℕ × ℕ × α) :=
+    toPair_computesEnc (boolNot_computes (isEq_computes constantEnc_computesEnc hn))
+      (toPair_computesEnc constantEnc_computesEnc (toPair_computesEnc hn hinit))
+  have hwhile : (PB.while_ _ (forLoopBody pf)).ComputesEnc env
+      ((!(n == n), n, n, (List.range n).foldl (fun a j => f j a) init)
+        : Bool × ℕ × ℕ × α) :=
+    while_computes h_init (forLoop_loop hf n init n 0 init (by omega) (by simp))
+  exact snd_ComputesEnc (snd_ComputesEnc (snd_ComputesEnc hwhile))
 
 end PB
 

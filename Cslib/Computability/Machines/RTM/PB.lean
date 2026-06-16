@@ -414,6 +414,20 @@ def UsesLinearTimeAndSpace (impl : PB) : Prop :=
   PB.UsesOTime impl (fun env => (env.map fun x => x.size).sum) ∧
   PB.UsesOSpace impl (fun env => (env.map fun x => x.size).sum)
 
+def ComputesFunInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+    (p : PB → PB) (φ : α → β) (t s : α → ℕ) : Prop :=
+  ∀ (env : List Value) (a : PB) (x : α) (ta sa : ℕ),
+    (∀ ext : List Value, ProgSem (env ++ ext) (a (env.length + ext.length))
+      (.data (DataEncode.encode x)) ta sa) →
+    (∀ ext : List Value, ∃ t' ≤ t x, ∃ s' ≤ s x, ProgSem (env ++ ext) (p a (env.length + ext.length))
+      (.data (DataEncode.encode (φ x))) (t' + ta) (max s' sa))
+
+def ComputesFunInLinearTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+    (p : PB → PB) (φ : α → β) : Prop :=
+  ∃ k, ComputesFunInTimeAndSpace p φ
+    (fun x => k * (DataEncode.encode x).size + k)
+    (fun x => k * (DataEncode.encode x).size + k)
+
 end PB
 
 end RoseTreeMachine
