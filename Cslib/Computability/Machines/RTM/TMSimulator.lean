@@ -6,7 +6,7 @@ Authors: Christian Reitwiessner
 
 module
 
-public import Cslib.Computability.Machines.RTM.Tools
+public import Cslib.Computability.Machines.RTM.Tools_routine
 public import Cslib.Computability.Machines.SingleTapeTuring.Basic
 public import Mathlib.Data.List.ReduceOption
 
@@ -51,28 +51,26 @@ variable {env : List Value}
 
 public instance : DataEncode (Turing.StackTape Symbol) where
   encode t := DataEncode.encode t.toList
-  h_inj := by
-    intro ⟨l₁, h₁⟩ ⟨l₂, h₂⟩ h
-    grind [DataEncode.h_inj h]
+  decode d := sorry
+  encodek := sorry
 
 public instance : DataEncode (Turing.BiTape Symbol) where
   encode t := DataEncode.encode (t.head, t.left, t.right)
-  h_inj := by
-    intro ⟨h₁, l₁, r₁⟩ ⟨h₂, l₂, r₂⟩ h
-    grind [DataEncode.h_inj h]
+  decode d := sorry
+  encodek := sorry
 
 lemma encode_biTape (t : Turing.BiTape Symbol) :
     DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
     simp [DataEncode.encode]
 
-def bitapeWrite (t v : PB) : PB := PB.cons v t.tail
-
-lemma bitape_write_computes
-    {p_tape p_sym : PB} {tape : BiTape Symbol} {sym : Option Symbol}
-    (h_tape : p_tape.ComputesEnc env tape)
-    (h_sym : p_sym.ComputesEnc env sym) :
-    (bitapeWrite p_tape p_sym).ComputesEnc env (tape.write sym) := by
-  apply PB.cons_computes h_sym (PB.tail_computes h_tape)
+-- PB.cons v t.tail
+def bitapeWrite (t : Routine (Turing.BiTape Symbol)) (v : Routine (Option Symbol)) :
+    Routine (Turing.BiTape Symbol) where
+  impl := (Routine.cons v.encode t.encode.tail).impl
+  valid env := t.valid env ∧ v.valid env
+  sem env h := ⟨(t.sem env h.left).val.write (v.sem env h.right),
+      ((Routine.cons _ _).sem env
+      (by simp [Routine.cons, Routine.encode, Routine.tail, h])).property⟩
 
 /-- Models `StackTape.cons` -/
 def stackTapeCons (x st : PB) : PB :=
