@@ -30,21 +30,39 @@ namespace RoseTreeMachine
 /-- Encoding of types into `Data`. -/
 class DataEncode (α : Type) where
   encode : α → Data
-  h_inj : encode.Injective
+  decode : Data → Option α
+  encodek : ∀ a, decode (encode a) = some a
 
 instance : DataEncode Data where
   encode b := b
-  h_inj := by intros a b h_eq; grind
+  decode b := some b
+  encodek _ := rfl
 
 instance : DataEncode Bool where
   encode b := if b then Data.l [ Data.l [] ] else Data.l []
-  h_inj := by intros a b h_eq; grind
+  decode d := match d with
+    | Data.l [ Data.l [] ] => some true
+    | Data.l [ ] => some false
+    | _ => none
+  encodek _ := by grind
+
+/-- `encode` is injective, derived from `encodek`. -/
+lemma DataEncode.h_inj {α : Type} [DataEncode α] :
+    Function.Injective (DataEncode.encode (α := α)) := by
+  intro a b h
+  have ha : DataEncode.decode (DataEncode.encode a) = some b := by
+    rw [h]; exact DataEncode.encodek b
+  rw [DataEncode.encodek] at ha
+  exact Option.some.inj ha
 
 instance (α : Type) [DataEncode α] : DataEncode (List α) where
   encode xs := Data.l (xs.map DataEncode.encode)
-  h_inj := by
-    intro a b h
-    exact List.map_injective_iff.mpr DataEncode.h_inj (Data.l.inj h)
+  decode d := d.asList.mapM DataEncode.decode
+  encodek xs := by
+    change (xs.map DataEncode.encode).mapM DataEncode.decode = some xs
+    induction xs with
+    | nil => rfl
+    | cons h t ih => simp [List.mapM_cons, DataEncode.encodek, ih]
 
 @[simp, scoped grind =]
 lemma DataEncode_list_nil {α : Type} [DataEncode α] :
@@ -65,9 +83,11 @@ instance (α : Type) [DataEncode α] : DataEncode (Option α) where
   encode := fun
     | none => Data.l []
     | some x => Data.l [DataEncode.encode x]
-  h_inj := by
-    intro a b h
-    grind [DataEncode.h_inj]
+  decode := fun
+    | Data.l [] => some none
+    | Data.l [e] => (DataEncode.decode e).map some
+    | _ => none
+  encodek := fun a => by cases a <;> simp [DataEncode.encodek]
 
 @[simp]
 lemma DataEncode_Option_empty {α : Type} [DataEncode α] (x : Option α) :
@@ -76,9 +96,12 @@ lemma DataEncode_Option_empty {α : Type} [DataEncode α] (x : Option α) :
 
 instance (α β : Type) [DataEncode α] [DataEncode β] : DataEncode (α × β) where
   encode := fun (a, b) => Data.l [DataEncode.encode a, DataEncode.encode b]
-  h_inj := by
-    intro ⟨a₁, b₁⟩ ⟨a₂, b₂⟩ h
-    grind [DataEncode.h_inj]
+  decode := fun
+    | Data.l [ea, eb] => match DataEncode.decode ea, DataEncode.decode eb with
+        | some a, some b => some (a, b)
+        | _, _ => none
+    | _ => none
+  encodek := fun (a, b) => by simp [DataEncode.encodek]
 
 lemma DataEncode_pair {α β : Type} [DataEncode α] [DataEncode β] (a : α) (b : β) :
   DataEncode.encode (a, b) = Data.l [DataEncode.encode a, DataEncode.encode b] := by
@@ -86,16 +109,18 @@ lemma DataEncode_pair {α β : Type} [DataEncode α] [DataEncode β] (a : α) (b
 
 instance : DataEncode ℕ where
   encode x := DataEncode.encode (Nat.bits x)
-  h_inj := by
-    intro a b h
-    have hb : a.bits = b.bits := DataEncode.h_inj h
+  decode d := (DataEncode.decode d : Option (List Bool)).map
+    (fun bits => bits.foldr (fun b acc => Nat.bit b acc) 0)
+  encodek x := by
     have hrec : ∀ n : ℕ, n.bits.foldr (fun b acc => Nat.bit b acc) 0 = n := by
       intro n
       induction n using Nat.binaryRec' with
       | zero => simp
       | bit b n hn ih => rw [Nat.bits_append_bit n b hn]; simp [ih]
-    have := congrArg (List.foldr (fun b acc => Nat.bit b acc) 0) hb
-    simpa [hrec] using this
+    change ((DataEncode.decode (DataEncode.encode (Nat.bits x)) :
+      Option (List Bool)).map _) = some x
+    rw [DataEncode.encodek]
+    simp [hrec]
 
 end RoseTreeMachine
 

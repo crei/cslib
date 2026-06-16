@@ -100,118 +100,87 @@ def ComputesEncInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
     (p : PB → PB) (input : α) (output : β) (t s : ℕ) : Prop :=
   ComputesInTimeAndSpace p (DataEncode.encode input) (DataEncode.encode output) t s
 
-variable {env : List Value}
-
-/-! ### Resource-erased (`ProgSem`-based) semantics for program builders
-
-`PB.computes env impl out` says that, under any outer extension `ext`, the builder unfolded at
-the current variable depth `(env ++ ext).length` evaluates (via `ProgSem`) to the first-order
-value `out` for *some* time and space. The first-order environment `env : List Data` is lifted
-into the value space via `Value.data`. The `∀ ext` quantifier lets a builder be plugged into a
-binder body where the environment later grows. -/
-
-/-- Resource-erased relational semantics of a program builder. -/
-def Computes (env : List Value) (impl : PB) (out : Value) : Prop :=
-  ∀ ext : List Value,
-    ∃ t s, ProgSem (env ++ ext) (impl (env.length + ext.length))
-      out t s
-
-/-- The basic per-env consequence, instantiating `ext := []`. -/
-lemma Computes.here {impl : PB} {out : Value}
-    (h : Computes env impl out) :
-    ∃ t s, ProgSem env (impl env.length) out t s := by
-  simpa using h []
-
-/-- `Computes` is preserved when the environment is extended with extra trailing bindings:
-the trailing bindings are invisible to a program that only reaches into `env`. -/
-lemma Computes.extend {impl : PB} {out : Value} (more : List Value)
-    (h : Computes env impl out) :
-    Computes (env ++ more) impl out := by
-  intro ext
-  simpa [List.append_assoc, List.length_append, Nat.add_assoc] using h (more ++ ext)
-
-/-- Analogon of `Computes`, but as a statement of the pre-encoded value.
-This allows statements that `PB`s compute functions on lean datatypes. -/
-def ComputesEnc {α : Type} [DataEncode α] (env : List Value) (impl : PB) (x : α) :=
-  Computes env impl (.data (DataEncode.encode x))
-
-/-- A `PB → PB` transformation `p` computes the (mathematical) function `φ`. Stated parametrically
-over the *argument builder* `a` together with a hypothesis that `a` computes the input: this is the
-shape of all the `_computes` lemmas (e.g. `tmMainLoop_computes`, `bitapeLeft_computes`), and it is
-what makes them composable. Resource-erased; for resource bounds see `ComputesInTimeAndSpace`. -/
-def ComputesFunEnc {α β : Type} [DataEncode α] [DataEncode β]
-    (p : PB → PB) (φ : α → β) : Prop :=
-  ∀ (env : List Value) (a : PB) (x : α), a.ComputesEnc env x → (p a).ComputesEnc env (φ x)
-
-/-- Composition of `PB → PB` transformations is function composition of the computed functions.
-This is the formal statement of the implicit composition used throughout `TMSimulator`. -/
-theorem ComputesFunEnc.comp {α β γ : Type} [DataEncode α] [DataEncode β] [DataEncode γ]
-    {p q : PB → PB} {φ : α → β} {ψ : β → γ}
-    (hp : ComputesFunEnc p φ) (hq : ComputesFunEnc q ψ) :
-    ComputesFunEnc (fun a => q (p a)) (ψ ∘ φ) :=
-  fun env a x h => hq env (p a) (φ x) (hp env a x h)
-
-/-- The identity transformation computes the identity function. -/
-theorem ComputesFunEnc.id {α : Type} [DataEncode α] :
-    ComputesFunEnc (α := α) (fun a => a) id :=
-  fun _ _ _ h => h
-
-/-- Resource-tracked analogue of `ComputesFunEnc`: `p` computes `φ`, charging its own time `t x`
-and space `s x` *on top of* the argument's cost. The costs are functions of the (decoded) input, so
-the bound can scale with the actual argument (e.g. with the simulated machine and step count). Given
-any argument builder `a` that computes `x` in time `ta` and space `sa`, the result builder `p a`
-computes `φ x` in time `t x + ta` and space `max (s x) sa`. Threading the argument cost this way is
-what makes the bounds additive under composition. -/
-def ComputesFunEncInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
-    (p : PB → PB) (φ : α → β) (t s : α → ℕ) : Prop :=
-  ∀ (env : List Value) (a : PB) (x : α) (ta sa : ℕ),
-    (∀ ext : List Value, ProgSem (env ++ ext) (a (env.length + ext.length))
-      (.data (DataEncode.encode x)) ta sa) →
-    (∀ ext : List Value, ProgSem (env ++ ext) (p a (env.length + ext.length))
-      (.data (DataEncode.encode (φ x))) (t x + ta) (max (s x) sa))
-
-/-- Code that computes a value of type `α`, bundled with its semantics.
+/-- Code that computes a value of type `α` (given the current variable depth), bundled with its
+semantics.
 TODO also bundle resource usage. -/
 structure Routine (α : Type) [DataEncode α] where
   /-- The code -/
-  impl : PB
+  impl (depth : ℕ) : Prog
   /-- A condition on the input under which we make a statement about the semantics. -/
   valid : List Value → Prop := fun _ => True
-  /-- The computed value depending on the environment and the condition. -/
-  val (env : List Value) (h : valid env) : α
-  /-- A proof that the computed value is correct.
-  TODO bundle with val? -/
-  h (env : List Value) (h : valid env) :
-    ∀ ext : List Value, -- TODO do we need this?
-    ∃ t s, ProgSem (env ++ ext) (impl (env.length + ext.length))
-      (.data (DataEncode.encode (val env h))) t s
-  -- sem (env : List Value) (h : valid env) : ((v : α) ×
-  --   (∀ ext : List Value, -- TODO do we need this?
-  --   ∃ t s, ProgSem (env ++ ext) (impl (env.length + ext.length))
-  --     (.data (DataEncode.encode v)) t s))
-
--- def Routine.val (α : Type) [DataEncode α] (r : Routine α) :=
---   fun env h => r.sem env h
+  /-- The computed value together with a proof that the code computes it. -/
+  sem (env : List Value) (h : valid env) :
+    -- { v : α // ∀ ext : List Value, -- TODO do we need `ext`?
+    --   ∃ t s, ProgSem (env ++ ext) (impl (env.length + ext.length))
+    --     (.data (DataEncode.encode v)) t s }
+    { v : α // ∃ t s, ProgSem env (impl env.length) (.data (DataEncode.encode v)) t s }
 
 def Routine.var (i : ℕ) : Routine Data where
   impl : PB := PB.var i
   valid env := match env[i]? with | some (.data _) => true | _ => false
-  val env h := match env[i]? with | some (.data d) => d | _ => Data.empty
-  h env h' ext := by sorry
+  sem env h := ⟨match env[i]? with | some (.data d) => d | _ => Data.empty, sorry⟩
 
 variable {α β γ : Type} [DataEncode α] [DataEncode β] [DataEncode γ]
+
+def Routine.varEncoded (i : ℕ) : Routine α where
+  impl : PB := PB.var i
+  valid env := ∃ x : α, some (.data (DataEncode.encode x)) = env[i]?
+  sem env h := match env[i]? with
+    | some (.data x) => DataEncode.decode x
+    |
+   -- TODO use decode here?
+    sorry --⟨match env[i]? with | some (.data d) => d | _ => Data.empty, sorry⟩
+
+
+def Routine.empty : Routine Data where
+  impl := PB.empty
+  sem _ _ := ⟨.l [], ⟨_, _, ProgSem.empty⟩⟩
 
 def Routine.elim (v : Routine Data) (em : Routine Data)
     (cs : Routine Data → Routine Data → Routine Data) : Routine Data where
   impl n := .elim (v.impl n) (em.impl n) (.fn (.fn ((cs (var n) (var (n + 1))).impl (n + 2))))
-  valid env := ∃ h : v.valid env, (match v.val env h with
+  valid env := ∃ h : v.valid env, (match (v.sem env h).val with
     | .l [] => em.valid env
-    | .l (hd :: tl) => (cs (Routine.var env.length) (Routine.var (env.length + 1))).valid env)
-  val env h := match (v.val env (h.1)) with
-    | .l [] => em.val env sorry
-    | .l (hd :: tl) => (cs (Routine.var env.length) (Routine.var (env.length + 1))).val env sorry
-  h env h' ext := by sorry
+    | .l (hd :: tl) => (cs (Routine.var env.length) (Routine.var (env.length + 1))).valid
+        (env ++ [.data hd, .data (Data.l tl)]))
+  sem env h := match h_v : (v.sem env h.1).val with
+    | .l [] =>
+      have h_em_valid := by simp [h_v] at h; exact h.right
+      ⟨em.sem env h_em_valid,
+        by
+        obtain ⟨_, _, h_v'⟩ := (v.sem env h.1).property
+        rw [h_v] at h_v'
+        obtain ⟨_, _, h_em⟩ := (em.sem env h_em_valid).property
+        exact ⟨_, _, ProgSem.elim_nil h_v' h_em⟩⟩
+    | .l (hd :: tl) =>
+      have h_cs_valid := by simp [h_v] at h; exact h.right
+      ⟨(cs (Routine.var env.length) (Routine.var (env.length + 1))).sem
+        (env ++ [.data hd, .data (Data.l tl)]) h_cs_valid,
+        by
+        obtain ⟨_, _, h_v'⟩ := (v.sem env h.1).property
+        rw [h_v] at h_v'
+        obtain ⟨t_cs, s_cs, h_cs⟩ :=
+          ((cs (Routine.var env.length) (Routine.var (env.length + 1))).sem
+            (env ++ [.data hd, .data (Data.l tl)]) h_cs_valid).property
+        exact ⟨_, _, ProgSem.elim_cons h_v' ProgSem.fn ⟨ProgSem.fn⟩ ⟨by
+          rw [List.append_assoc]
+          rw [show env.length + 2 = (env ++ [_, _]).length from by simp]
+          exact h_cs⟩⟩⟩
 
+
+def Routine.ifEq {α β : Type} [DataEncode α] [DecidableEq α] [DataEncode β]
+    (x y : Routine α) (then_ else_ : Routine β) : Routine β where
+  impl n := .ifEq (x.impl n) (y.impl n) (then_.impl n) (else_.impl n)
+  valid env := ∃ h_x : x.valid env, ∃ h_y : y.valid env,
+    (if (x.sem env h_x).val = (y.sem env h_y).val then
+        then_.valid env else else_.valid env)
+  sem env h :=
+    let r := h.fst
+
+
+    --let ⟨h_x, h_y⟩ := h
+    ⟨if (x.sem env h_x).val = (y.sem env h_y).val then
+     then_.sem env sorry else else_.sem env sorry, sorry ⟩
 
 
 /-- Var-lookup: `PB.var i` reads the `i`-th entry of the environment. -/
