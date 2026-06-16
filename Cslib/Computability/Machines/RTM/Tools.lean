@@ -148,6 +148,70 @@ lemma constantEnc_computesEnc {α : Type} [DataEncode α] {a : α} :
     (constantEnc a).ComputesEnc env a := by
   simp [ComputesEnc, constantEnc]
 
+
+def isEq (x y : PB) : PB :=
+  ifEq x y (constantEnc true) (constantEnc false)
+
+lemma isEq_computes {α : Type} [DecidableEq α] [DataEncode α]
+    {a b : α} {pa pb : PB}
+    (ha : pa.ComputesEnc env a) (hb : pb.ComputesEnc env b) :
+    (isEq pa pb).ComputesEnc env (a == b) := by
+  by_cases h : a = b
+  · rw [show (a == b) = true by simp [h]]
+    exact PB.ifeq_eq_computes ha (h ▸ hb) (constantEnc_computesEnc (a := true))
+  · rw [show (a == b) = false by simp [h]]
+    exact PB.ifeq_ne_computes ha hb (fun heq => h (DataEncode.h_inj heq))
+      (constantEnc_computesEnc (a := false))
+
+def boolNot (x : PB) : PB :=
+  isEq x (constantEnc false)
+
+lemma boolNot_computes {x : PB} {b : Bool} (hx : x.ComputesEnc env b) :
+    (boolNot x).ComputesEnc env (!b) := by
+  rw [show not b = (b == false) by simp]
+  exact isEq_computes hx (constantEnc_computesEnc (a := false))
+
+def boolXor (x y : PB) : PB :=
+  boolNot (isEq x y)
+
+lemma boolXor_computes {x y : PB} {b1 b2 : Bool}
+    (hx : x.ComputesEnc env b1) (hy : y.ComputesEnc env b2) :
+    (boolXor x y).ComputesEnc env (b1 ^^ b2) := by
+  exact boolNot_computes (isEq_computes hx hy)
+
+def boolIte (cond thenBranch elseBranch : PB) : PB :=
+  ifEq cond (constantEnc true) thenBranch elseBranch
+
+lemma boolIte_computes {p_cond p_then p_else : PB} {cond : Bool} {x y : α}
+    (h_cond : p_cond.ComputesEnc env cond)
+    (h_then : p_then.ComputesEnc env x)
+    (h_else : p_else.ComputesEnc env y) :
+    (boolIte p_cond p_then p_else).ComputesEnc env (if cond then x else y) := by
+  by_cases h : cond
+  · rw [if_pos h]
+    exact ifeq_eq_computes h_cond (h ▸ constantEnc_computesEnc (a := true)) h_then
+  · rw [if_neg h]
+    refine ifeq_ne_computes h_cond (constantEnc_computesEnc (a := true)) ?_ h_else
+    simp [h, DataEncode.h_inj.eq_iff]
+
+def boolAnd (x y : PB) : PB :=
+  boolIte x y (constantEnc false)
+
+lemma boolAnd_computes {x y : PB} {b1 b2 : Bool}
+    (hx : x.ComputesEnc env b1) (hy : y.ComputesEnc env b2) :
+    (boolAnd x y).ComputesEnc env (b1 && b2) := by
+  rw [show (b1 && b2) = if b1 then b2 else false by simp]
+  exact boolIte_computes hx hy (constantEnc_computesEnc (a := false))
+
+def boolOr (x y : PB) : PB :=
+  boolIte x (constantEnc true) y
+
+lemma boolOr_computes {x y : PB} {b1 b2 : Bool}
+    (hx : x.ComputesEnc env b1) (hy : y.ComputesEnc env b2) :
+    (boolOr x y).ComputesEnc env (b1 || b2) := by
+  rw [show (b1 || b2) = if b1 then true else b2 by simp]
+  exact boolIte_computes hx (constantEnc_computesEnc (a := true)) hy
+
 /-- `foldl f init list`: left fold of `f` (taking `acc` then `el`) over `list`. -/
 def foldl (f : PB → PB → PB) (init list : PB) : PB :=
   snd (PB.while_ (toPair list init)
@@ -208,6 +272,19 @@ lemma reverse_computes {p : PB} {l : List α} (h : p.ComputesEnc env l) :
   intro env p_tl p_hd tl hd h_tl h_hd
   exact cons_computesEnc h_hd h_tl
 
+def listAppend (x y : PB) : PB :=
+  foldl (fun acc el => cons el acc) y (reverse x)
+
+lemma listAppend_computes {p_x p_y : PB} {l1 l2 : List α}
+    (h_x : p_x.ComputesEnc env l1) (h_y : p_y.ComputesEnc env l2) :
+    (listAppend p_x p_y).ComputesEnc env (l1 ++ l2) := by
+  have h_eq : l1 ++ l2 = l1.reverse.foldl (fun acc el => el :: acc) l2 := by
+    simp
+  rw [h_eq]
+  apply foldl_computes h_y (reverse_computes h_x) ?_
+  intro e p_acc p_el acc el h_acc h_el
+  exact cons_computesEnc h_el h_acc
+
 /-- Models `List.map`. -/
 def listMap (x : PB) (f : PB → PB) : PB :=
   reverse (foldl (fun acc el => cons (f el) acc) empty x)
@@ -264,6 +341,274 @@ lemma listHeadOption_computes {p : PB} {l : List α} (h : p.ComputesEnc env l) :
   | cons hd tl =>
     apply PB.elim_cons_computes h (PB.computesFun₂_branch2 (fun ext => ?_))
     refine PB.cons_computes (var_computes_fresh ext _) empty_computes
+
+/-- The fold step used by `succBin`: given the running `(carry, acc)` and the next `bit`, emit the
+new carry `carry && bit` and prepend the output bit `carry ^^ bit`. -/
+def succBinStep (p : Bool × List Bool) (bit : Bool) : Bool × List Bool :=
+  (p.1 && bit, (p.1 ^^ bit) :: p.2)
+
+def succBin (n : List Bool) : List Bool :=
+  let (final_carry, rev_res) := n.foldl succBinStep (true, [])
+  (if final_carry then true :: rev_res else rev_res).reverse
+
+/-- With carry `false`, the fold never produces a carry and simply reverses the remaining bits onto
+the accumulator. -/
+lemma foldl_succBinStep_false (bs : List Bool) (acc : List Bool) :
+    bs.foldl succBinStep (false, acc) = (false, bs.reverse ++ acc) := by
+  induction bs generalizing acc with
+  | nil => simp
+  | cons hd tl ih => simp [succBinStep, ih (hd :: acc)]
+
+/-- The accumulator threads through the fold independently of the computed carry and output bits. -/
+lemma foldl_succBinStep_acc (bs : List Bool) (c : Bool) (acc : List Bool) :
+    bs.foldl succBinStep (c, acc)
+      = ((bs.foldl succBinStep (c, [])).1, (bs.foldl succBinStep (c, [])).2 ++ acc) := by
+  induction bs generalizing c acc with
+  | nil => simp
+  | cons hd tl ih =>
+    rw [List.foldl_cons, show succBinStep (c, acc) hd = (c && hd, (c ^^ hd) :: acc) from rfl,
+      ih (c && hd) ((c ^^ hd) :: acc), List.foldl_cons,
+      show succBinStep (c, ([] : List Bool)) hd = (c && hd, [c ^^ hd]) from rfl,
+      ih (c && hd) [c ^^ hd]]
+    simp
+
+lemma succ_bin_correct (n : ℕ) : succBin n.bits = (n + 1).bits := by
+  induction n using Nat.binaryRec' with
+  | zero => rw [Nat.zero_bits]; rfl
+  | bit b m hb ih =>
+    rw [Nat.bits_append_bit m b hb]
+    unfold succBin
+    cases b with
+    | false =>
+      rw [List.foldl_cons,
+        show succBinStep (true, []) false = (false, [true]) from rfl,
+        foldl_succBinStep_false, Nat.bit_false_apply, Nat.bit1_bits]
+      simp
+    | true =>
+      rw [List.foldl_cons,
+        show succBinStep (true, []) true = (true, [false]) from rfl,
+        foldl_succBinStep_acc, Nat.bit_true_apply,
+        show 2 * m + 1 + 1 = 2 * (m + 1) from by omega,
+        Nat.bit0_bits (m + 1) (Nat.succ_ne_zero m), ← ih]
+      unfold succBin
+      dsimp only
+      split <;> simp [List.reverse_append]
+
+def succ_foldl_body (st bit : PB) : PB :=
+  let carry := st.fst
+  let acc := st.snd
+  toPair (boolAnd carry bit) (cons (boolXor carry bit) acc)
+
+/-- Compute ℕ.succ (in its default binary encoding). -/
+def succ (x : PB) : PB :=
+  let loop_result := foldl
+    succ_foldl_body
+    (toPair (constantEnc true) empty)
+    x
+  let final_carry := loop_result.fst
+  let result_rev := loop_result.snd
+  -- If final carry, prepend 1; otherwise just reverse back
+  reverse (boolIte final_carry (cons (constantEnc true) result_rev) result_rev)
+
+/-- The `succ` program computes `succBin` on the underlying bit list, independently of whether
+that list is a canonical ℕ encoding. -/
+lemma succ_computes_list {p : PB} {l : List Bool} (h : p.ComputesEnc env l) :
+    (succ p).ComputesEnc env (succBin l) := by
+  have h_body : ∀ {e : List Value} {pa pb : PB} {a : Bool × List Bool} {b : Bool},
+      pa.ComputesEnc e a → pb.ComputesEnc e b →
+      (succ_foldl_body pa pb).ComputesEnc e
+        ((fun (st : Bool × List Bool) bit => (st.1 && bit, (st.1 ^^ bit) :: st.2)) a b) := by
+    intro e pa pb a b ha hb
+    exact toPair_computesEnc (boolAnd_computes (fst_ComputesEnc ha) hb)
+      (cons_computesEnc (boolXor_computes (fst_ComputesEnc ha) hb) (snd_ComputesEnc ha))
+  have h_fold := foldl_computes
+    (toPair_computesEnc (constantEnc_computesEnc (a := true)) (empty_computesEnc Bool))
+    h h_body
+  apply reverse_computes (boolIte_computes (fst_ComputesEnc h_fold) ?_ (snd_ComputesEnc h_fold))
+  exact cons_computesEnc constantEnc_computesEnc (snd_ComputesEnc h_fold)
+
+lemma succ_computes {p : PB} {n : ℕ} (h : p.ComputesEnc env n) :
+    (succ p).ComputesEnc env (n + 1) := by
+  change (succ p).ComputesEnc env (n + 1).bits
+  rw [← succ_bin_correct]
+  exact succ_computes_list h
+
+/-- Computes addition of three bits, returning `(sum, carry)`. -/
+def fullAdder (x y carry : Bool) : Bool × Bool :=
+  (x ^^ y ^^ carry, (x && y) || (carry && (x ^^ y)))
+
+/-- One ripple-carry step. The state `(toAdd, carry, acc)` carries the remaining bits of the second
+addend (`toAdd`), the running `carry`, and the reversed output bits (`acc`). Each step consumes the
+next bit of the first addend together with the front bit of `toAdd` (or `false` once `toAdd` is
+exhausted), emitting the sum bit onto `acc`. -/
+def addBinStep (p : List Bool × Bool × List Bool) (bit : Bool) : List Bool × Bool × List Bool :=
+  match p.1 with
+  | [] => ([], (fullAdder false bit p.2.1).2, (fullAdder false bit p.2.1).1 :: p.2.2)
+  | a :: as => (as, (fullAdder a bit p.2.1).2, (fullAdder a bit p.2.1).1 :: p.2.2)
+
+/-- Adds the bit lists `x` and `y` with an incoming `carry`. -/
+def addCarry (carry : Bool) (x y : List Bool) : List Bool :=
+  let (toAdd, finalCarry, rev) := x.foldl addBinStep (y, carry, [])
+  rev.reverse ++ (if finalCarry then succBin toAdd else toAdd)
+
+def addBin (x y : List Bool) : List Bool := addCarry false x y
+
+/-- The accumulator threads through the `addBinStep` fold independently of the remaining addend and
+carry. -/
+lemma foldl_addBinStep_acc (xs ys : List Bool) (c : Bool) (acc : List Bool) :
+    xs.foldl addBinStep (ys, c, acc)
+      = ((xs.foldl addBinStep (ys, c, [])).1, (xs.foldl addBinStep (ys, c, [])).2.1,
+         (xs.foldl addBinStep (ys, c, [])).2.2 ++ acc) := by
+  induction xs generalizing ys c acc with
+  | nil => simp
+  | cons hd tl ih =>
+    rw [List.foldl_cons, List.foldl_cons]
+    cases ys with
+    | nil =>
+      simp only [addBinStep]
+      rw [ih [] _ _, ih [] _ [_]]
+      simp
+    | cons d ds =>
+      simp only [addBinStep]
+      rw [ih ds _ _, ih ds _ [_]]
+      simp
+
+/-- Evaluating `addBinStep` on `y.bits` exposes the next sum bit and carry via `fullAdder`,
+independently of whether `y` is zero. -/
+lemma addBinStep_bits (y : ℕ) (c b : Bool) (acc : List Bool) :
+    addBinStep (y.bits, c, acc) b
+      = (y.div2.bits, (fullAdder (Nat.bodd y) b c).2, (fullAdder (Nat.bodd y) b c).1 :: acc) := by
+  cases y using Nat.binaryRec' with
+  | zero => simp [addBinStep, Nat.zero_bits]
+  | bit d m hd => rw [Nat.bits_append_bit m d hd]; simp [addBinStep]
+
+/-- Peeling the first bit of the first addend in `addCarry`, when the second addend is `y.bits`. -/
+lemma addCarry_cons_bits (c b : Bool) (xs : List Bool) (y : ℕ) :
+    addCarry c (b :: xs) y.bits
+      = (fullAdder (Nat.bodd y) b c).1
+        :: addCarry (fullAdder (Nat.bodd y) b c).2 xs y.div2.bits := by
+  unfold addCarry
+  rw [List.foldl_cons, addBinStep_bits,
+    foldl_addBinStep_acc xs y.div2.bits (fullAdder (Nat.bodd y) b c).2
+      [(fullAdder (Nat.bodd y) b c).1]]
+  simp [List.reverse_append]
+
+lemma addCarry_correct (c : Bool) (x y : ℕ) :
+    addCarry c x.bits y.bits = (x + y + c.toNat).bits := by
+  induction x using Nat.binaryRec' generalizing c y with
+  | zero => cases c <;> simp [addCarry, Nat.zero_bits, succ_bin_correct]
+  | bit b m hb ih =>
+    rw [Nat.bits_append_bit m b hb, addCarry_cons_bits, ih]
+    have hy := Nat.bodd_add_div2 y
+    rw [show Nat.bit b m + y + c.toNat
+        = Nat.bit (fullAdder (Nat.bodd y) b c).1
+            (m + y.div2 + (fullAdder (Nat.bodd y) b c).2.toNat) from by
+          simp only [Nat.bit_val, fullAdder]
+          cases b <;> cases c <;> cases hbd : Nat.bodd y <;> simp_all <;> omega]
+    rw [Nat.bits_append_bit]
+    rintro hzero
+    have hb' : b = true := hb (by omega)
+    subst hb'
+    simp only [fullAdder] at hzero ⊢
+    cases c <;> cases hbd : Nat.bodd y <;> simp_all
+
+lemma addBin_correct (x y : ℕ) : addBin x.bits y.bits = (x + y).bits := by
+  rw [addBin, addCarry_correct]
+  simp
+
+/-- The sum bit of a full adder, as a builder. -/
+def addSumPB (a bit carry : PB) : PB := boolXor (boolXor a bit) carry
+
+/-- The carry-out bit of a full adder, as a builder. -/
+def addCarryPB (a bit carry : PB) : PB :=
+  boolOr (boolAnd a bit) (boolAnd carry (boolXor a bit))
+
+lemma addSumPB_computes {pa pbit pc : PB} {av bv cv : Bool}
+    (ha : pa.ComputesEnc env av) (hbit : pbit.ComputesEnc env bv)
+    (hc : pc.ComputesEnc env cv) :
+    (addSumPB pa pbit pc).ComputesEnc env (fullAdder av bv cv).1 := by
+  simp only [fullAdder, addSumPB]
+  exact boolXor_computes (boolXor_computes ha hbit) hc
+
+lemma addCarryPB_computes {pa pbit pc : PB} {av bv cv : Bool}
+    (ha : pa.ComputesEnc env av) (hbit : pbit.ComputesEnc env bv)
+    (hc : pc.ComputesEnc env cv) :
+    (addCarryPB pa pbit pc).ComputesEnc env (fullAdder av bv cv).2 := by
+  simp only [fullAdder, addCarryPB]
+  exact boolOr_computes (boolAnd_computes ha hbit)
+    (boolAnd_computes hc (boolXor_computes ha hbit))
+
+/-- The fold body implementing `addBinStep`. The state encodes the triple `(toAdd, carry, acc)`:
+consume the front bit of `toAdd` (or `false` once it is exhausted) together with the current bit
+`bit` of the first addend, emitting the sum bit onto `acc` and threading the new carry. -/
+def add_foldl_body (st bit : PB) : PB :=
+  elim st.fst
+    (toPair empty
+      (toPair (addCarryPB (constantEnc false) bit st.snd.fst)
+        (cons (addSumPB (constantEnc false) bit st.snd.fst) st.snd.snd)))
+    (fun hd tl =>
+      toPair tl
+        (toPair (addCarryPB hd bit st.snd.fst)
+          (cons (addSumPB hd bit st.snd.fst) st.snd.snd)))
+
+/-- Compute binary addition in the default ℕ encoding. Mirrors `addBin`/`addCarry`: fold
+`add_foldl_body` over the first addend `x` starting from state `(y, false, [])`, then reverse the
+emitted bits and append the leftover high bits (incremented when a final carry remains). -/
+def add (x y : PB) : PB :=
+  let loop := foldl add_foldl_body (toPair y (toPair (constantEnc false) empty)) x
+  listAppend (reverse loop.snd.snd) (boolIte loop.snd.fst (succ loop.fst) loop.fst)
+
+lemma add_computes {px py : PB} {x y : ℕ}
+    (hx : px.ComputesEnc env x) (hy : py.ComputesEnc env y) :
+    (add px py).ComputesEnc env (x + y) := by
+  have hx' : px.ComputesEnc env x.bits := hx
+  have hy' : py.ComputesEnc env y.bits := hy
+  have h_body : ∀ {e : List Value} {pa pb : PB}
+      {a : List Bool × Bool × List Bool} {b : Bool},
+      pa.ComputesEnc e a → pb.ComputesEnc e b →
+      (add_foldl_body pa pb).ComputesEnc e (addBinStep a b) := by
+    intro e pa pb a b ha hb
+    obtain ⟨toAdd, carry, acc⟩ := a
+    cases toAdd with
+    | nil =>
+      refine elim_nil_computes (fst_ComputesEnc ha) ?_
+      exact toPair_computesEnc (empty_computesEnc Bool)
+        (toPair_computesEnc
+          (addCarryPB_computes constantEnc_computesEnc hb
+            (fst_ComputesEnc (snd_ComputesEnc ha)))
+          (cons_computesEnc
+            (addSumPB_computes constantEnc_computesEnc hb
+              (fst_ComputesEnc (snd_ComputesEnc ha)))
+            (snd_ComputesEnc (snd_ComputesEnc ha))))
+    | cons hd tl =>
+      refine elim_cons_computes (fst_ComputesEnc ha) (computesFun₂_branch2 ?_)
+      intro ext
+      have ha' := (ha.extend ext).extend
+        [Value.data (DataEncode.encode hd), Value.data (DataEncode.encode tl)]
+      have hb' := (hb.extend ext).extend
+        [Value.data (DataEncode.encode hd), Value.data (DataEncode.encode tl)]
+      exact toPair_computesEnc (var_computes_fresh2 ext [])
+        (toPair_computesEnc
+          (addCarryPB_computes (var_computes_fresh ext _) hb'
+            (fst_ComputesEnc (snd_ComputesEnc ha')))
+          (cons_computesEnc
+            (addSumPB_computes (var_computes_fresh ext _) hb'
+              (fst_ComputesEnc (snd_ComputesEnc ha')))
+            (snd_ComputesEnc (snd_ComputesEnc ha'))))
+  have h_fold := foldl_computes
+    (toPair_computesEnc hy'
+      (toPair_computesEnc (constantEnc_computesEnc (a := false)) (empty_computesEnc Bool)))
+    hx' h_body
+  change (add px py).ComputesEnc env (x + y).bits
+  rw [← addBin_correct]
+  unfold addBin addCarry
+  generalize hE : x.bits.foldl addBinStep (y.bits, false, []) = E at h_fold ⊢
+  obtain ⟨tA, fC, rv⟩ := E
+  unfold add
+  exact listAppend_computes (reverse_computes (snd_ComputesEnc (snd_ComputesEnc h_fold)))
+    (boolIte_computes (fst_ComputesEnc (snd_ComputesEnc h_fold))
+      (succ_computes_list (fst_ComputesEnc h_fold))
+      (fst_ComputesEnc h_fold))
 
 -- Evaluate a function `f` at `arg` where the function is given as a graph (list of pairs).
 -- Returns `some y` for the first `x` in the graph such that `f x = y` and `none` otherwise.
