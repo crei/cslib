@@ -44,6 +44,26 @@ variable {env : List Value}
 variable {α : Type} [DataEncode α]
 variable {β : Type} [DataEncode β]
 
+/-- Program that evaluates to the constant `a`. -/
+def constant (a : Data) : PB := match a with
+  | Data.l [] => .empty
+  | Data.l (x :: xs) => .cons (constant x) (constant (Data.l xs))
+
+@[simp]
+lemma constant_computes {a : Data} : (constant a).Computes env (.data a) := by
+  induction a using Data.inductionL with
+  | nil => simp [constant]
+  | cons hd tl ih_hd ih_tl =>
+    simpa [constant] using cons_computes ih_hd ih_tl
+
+def constantEnc {α : Type} [DataEncode α] (a : α) : PB := constant (DataEncode.encode a)
+
+@[simp]
+lemma constantEnc_computesEnc {α : Type} [DataEncode α] {a : α} :
+    (constantEnc a).ComputesEnc env a := by
+  simp [ComputesEnc, constantEnc]
+
+
 /-- Returns the tail of a list-valued builder (`[]` when empty). -/
 def tail (x : PB) : PB := .elim x .empty (fun _hd tl => tl)
 
@@ -90,6 +110,11 @@ lemma snd_ComputesEnc {x : PB} {a : α × β} (hx : x.ComputesEnc env a) :
   obtain ⟨a, b⟩ := a
   apply PB.head_computes (PB.tail_computes hx)
 
+def none : PB := .empty
+
+lemma none_computes : none.ComputesEnc env (Option.none : Option α) := by
+  apply empty_computes
+
 /-- `Option.some` as a singleton list. -/
 def some (x : PB) : PB := cons x empty
 
@@ -103,7 +128,7 @@ def optionElim (x noneCase : PB) (someCase : PB → PB) : PB :=
 
 lemma optionElim_computesEnc_none
     {x noneCase : PB} {someCase : PB → PB}
-    (hx : x.ComputesEnc env (none : Option α))
+    (hx : x.ComputesEnc env (Option.none : Option α))
     {a : β}
     (h_none : noneCase.ComputesEnc env a) :
     (optionElim x noneCase someCase).ComputesEnc env a := by
@@ -120,6 +145,15 @@ lemma optionElim_computesEnc_some
   apply PB.elim_cons_computes (head := DataEncode.encode a) (tail := [])
     (by simpa [ComputesEnc, DataEncode.encode] using hx) h_some
 
+def isNone (x : PB) : PB := x.optionElim (constantEnc true) (fun _ => constantEnc false)
+
+lemma isNone_computes {p : PB} {a : Option α} (h : p.ComputesEnc env a) :
+    (PB.isNone p).ComputesEnc env a.isNone := by
+  match h_a : a with
+  | .none => refine optionElim_computesEnc_none h (constantEnc_computesEnc (α := Bool))
+  | .some a =>
+    refine optionElim_computesEnc_some h (computesFun₂_branch (fun ext => constantEnc_computesEnc))
+
 /-- Build the two-element list `[a, b]` (used as an encoded pair). -/
 def toPair (a b : PB) : PB := cons a (PB.cons b empty)
 
@@ -128,26 +162,6 @@ lemma toPair_computesEnc
     (ha : pa.ComputesEnc env a) (hb : pb.ComputesEnc env b) :
     (toPair pa pb).ComputesEnc env (a, b) := by
   apply PB.cons_computes ha (PB.cons_computes hb empty_computes)
-
-/-- Program that evaluates to the constant `a`. -/
-def constant (a : Data) : PB := match a with
-  | Data.l [] => .empty
-  | Data.l (x :: xs) => .cons (constant x) (constant (Data.l xs))
-
-@[simp]
-lemma constant_computes {a : Data} : (constant a).Computes env (.data a) := by
-  induction a using Data.inductionL with
-  | nil => simp [constant]
-  | cons hd tl ih_hd ih_tl =>
-    simpa [constant] using cons_computes ih_hd ih_tl
-
-def constantEnc {α : Type} [DataEncode α] (a : α) : PB := constant (DataEncode.encode a)
-
-@[simp]
-lemma constantEnc_computesEnc {α : Type} [DataEncode α] {a : α} :
-    (constantEnc a).ComputesEnc env a := by
-  simp [ComputesEnc, constantEnc]
-
 
 def isEq (x y : PB) : PB :=
   ifEq x y (constantEnc true) (constantEnc false)
@@ -271,6 +285,19 @@ lemma reverse_computes {p : PB} {l : List α} (h : p.ComputesEnc env l) :
   apply foldl_computes (by simp) h
   intro env p_tl p_hd tl hd h_tl h_hd
   exact cons_computesEnc h_hd h_tl
+
+def listIsEmpty (l : PB) : PB :=
+  isEq l empty
+
+lemma listIsEmpty_computes {p_l : PB} {l : List α} (h : p_l.ComputesEnc env l) :
+    (listIsEmpty p_l).ComputesEnc env l.isEmpty := by
+  by_cases h_empty : l = []
+  · rw [h_empty] at h ⊢
+    refine PB.ifeq_eq_computes h empty_computes PB.constantEnc_computesEnc
+  · rw [show l.isEmpty = false from by simp [h_empty]]
+    apply PB.ifeq_ne_computes h empty_computes
+      (fun heq => h_empty (DataEncode.h_inj heq))
+      PB.constantEnc_computesEnc
 
 def listAppend (x y : PB) : PB :=
   foldl (fun acc el => cons el acc) y (reverse x)
@@ -419,7 +446,7 @@ lemma evalFunGraph_computes
   -- The loop iterates the body from `(g, none)` to `([], find-result)` for any remaining list `g`.
   have h_loop : ∀ g : List (α × β),
       WhileComputes env (evalFunGraphInner p_arg)
-        (DataEncode.encode (g, (none : Option β)))
+        (DataEncode.encode (g, (Option.none : Option β)))
         (DataEncode.encode (([] : List (α × β)),
           (g.find? (fun p => p.1 = a)).map (·.2))) := by
     intro g
@@ -453,7 +480,7 @@ lemma evalFunGraph_computes
         rw [if_neg (show ¬ ((x == a) = true) by simpa using h)] at hb
         exact WhileComputes.step (by simp [DataEncode.encode]) hb ih
   -- Initial accumulator: `(graph, none)`.
-  have h_init : (toPair p_graph .empty).ComputesEnc env (graph, (none : Option β)) :=
+  have h_init : (toPair p_graph .empty).ComputesEnc env (graph, (.none : Option β)) :=
     toPair_computesEnc h_graph (empty_computes)
   exact snd_ComputesEnc (while_computes h_init (h_loop graph))
 

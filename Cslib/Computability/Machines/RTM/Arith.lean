@@ -418,7 +418,7 @@ def forLoopBody (pf : PB → PB → PB) (st : PB) : PB :=
       (toPair st.snd.snd.fst (pf st.snd.fst st.snd.snd.snd)))
 
 private lemma forLoopBody_step {pf : PB → PB → PB} {f : ℕ → α → α}
-    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α},
+    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α}, env <+: e →
       pi.ComputesEnc e i → pacc.ComputesEnc e a → (pf pi pacc).ComputesEnc e (f i a))
     (i n : ℕ) (acc : α) :
     computesFun₁ env
@@ -435,13 +435,16 @@ private lemma forLoopBody_step {pf : PB → PB → PB} {f : ℕ → α → α}
   have hpi := fst_ComputesEnc (snd_ComputesEnc hst)
   have hpn := fst_ComputesEnc (snd_ComputesEnc (snd_ComputesEnc hst))
   have hpacc := snd_ComputesEnc (snd_ComputesEnc (snd_ComputesEnc hst))
+  have hpre : env <+: env ++ ext ++ [Value.data (DataEncode.encode
+      ((!(i == n), i, n, acc) : Bool × ℕ × ℕ × α))] :=
+    (List.prefix_append env ext).trans (List.prefix_append _ _)
   simp only [forLoopBody]
   exact toPair_computesEnc (boolNot_computes (isEq_computes (succ_computes hpi) hpn))
     (toPair_computesEnc (succ_computes hpi)
-      (toPair_computesEnc hpn (hf hpi hpacc)))
+      (toPair_computesEnc hpn (hf hpre hpi hpacc)))
 
 private lemma forLoop_loop {pf : PB → PB → PB} {f : ℕ → α → α}
-    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α},
+    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α}, env <+: e →
       pi.ComputesEnc e i → pacc.ComputesEnc e a → (pf pi pacc).ComputesEnc e (f i a))
     (n : ℕ) (init : α) : ∀ (k i : ℕ) (acc : α),
     i + k = n → acc = (List.range i).foldl (fun a j => f j a) init →
@@ -477,8 +480,9 @@ def forLoop (pn pinit : PB) (pf : PB → PB → PB) : PB :=
 
 lemma forLoop_computes {pn pinit : PB} {pf : PB → PB → PB}
     {n : ℕ} {init : α} {f : ℕ → α → α}
-    (hn : pn.ComputesEnc env n) (hinit : pinit.ComputesEnc env init)
-    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α},
+    (hn : pn.ComputesEnc env n)
+    (hinit : pinit.ComputesEnc env init)
+    (hf : ∀ {e : List Value} {pi pacc : PB} {i : ℕ} {a : α}, env <+: e →
       pi.ComputesEnc e i → pacc.ComputesEnc e a → (pf pi pacc).ComputesEnc e (f i a)) :
     (forLoop pn pinit pf).ComputesEnc env
       ((List.range n).foldl (fun acc i => f i acc) init) := by

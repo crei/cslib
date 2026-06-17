@@ -300,6 +300,16 @@ lemma ifeq_ne_computes {x y then_ else_ : PB} {vx vy : Data} {out : Value}
   simp only [PB.ifEq]
   exact ⟨_, _, ProgSem.ifEq_else hx' hy' hne helse'⟩
 
+lemma ifeq_computes {x y then_ else_ : PB} {vx vy : Data} {out₁ out₂ : Value}
+    (hx : Computes env x (.data vx))
+    (hy : Computes env y (.data vy))
+    (hthen : Computes env then_ out₁)
+    (helse : Computes env else_ out₂) :
+    Computes env (PB.ifEq x y then_ else_) (if vx == vy then out₁ else out₂) := by
+  by_cases h : vx = vy
+  · exact ifeq_eq_computes hx (h ▸ hy) (by simpa [h] using hthen)
+  · exact ifeq_ne_computes hx hy h (by simpa [h] using helse)
+
 /-- In-place application of a literal abstraction (a `let` binding): if `arg` computes `dx`
 and `body` computes `out` with its parameter bound to `dx`, then `app (fn body) arg` computes
 `out`. -/

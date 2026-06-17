@@ -7,6 +7,7 @@ Authors: Christian Reitwiessner
 module
 
 public import Cslib.Computability.Machines.RTM.Tools
+public import Cslib.Computability.Machines.RTM.Arith
 public import Cslib.Computability.Machines.SingleTapeTuring.Basic
 public import Mathlib.Data.List.ReduceOption
 
@@ -197,9 +198,7 @@ lemma bitapeMove_computes {p_t p_dir : PB} {t : BiTape Symbol} {d : Dir}
 
 /-- Models `BiTape.optionMove` -/
 def bitapeOptionMove (t dir : PB) : PB :=
-  PB.optionElim dir
-    t
-    (fun d => bitapeMove t d)
+  dir.optionElim t (fun d => bitapeMove t d)
 
 lemma bitapeOptionMove_computes {p_t p_dir : PB}
     {t : BiTape Symbol} {d : Option Dir}
@@ -326,6 +325,43 @@ lemma singleTapeTMStep_computes
     refine evalTr_computes (h_tr.extend ext |>.extend _) (PB.var_computes_fresh ext _) ?_
     exact PB.head_computes (cfgBitape_computes (h_cfg.extend ext |>.extend _))
 
+/-- Run the step function for `steps` iterations, staying at a halting configuration. -/
+def timeBoundedSimulatorMain (tr cfg steps : PB) : PB :=
+  PB.forLoop steps cfg (fun _ cfg => (singleTapeTMStep tr cfg).optionElim cfg (fun next => next))
+
+lemma timeBoundedSimulator_computes
+    [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol}
+    [DataEncode tm.State]
+    {p_tr p_cfg p_steps : PB}
+    {cfg : tm.Cfg}
+    {steps : ℕ}
+    (h_tr : p_tr.ComputesEnc env
+      ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
+        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+          (fun c' => (c', tm.tr q' c'))))))
+    (h_cfg : p_cfg.ComputesEnc env cfg)
+    (h_steps : p_steps.ComputesEnc env steps) :
+    (timeBoundedSimulatorMain p_tr p_cfg p_steps).ComputesEnc env
+      ((fun c => (tm.step c).getD c)^[steps] cfg) := by
+  have : ∀ g m (b : tm.Cfg), g^[m] b = (List.range m).foldl (fun c _ => g c) b := by
+    intro g m
+    induction m with
+    | zero => simp
+    | succ m ih =>
+      intro b
+      simp [Function.iterate_succ_apply', ih, List.range_succ]
+  rw [this]
+  apply PB.forLoop_computes (f := fun _ c => (tm.step c).getD c) h_steps h_cfg
+  intro e pi pacc i c hpre h_pi h_acc
+  obtain ⟨more, rfl⟩ := hpre
+  have hstep := singleTapeTMStep_computes (h_tr.extend more) h_acc
+  cases hsc : tm.step c with
+  | none => exact PB.optionElim_computesEnc_none (hsc ▸ hstep) h_acc
+  | some next =>
+    exact PB.optionElim_computesEnc_some (hsc ▸ hstep)
+      (PB.computesFun₂_branch (fun ext => PB.var_computes_fresh ext _))
+
 /-- The main loop of the Turing machine simulation: Execute a step until we reach a halting
 configuration, then return it. -/
 def tmMainLoop (tr : PB) (cfg : PB) : PB :=
@@ -333,7 +369,7 @@ def tmMainLoop (tr : PB) (cfg : PB) : PB :=
   -- (an `Option Cfg`); on `some next` we continue with `next`, on `none` we keep
   -- the current `acc` (which has `state = none`, signalling halt to `while_`).
   PB.while_ cfg
-    (fun acc => PB.optionElim (singleTapeTMStep tr acc) acc (fun next => next))
+    (fun acc => (singleTapeTMStep tr acc).optionElim acc (fun next => next))
 
 lemma tmMainLoop_computes
     [Inhabited Symbol] [Fintype Symbol]
@@ -435,6 +471,183 @@ This is only meaningful for halting configurations whose tape is in canonical (`
 with an empty left part — which is exactly the shape of the `haltCfg`s produced by `Outputs`. -/
 def finalConfigToOutput (cfg : PB) : PB :=
   (PB.cons (bitapeHead (cfgBitape cfg)) (bitapeRight (cfgBitape cfg))).listReduceOption
+
+def tapeCellsToOutputF (l : List (Option Symbol)) : Option (List Symbol) :=
+  l.foldl
+    (fun res s =>
+      match res with
+      | none => none
+      | some res => match s with
+        | none => none
+        | some s => some (res ++ [s]))
+    (some [])
+
+def tapeCellsToOutput (l : PB) : PB :=
+  PB.foldl (fun res s =>
+    res.optionElim
+      .none
+      (fun res => s.optionElim .none (fun s => .some (.listAppend res (.some s)))))
+    (PB.some .empty)
+    l
+
+lemma tapeCellsToOutput_computes
+    {p_l : PB}
+    {l : List (Option Symbol)}
+    (h_l : p_l.ComputesEnc env l) :
+    (tapeCellsToOutput p_l).ComputesEnc env (tapeCellsToOutputF l) := by
+  apply PB.foldl_computes (PB.some_ComputesEnc (PB.empty_computesEnc _)) h_l
+  intro e p_res p_s res s h_res h_s
+  cases res with
+  | none => exact PB.optionElim_computesEnc_none h_res PB.none_computes
+  | some res =>
+    refine PB.optionElim_computesEnc_some h_res (PB.computesFun₂_branch (fun ext => ?_))
+    cases s with
+    | none =>
+      exact PB.optionElim_computesEnc_none ((h_s.extend ext).extend _) PB.none_computes
+    | some s =>
+      refine PB.optionElim_computesEnc_some ((h_s.extend ext).extend _)
+        (PB.computesFun₂_branch (fun ext2 => ?_))
+      exact PB.some_ComputesEnc (PB.listAppend_computes
+        (((PB.var_computes_fresh ext _).extend ext2).extend _)
+        (PB.cons_computesEnc (PB.var_computes_fresh ext2 _) (PB.empty_computesEnc _)))
+
+
+def tapeToOutputF [DecidableEq Symbol]
+    (tape : BiTape Symbol) : Option (List Symbol) :=
+  if !tape.left.toList.isEmpty then
+    none
+  else if tape.right.toList.isEmpty && tape.head.isNone then
+    some []
+  else
+    tapeCellsToOutputF (tape.head :: tape.right.toList)
+
+def tapeToOutput (tape : PB) : PB :=
+  PB.boolIte (.boolNot (bitapeLeft tape).listIsEmpty)
+    .none
+  (.boolIte (.boolAnd (bitapeRight tape).listIsEmpty (bitapeHead tape).isNone)
+      (PB.some .empty)
+      (tapeCellsToOutput (PB.cons (bitapeHead tape) (bitapeRight tape))))
+
+lemma tapeToOutput_computes [DecidableEq Symbol]
+    {p_tape : PB}
+    {tape : BiTape Symbol}
+    (h_tape : p_tape.ComputesEnc env tape) :
+    (tapeToOutput p_tape).ComputesEnc env (tapeToOutputF tape) := by
+  refine PB.boolIte_computes
+    (PB.boolNot_computes (PB.listIsEmpty_computes (bitapeLeft_computes h_tape)))
+    (PB.empty_computes) ?_
+  refine PB.boolIte_computes (α := Option (List Symbol)) ?_ ?_ ?_
+  · refine PB.boolAnd_computes
+      (PB.listIsEmpty_computes (bitapeRight_computes h_tape))
+      (PB.isNone_computes (bitapeHead_computes h_tape))
+  · exact PB.some_ComputesEnc (PB.empty_computesEnc (Option (List Symbol)))
+  · exact tapeCellsToOutput_computes
+      (PB.cons_computesEnc (bitapeHead_computes h_tape) (bitapeRight_computes h_tape))
+
+omit [DataEncode Symbol] in
+/-- `tapeCellsToOutputF` succeeds exactly when every cell is filled, returning the unwrapped
+list. -/
+lemma tapeCellsToOutputF_eq_some_iff (os : List (Option Symbol)) (r : List Symbol) :
+    tapeCellsToOutputF os = some r ↔ os = r.map some := by
+  rw [tapeCellsToOutputF]
+  set F : Option (List Symbol) → Option Symbol → Option (List Symbol) :=
+    fun res s => match res with
+      | none => none
+      | some res => match s with
+        | none => none
+        | some s => some (res ++ [s]) with hF
+  have foldNone : ∀ os, List.foldl F none os = none := by
+    intro os
+    induction os with
+    | nil => rfl
+    | cons o os ih => rw [List.foldl_cons, show F none o = none from by rw [hF]]; exact ih
+  have key : ∀ (os : List (Option Symbol)) (acc r : List Symbol),
+      List.foldl F (some acc) os = some r ↔ ∃ l, os = l.map some ∧ r = acc ++ l := by
+    intro os
+    induction os with
+    | nil =>
+      intro acc r
+      simp only [List.foldl_nil, Option.some.injEq]
+      constructor
+      · exact fun h => ⟨[], by simp, by simp [h]⟩
+      · rintro ⟨l, hl, hr⟩
+        obtain rfl : l = [] := by simpa using hl.symm
+        simpa using hr.symm
+    | cons o os ih =>
+      intro acc r
+      cases o with
+      | none =>
+        rw [List.foldl_cons, show F (some acc) none = none from by rw [hF], foldNone]
+        constructor
+        · exact fun h => absurd h (by simp)
+        · rintro ⟨l, hl, -⟩; cases l <;> simp at hl
+      | some x =>
+        rw [List.foldl_cons, show F (some acc) (some x) = some (acc ++ [x]) from by rw [hF], ih]
+        constructor
+        · rintro ⟨l, hl, hr⟩; exact ⟨x :: l, by simp [hl], by simp [hr]⟩
+        · rintro ⟨l, hl, hr⟩
+          cases l with
+          | nil => simp at hl
+          | cons y l =>
+            simp only [List.map_cons, List.cons.injEq, Option.some.injEq] at hl
+            obtain ⟨rfl, rfl⟩ := hl
+            exact ⟨l, rfl, by simp [hr]⟩
+  rw [key]
+  simp only [List.nil_append]
+  exact ⟨fun ⟨_, hos, hr⟩ => hr ▸ hos, fun hos => ⟨r, hos, rfl⟩⟩
+
+omit [DataEncode Symbol] in
+lemma tapeToOutput_iff_mk₁ [Inhabited Symbol] [DecidableEq Symbol]
+    (tape : BiTape Symbol) (s : List Symbol) :
+  (tape = .mk₁ s) ↔ tapeToOutputF tape = some s := by
+  obtain ⟨hd, lft, rgt⟩ := tape
+  simp only [tapeToOutputF]
+  by_cases hl : lft.toList = []
+  · rw [if_neg (by simp [hl])]
+    obtain rfl : lft = ∅ := by cases lft; simp_all [StackTape.nil]
+    by_cases hr : (rgt.toList.isEmpty && hd.isNone) = true
+    · rw [if_pos hr]
+      simp only [Bool.and_eq_true, List.isEmpty_iff, Option.isNone_iff_eq_none] at hr
+      obtain ⟨hr1, hr2⟩ := hr
+      subst hr2
+      obtain rfl : rgt = ∅ := by cases rgt; simp_all [StackTape.nil]
+      rw [Option.some.injEq]
+      constructor
+      · intro h; cases s with
+        | nil => rfl
+        | cons a t => simp [BiTape.mk₁, BiTape.mk.injEq] at h
+      · rintro rfl; simp [BiTape.mk₁, BiTape.nil]
+    · rw [if_neg hr, tapeCellsToOutputF_eq_some_iff]
+      cases s with
+      | nil =>
+        simp only [BiTape.mk₁, List.map_nil]
+        constructor
+        · intro h
+          simp only [BiTape.empty_eq_nil, BiTape.nil, BiTape.mk.injEq] at h
+          obtain ⟨hhd, -, hrgt⟩ := h
+          subst hhd; subst hrgt
+          exact absurd (by simp [StackTape.nil]) hr
+        · exact fun h => absurd h (by simp)
+      | cons a t =>
+        simp only [BiTape.mk₁, List.map_cons]
+        constructor
+        · intro h
+          rw [BiTape.mk.injEq] at h
+          obtain ⟨hhd, -, hrgt⟩ := h
+          rw [hhd, hrgt]; simp [StackTape.mapSome]
+        · intro h
+          rw [List.cons.injEq] at h
+          obtain ⟨hhd, hrgt⟩ := h
+          rw [BiTape.mk.injEq]
+          refine ⟨hhd, rfl, ?_⟩
+          cases rgt with | mk R hR => simp_all [StackTape.mapSome]
+  · rw [if_pos (by simp [hl])]
+    simp only [reduceCtorEq, iff_false]
+    intro hcontra
+    apply hl
+    have : lft = (BiTape.mk₁ s).left := by rw [← hcontra]
+    rw [this]
+    cases s <;> simp [BiTape.mk₁, BiTape.nil, StackTape.nil]
 
 lemma finalConfigToOutput_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
