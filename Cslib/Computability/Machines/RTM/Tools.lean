@@ -485,24 +485,37 @@ lemma evalFunGraph_computes
   exact snd_ComputesEnc (while_computes h_init (h_loop graph))
 
 
+/-- `graph` is a lookup table for `f`: looking up any key `a` yields `f a`. -/
+def IsGraphOf {α β : Type} [DecidableEq α] (graph : List (α × β)) (f : α → β) : Prop :=
+  ∀ a, (graph.find? (fun p => p.1 = a)).map (·.2) = Option.some (f a)
+
+/-- Any complete enumeration of the keys yields a lookup table for `f`. -/
+lemma IsGraphOf.of_complete {α β : Type} [DecidableEq α]
+    {graph_enum : List α}
+    {f : α → β}
+    (h : ∀ a, a ∈ graph_enum) :
+    IsGraphOf (graph_enum.map fun a => (a, f a)) f := by
+  intro a
+  suffices hsuff : ∀ L : List α, a ∈ L →
+      ((L.map fun a' => (a', f a')).find? (fun p => p.1 = a)).map (·.2) = Option.some (f a) from
+    hsuff graph_enum (h a)
+  intro L hmem
+  induction L with
+  | nil => exact absurd hmem (by simp)
+  | cons hd tl ih => grind
+
 lemma evalFunGraph_Computes_of_fun
-    [Fintype α]
+    [DecidableEq α]
     {p_graph p_arg : PB}
+    {graph : List (α × β)}
     {a : α}
     {f : α → β}
-    (h_graph : p_graph.ComputesEnc env (Fintype.elems.toList.map (fun a => (a, f a))))
+    (h_graph : p_graph.ComputesEnc env graph)
+    (h_isGraph : IsGraphOf graph f)
     (h_arg : p_arg.ComputesEnc env a) :
     (PB.evalFunGraph p_graph p_arg).head.ComputesEnc env (f a) := by
-  classical
-  have heq : ∀ (L : List α), a ∈ L →
-      ((L.map (fun a' => (a', f a'))).find?
-        (fun p => p.1 = a)).map (·.2) = Option.some (f a) := by
-    intro L hmem
-    induction L with
-    | nil => exact absurd hmem (by simp)
-    | cons hd tl ih => grind
   have h := PB.evalFunGraph_computes h_graph h_arg
-  rw [heq _ (Finset.mem_toList.mpr (Fintype.complete a))] at h
+  rw [h_isGraph a] at h
   apply PB.head_computes h
 
 

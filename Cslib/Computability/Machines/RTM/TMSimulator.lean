@@ -250,23 +250,28 @@ instance : DataEncode (SingleTapeTM.Stmt Symbol) where
     have heq := DataEncode.h_inj h
     grind
 
-lemma evalTr_computes {State : Type} [Fintype State] [DataEncode State]
-    [Fintype Symbol]
+/-- `evalTr` evaluates the transition function if it is given a graph of it as input. -/
+lemma evalTr_computes {State : Type} [DataEncode State]
     {p_tr p_q p_c : PB}
     {tr : State → Option Symbol → SingleTapeTM.Stmt Symbol × Option State}
+    {stateEnum : List State}
+    {symEnum : List (Option Symbol)}
+    (h_stateEnum : ∀ q', q' ∈ stateEnum)
+    (h_symEnum : ∀ c', c' ∈ symEnum)
     {q : State}
     {c : Option Symbol}
     (h_tr : p_tr.ComputesEnc env
-      ((Fintype.elems : Finset State).toList.map (fun q' : State =>
-        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
-          (fun c' : Option Symbol => (c', tr q' c'))))))
+      (stateEnum.map (fun q' : State =>
+        (q', symEnum.map (fun c' : Option Symbol => (c', tr q' c'))))))
     (h_q : p_q.ComputesEnc env q)
     (h_c : p_c.ComputesEnc env c) :
     (evalTr p_tr p_q p_c).ComputesEnc env (tr q c) := by
+  classical
   exact PB.evalFunGraph_Computes_of_fun (α := Option Symbol) (f := tr q)
-    (PB.evalFunGraph_Computes_of_fun (α := State) (f := fun q' =>
-      (Fintype.elems : Finset (Option Symbol)).toList.map (fun c' => (c', tr q' c')))
-      h_tr h_q) h_c
+    (PB.evalFunGraph_Computes_of_fun (α := State)
+      (f := fun q' => symEnum.map (fun c' => (c', tr q' c')))
+      h_tr (PB.IsGraphOf.of_complete h_stateEnum) h_q)
+    (PB.IsGraphOf.of_complete h_symEnum) h_c
 
 /-- The part of `SingleTapeTM.step` that applies the output of the transition function to the
 configuration. -/
@@ -303,12 +308,15 @@ lemma singleTapeTMStep_computes
     [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol}
     [DataEncode tm.State]
+    {stateEnum : List tm.State}
+    {symEnum : List (Option Symbol)}
+    (h_stateEnum : ∀ q', q' ∈ stateEnum)
+    (h_symEnum : ∀ c', c' ∈ symEnum)
     {p_tr p_cfg : PB}
     {cfg : tm.Cfg}
     (h_tr : p_tr.ComputesEnc env
-      ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
-        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
-          (fun c' => (c', tm.tr q' c'))))))
+      (stateEnum.map (fun q' =>
+        (q', symEnum.map (fun c' : Option Symbol => (c', tm.tr q' c'))))))
     (h_cfg : p_cfg.ComputesEnc env cfg) :
     (singleTapeTMStep p_tr p_cfg).ComputesEnc env (tm.step cfg) := by
   obtain ⟨state, t⟩ := cfg
@@ -322,7 +330,8 @@ lemma singleTapeTMStep_computes
     apply PB.computesFun₂_branch
     intro ext
     refine applyTrVal_computes ?_ (h_cfg.extend ext |>.extend _)
-    refine evalTr_computes (h_tr.extend ext |>.extend _) (PB.var_computes_fresh ext _) ?_
+    refine evalTr_computes h_stateEnum h_symEnum
+      (h_tr.extend ext |>.extend _) (PB.var_computes_fresh ext _) ?_
     exact PB.head_computes (cfgBitape_computes (h_cfg.extend ext |>.extend _))
 
 /-- Run the step function for `steps` iterations, staying at a halting configuration. -/
@@ -336,10 +345,13 @@ lemma timeBoundedSimulatorMain_computes
     {p_tr p_cfg p_steps : PB}
     {cfg : tm.Cfg}
     {steps : ℕ}
+    {stateEnum : List tm.State}
+    {symEnum : List (Option Symbol)}
+    (h_stateEnum : ∀ q', q' ∈ stateEnum)
+    (h_symEnum : ∀ c', c' ∈ symEnum)
     (h_tr : p_tr.ComputesEnc env
-      ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
-        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
-          (fun c' => (c', tm.tr q' c'))))))
+      (stateEnum.map (fun q' =>
+        (q', symEnum.map (fun c' : Option Symbol => (c', tm.tr q' c'))))))
     (h_cfg : p_cfg.ComputesEnc env cfg)
     (h_steps : p_steps.ComputesEnc env steps) :
     (timeBoundedSimulatorMain p_tr p_cfg p_steps).ComputesEnc env
@@ -355,7 +367,7 @@ lemma timeBoundedSimulatorMain_computes
   apply PB.forLoop_computes (f := fun _ c => (tm.step c).getD c) h_steps h_cfg
   intro e pi pacc i c hpre h_pi h_acc
   obtain ⟨more, rfl⟩ := hpre
-  have hstep := singleTapeTMStep_computes (h_tr.extend more) h_acc
+  have hstep := singleTapeTMStep_computes h_stateEnum h_symEnum (h_tr.extend more) h_acc
   cases hsc : tm.step c with
   | none => exact PB.optionElim_computesEnc_none (hsc ▸ hstep) h_acc
   | some next =>
@@ -518,7 +530,7 @@ lemma tapeCellsToOutputF_eq_some_iff (os : List (Option Symbol)) (r : List Symbo
   exact ⟨fun ⟨_, hos, hr⟩ => hr ▸ hos, fun hos => ⟨r, hos, rfl⟩⟩
 
 omit [DataEncode Symbol] in
-lemma tapeToOutput_iff_mk₁ [Inhabited Symbol] [DecidableEq Symbol]
+lemma tapeToOutput_iff_mk₁ [Inhabited Symbol]
     (tape : BiTape Symbol) (s : List Symbol) :
   (tape = .mk₁ s) ↔ tapeToOutputF tape = some s := by
   obtain ⟨hd, lft, rgt⟩ := tape
@@ -591,14 +603,19 @@ lemma timeBoundedSimulator_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
     {input : List Symbol}
     {steps : ℕ}
+    {stateEnum : List tm.State}
+    {symEnum : List (Option Symbol)}
+    (h_stateEnum : ∀ q', q' ∈ stateEnum)
+    (h_symEnum : ∀ c', c' ∈ symEnum)
     (h_input : p_input.ComputesEnc env
-      ((tm.q₀, (Fintype.elems : Finset tm.State).toList.map fun q' =>
-          (q', (Fintype.elems : Finset (Option Symbol)).toList.map
-            fun c' => (c', tm.tr q' c'))),
+      ((tm.q₀, (stateEnum.map (fun q' =>
+        (q', symEnum.map (fun c' : Option Symbol => (c', tm.tr q' c')))))),
        input,
        steps)) :
     (timeBoundedSimulator p_input).ComputesEnc env (timeBoundedSimulatorF tm input steps) := by
   let h_main := timeBoundedSimulatorMain_computes
+      h_stateEnum
+      h_symEnum
       (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input))
       (initialConfig_computes
         (PB.fst_ComputesEnc (PB.fst_ComputesEnc h_input))
@@ -618,40 +635,34 @@ def boolIntoFink {k} : Bool → Fin (k + 2)
 def finRange (n : ℕ) : List (Fin n) :=
   List.ofFn id
 
-def encodeTM
-    {k₁ k₂ : ℕ}
-    (tm : SingleTapeTM (Fin (k₁ + 2)))
-    (h_state : tm.State = Fin k₂) :=
-  (finRange k₂).map fun q => (q, (finRange (k₁ + 2)).map fun c => (c, tm.tr q c))
+noncomputable def encodeTMTr {k₁ : ℕ} (tm : SingleTapeTM (Fin (k₁ + 2))) :=
+  (Fintype.elems : Finset tm.State).toList.map fun q => (q,
+    (Fintype.elems : Finset (Option (Fin (k₁ + 2)))).toList.map fun c => (c, tm.tr q c))
 
-/-- Defines when a function on binary strings is computable by a TM in a certain time. -/
-def TMTimeComputableBoolFun (f : List Bool → List Bool) (t : ℕ → ℕ) : Prop :=
-  ∃ k₁ k₂, ∃ (tm : SingleTapeTM (Fin (k₁ + 2))),
-    tm.State = Fin k₂ ∧
-    ∀ s, tm.OutputsWithinTime (s.map boolIntoFink) ((f s).map boolIntoFink) (t s.length)
+instance {k : ℕ} : DataEncode (Fin k) where
+  encode x := DataEncode.encode x.val
+  h_inj := by grind [DataEncode.h_inj, Function.Injective]
 
--- lemma universal_time_bounded_simulator_inner
---   (k₁ k₂ : ℕ)
---   (tm : SingleTapeTM (Fin (k₁ + 2)))
---   (h_state : tm.State = Fin k₂)
---   (input output : List Bool)
---   (steps : ℕ) :
---   ∃ overhead,
---   tm.OutputsWithinTime (input.map boolIntoFink) (output.map boolIntoFink) steps →
---     timeBoundedSimulator.ComputesInTimeAndSpace (
-
---     (timeBoundedSimulatorF tm input steps) = some output
---    else
---     (timeBoundedSimulatorF tm input steps) = none := by sorry
-
---    := by
-
---   ∀ k₁ k₂, ∀ (tm : SingleTapeTM (Fin (k₁ + 2))), tm.State = Fin k₂ →
---   ∀ll
---   ∀ (f : List Bool → List Bool) t, TMTimeComputableBoolFun f t →
---     ∃ k, ∃ tm : SingleTapeTM (Fin k), tm.State = Fin 0 ∧
---       ∀ s, tm.OutputsWithinTime (s.map boolIntoFink) ((f s).map boolIntoFink) (t s.length) := by
-
+lemma universal_time_bounded_simulator_inner :
+  ∃ overhead : ℕ, ∀
+  {k₁ : ℕ}
+  (tm : SingleTapeTM (Fin (k₁ + 2)))
+  [DataEncode tm.State]
+  (input output : List Bool)
+  (steps : ℕ),
+  tm.OutputsWithinTime (input.map boolIntoFink) (output.map boolIntoFink) steps ↔
+    ∃ s,
+    PB.ComputesInTimeAndSpace
+      timeBoundedSimulator
+      ((tm.q₀, encodeTMTr tm), input, steps)
+      (Option.some output)
+      -- The simulation has quadratic overhead (`steps * steps`), but it is independent
+      -- of the input size.
+      (overhead * (DataEncode.encode (encodeTMTr tm)).size * steps * steps +
+        overhead * (DataEncode.encode (encodeTMTr tm)).size)
+      s
+   := by
+  sorry
 
 --------------------------------------------------------
 -- The rest is the while-loop based simulator
@@ -673,10 +684,13 @@ lemma tmWhileLoop_computes
     [DataEncode tm.State]
     {p_tr p_cfg : PB}
     {cfg : tm.Cfg}
+    {stateEnum : List tm.State}
+    {symEnum : List (Option Symbol)}
+    (h_stateEnum : ∀ q', q' ∈ stateEnum)
+    (h_symEnum : ∀ c', c' ∈ symEnum)
     (h_tr : p_tr.ComputesEnc env
-      ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
-        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
-          (fun c' => (c', tm.tr q' c'))))))
+      (stateEnum.map (fun q' : tm.State =>
+        (q', symEnum.map (fun c' : Option Symbol => (c', tm.tr q' c'))))))
     (h_cfg : p_cfg.ComputesEnc env cfg)
     (h_halts : ∃ n, (((fun c => (tm.step c).getD c)^[n] cfg)).state = none) :
     (tmWhileLoop p_tr p_cfg).ComputesEnc env
@@ -702,7 +716,8 @@ lemma tmWhileLoop_computes
     apply PB.computesFun₁_branch
     intro ext
     have h_acc : (PB.var (env.length + ext.length)).ComputesEnc _ c := PB.var_computes_fresh ext []
-    have h_step := singleTapeTMStep_computes (h_tr.extend ext |>.extend _) h_acc
+    have h_step := singleTapeTMStep_computes h_stateEnum h_symEnum
+        (h_tr.extend ext |>.extend _) h_acc
     cases hsc : tm.step c with
     | none =>
       rw [show step c = c from by simp only [step_def, hsc, Option.getD_none]]
@@ -835,11 +850,13 @@ lemma tmSimulatorComputes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
     {p_input : PB}
     {input output : List Symbol}
+    {stateEnum : List tm.State}
+    {symEnum : List (Option Symbol)}
+    (h_stateEnum : ∀ q', q' ∈ stateEnum)
+    (h_symEnum : ∀ c', c' ∈ symEnum)
     (h_input : p_input.ComputesEnc env
-      ((tm.q₀,
-        (Fintype.elems : Finset tm.State).toList.map (fun q' =>
-          (q', (Fintype.elems : Finset (Option Symbol)).toList.map
-            (fun c' => (c', tm.tr q' c'))))),
+      ((tm.q₀, (stateEnum.map (fun q' =>
+        (q', symEnum.map (fun c' : Option Symbol => (c', tm.tr q' c')))))),
        input)) :
     tm.Outputs input output → (tmSimulator p_input).ComputesEnc env output := by
   intro h_outputs
@@ -855,7 +872,8 @@ lemma tmSimulatorComputes [Inhabited Symbol] [Fintype Symbol]
   have h_main :
       (tmWhileLoop p_input.fst.snd (initialConfig p_input.fst.fst p_input.snd)).ComputesEnc
         env (tm.haltCfg output) := by
-    have := tmWhileLoop_computes (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input)) h_cfg h_halts
+    have := tmWhileLoop_computes h_stateEnum h_symEnum
+      (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input)) h_cfg h_halts
     rwa [iterate_find_state_eq hN rfl h_halts] at this
   -- The simulator extracts the output from the halting configuration's canonical tape.
   have hval : ((tm.haltCfg output).BiTape.head ::
