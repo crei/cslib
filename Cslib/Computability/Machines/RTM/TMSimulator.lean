@@ -329,7 +329,7 @@ lemma singleTapeTMStep_computes
 def timeBoundedSimulatorMain (tr cfg steps : PB) : PB :=
   PB.forLoop steps cfg (fun _ cfg => (singleTapeTMStep tr cfg).optionElim cfg (fun next => next))
 
-lemma timeBoundedSimulator_computes
+lemma timeBoundedSimulatorMain_computes
     [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol}
     [DataEncode tm.State]
@@ -362,77 +362,6 @@ lemma timeBoundedSimulator_computes
     exact PB.optionElim_computesEnc_some (hsc ▸ hstep)
       (PB.computesFun₂_branch (fun ext => PB.var_computes_fresh ext _))
 
-/-- The main loop of the Turing machine simulation: Execute a step until we reach a halting
-configuration, then return it. -/
-def tmMainLoop (tr : PB) (cfg : PB) : PB :=
-  -- The accumulator is the current `Cfg`. The body applies `singleTapeTM_step`
-  -- (an `Option Cfg`); on `some next` we continue with `next`, on `none` we keep
-  -- the current `acc` (which has `state = none`, signalling halt to `while_`).
-  PB.while_ cfg
-    (fun acc => (singleTapeTMStep tr acc).optionElim acc (fun next => next))
-
-lemma tmMainLoop_computes
-    [Inhabited Symbol] [Fintype Symbol]
-    {tm : SingleTapeTM Symbol}
-    [DataEncode tm.State]
-    {p_tr p_cfg : PB}
-    {cfg : tm.Cfg}
-    (h_tr : p_tr.ComputesEnc env
-      ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
-        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
-          (fun c' => (c', tm.tr q' c'))))))
-    (h_cfg : p_cfg.ComputesEnc env cfg)
-    (h_halts : ∃ n, (((fun c => (tm.step c).getD c)^[n] cfg)).state = none) :
-    (tmMainLoop p_tr p_cfg).ComputesEnc env
-      ((fun c => (tm.step c).getD c)^[Nat.find h_halts] cfg) := by
-  -- Totalise `tm.step`; halting states become fixed points.
-  set step : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with step_def
-  have halt_fix : ∀ c : tm.Cfg, c.state = none → step c = c := by
-    intro c hc
-    obtain ⟨s, t⟩ := c
-    cases s with
-    | none => simp [step_def]
-    | some q => simp at hc
-  -- The head of an encoded `Cfg` is empty iff its state is `none` (the loop's halt condition).
-  have headEmpty_iff : ∀ c : tm.Cfg,
-      (DataEncode.encode c).asList.head?.getD (Data.l []) = Data.l [] ↔ c.state = none := by
-    rintro ⟨s, t⟩; cases s <;> simp [DataEncode.encode]
-  -- One iteration of the loop body computes `step c`.
-  have body_computes : ∀ c : tm.Cfg,
-      PB.computesFun₁ env (.data (DataEncode.encode c))
-        (fun acc => PB.optionElim (singleTapeTMStep p_tr acc) acc (fun next => next))
-        (.data (DataEncode.encode (step c))) := by
-    intro c
-    apply PB.computesFun₁_branch
-    intro ext
-    have h_acc : (PB.var (env.length + ext.length)).ComputesEnc _ c := PB.var_computes_fresh ext []
-    have h_step := singleTapeTMStep_computes (h_tr.extend ext |>.extend _) h_acc
-    cases hsc : tm.step c with
-    | none =>
-      rw [show step c = c from by simp only [step_def, hsc, Option.getD_none]]
-      exact PB.optionElim_computesEnc_none (hsc ▸ h_step) h_acc
-    | some next =>
-      rw [show step c = next from by simp only [step_def, hsc, Option.getD_some]]
-      refine PB.optionElim_computesEnc_some (hsc ▸ h_step)
-        (PB.computesFun₂_branch (fun ext2 => PB.var_computes_fresh ext2 _))
-  -- Iterate the body from `c` to its halting configuration after `n` steps.
-  have loop : ∀ (n : ℕ) (c : tm.Cfg), (step^[n] c).state = none →
-      PB.WhileComputes env
-        (fun acc => PB.optionElim (singleTapeTMStep p_tr acc) acc (fun next => next))
-        (DataEncode.encode c) (DataEncode.encode (step^[n] c)) := by
-    intro n
-    induction n with
-    | zero => exact fun c hc => PB.WhileComputes.halt ((headEmpty_iff c).mpr hc)
-    | succ n ih =>
-      intro c hc
-      by_cases hstate : c.state = none
-      · rw [Function.iterate_fixed (halt_fix c hstate) (n + 1)]
-        exact PB.WhileComputes.halt ((headEmpty_iff c).mpr hstate)
-      · rw [Function.iterate_succ, Function.comp_apply] at hc ⊢
-        exact PB.WhileComputes.step
-          (fun h => hstate ((headEmpty_iff c).mp h)) (body_computes c) (ih (step c) hc)
-  exact PB.while_computes h_cfg (loop (Nat.find h_halts) cfg (Nat.find_spec h_halts))
-
 def stringToTape (input : PB) : PB :=
   PB.toPair input.listHeadOption (PB.toPair .empty (input.tail.listMap .some))
 
@@ -463,14 +392,6 @@ lemma initialConfig_computes [Inhabited Symbol] [Fintype Symbol]
     (h_input : p_input.ComputesEnc env input) :
     (initialConfig p_q₀ p_input).ComputesEnc env (tm.initCfg input) :=
   PB.toPair_computesEnc (PB.some_ComputesEnc h_q₀) (stringToTape_computes h_input)
-
-/-- Compute the final output from the tape contents: the symbol under the head followed by the
-contents to its right, with blank (`none`) cells removed.
-
-This is only meaningful for halting configurations whose tape is in canonical (`mk₁`) form, i.e.
-with an empty left part — which is exactly the shape of the `haltCfg`s produced by `Outputs`. -/
-def finalConfigToOutput (cfg : PB) : PB :=
-  (PB.cons (bitapeHead (cfgBitape cfg)) (bitapeRight (cfgBitape cfg))).listReduceOption
 
 def tapeCellsToOutputF (l : List (Option Symbol)) : Option (List Symbol) :=
   l.foldl
@@ -512,7 +433,7 @@ lemma tapeCellsToOutput_computes
         (PB.cons_computesEnc (PB.var_computes_fresh ext2 _) (PB.empty_computesEnc _)))
 
 
-def tapeToOutputF [DecidableEq Symbol]
+def tapeToOutputF
     (tape : BiTape Symbol) : Option (List Symbol) :=
   if !tape.left.toList.isEmpty then
     none
@@ -528,7 +449,7 @@ def tapeToOutput (tape : PB) : PB :=
       (PB.some .empty)
       (tapeCellsToOutput (PB.cons (bitapeHead tape) (bitapeRight tape))))
 
-lemma tapeToOutput_computes [DecidableEq Symbol]
+lemma tapeToOutput_computes
     {p_tape : PB}
     {tape : BiTape Symbol}
     (h_tape : p_tape.ComputesEnc env tape) :
@@ -561,7 +482,7 @@ lemma tapeCellsToOutputF_eq_some_iff (os : List (Option Symbol)) (r : List Symbo
     induction os with
     | nil => rfl
     | cons o os ih => rw [List.foldl_cons, show F none o = none from by rw [hF]]; exact ih
-  have key : ∀ (os : List (Option Symbol)) (acc r : List Symbol),
+  have : ∀ (os : List (Option Symbol)) (acc r : List Symbol),
       List.foldl F (some acc) os = some r ↔ ∃ l, os = l.map some ∧ r = acc ++ l := by
     intro os
     induction os with
@@ -592,7 +513,7 @@ lemma tapeCellsToOutputF_eq_some_iff (os : List (Option Symbol)) (r : List Symbo
             simp only [List.map_cons, List.cons.injEq, Option.some.injEq] at hl
             obtain ⟨rfl, rfl⟩ := hl
             exact ⟨l, rfl, by simp [hr]⟩
-  rw [key]
+  rw [this]
   simp only [List.nil_append]
   exact ⟨fun ⟨_, hos, hr⟩ => hr ▸ hos, fun hos => ⟨r, hos, rfl⟩⟩
 
@@ -649,6 +570,174 @@ lemma tapeToOutput_iff_mk₁ [Inhabited Symbol] [DecidableEq Symbol]
     rw [this]
     cases s <;> simp [BiTape.mk₁, BiTape.nil, StackTape.nil]
 
+
+def timeBoundedSimulator (input : PB) :=
+  let q₀ := input.fst.fst
+  let tr := input.fst.snd
+  let inputStr := input.snd.fst
+  let steps := input.snd.snd
+  let cfg := timeBoundedSimulatorMain tr (initialConfig q₀ inputStr) steps
+  PB.boolIte cfg.fst.isNone .none (tapeToOutput cfg.snd)
+
+def timeBoundedSimulatorF [Inhabited Symbol] [Fintype Symbol]
+    (tm : SingleTapeTM Symbol) [DataEncode tm.State]
+    (input : List Symbol)
+    (steps : ℕ) : Option (List Symbol) :=
+  let cfg := (fun c => (tm.step c).getD c)^[steps] (tm.initCfg input)
+  if cfg.state.isNone then none else tapeToOutputF cfg.BiTape
+
+lemma timeBoundedSimulator_computes [Inhabited Symbol] [Fintype Symbol]
+    {p_input : PB}
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
+    {input : List Symbol}
+    {steps : ℕ}
+    (h_input : p_input.ComputesEnc env
+      ((tm.q₀, (Fintype.elems : Finset tm.State).toList.map fun q' =>
+          (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+            fun c' => (c', tm.tr q' c'))),
+       input,
+       steps)) :
+    (timeBoundedSimulator p_input).ComputesEnc env (timeBoundedSimulatorF tm input steps) := by
+  let h_main := timeBoundedSimulatorMain_computes
+      (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input))
+      (initialConfig_computes
+        (PB.fst_ComputesEnc (PB.fst_ComputesEnc h_input))
+        (PB.fst_ComputesEnc (PB.snd_ComputesEnc h_input)))
+      (PB.snd_ComputesEnc (PB.snd_ComputesEnc h_input))
+  exact PB.boolIte_computes
+    (PB.isNone_computes (cfgState_computes h_main))
+    PB.none_computes
+    (tapeToOutput_computes (cfgBitape_computes h_main))
+
+/-- Encode `Bool` into an alphabet of size at least 2. -/
+def boolIntoFink {k} : Bool → Fin (k + 2)
+  | true => 0
+  | false => 1
+
+/-- The list of all elements of `Fin n`. -/
+def finRange (n : ℕ) : List (Fin n) :=
+  List.ofFn id
+
+def encodeTM
+    {k₁ k₂ : ℕ}
+    (tm : SingleTapeTM (Fin (k₁ + 2)))
+    (h_state : tm.State = Fin k₂) :=
+  (finRange k₂).map fun q => (q, (finRange (k₁ + 2)).map fun c => (c, tm.tr q c))
+
+/-- Defines when a function on binary strings is computable by a TM in a certain time. -/
+def TMTimeComputableBoolFun (f : List Bool → List Bool) (t : ℕ → ℕ) : Prop :=
+  ∃ k₁ k₂, ∃ (tm : SingleTapeTM (Fin (k₁ + 2))),
+    tm.State = Fin k₂ ∧
+    ∀ s, tm.OutputsWithinTime (s.map boolIntoFink) ((f s).map boolIntoFink) (t s.length)
+
+-- lemma universal_time_bounded_simulator_inner
+--   (k₁ k₂ : ℕ)
+--   (tm : SingleTapeTM (Fin (k₁ + 2)))
+--   (h_state : tm.State = Fin k₂)
+--   (input output : List Bool)
+--   (steps : ℕ) :
+--   ∃ overhead,
+--   tm.OutputsWithinTime (input.map boolIntoFink) (output.map boolIntoFink) steps →
+--     timeBoundedSimulator.ComputesInTimeAndSpace (
+
+--     (timeBoundedSimulatorF tm input steps) = some output
+--    else
+--     (timeBoundedSimulatorF tm input steps) = none := by sorry
+
+--    := by
+
+--   ∀ k₁ k₂, ∀ (tm : SingleTapeTM (Fin (k₁ + 2))), tm.State = Fin k₂ →
+--   ∀ll
+--   ∀ (f : List Bool → List Bool) t, TMTimeComputableBoolFun f t →
+--     ∃ k, ∃ tm : SingleTapeTM (Fin k), tm.State = Fin 0 ∧
+--       ∀ s, tm.OutputsWithinTime (s.map boolIntoFink) ((f s).map boolIntoFink) (t s.length) := by
+
+
+--------------------------------------------------------
+-- The rest is the while-loop based simulator
+---------------------------------------------------------
+
+
+/-- The main loop of the Turing machine simulation: Execute a step until we reach a halting
+configuration, then return it. -/
+def tmWhileLoop (tr : PB) (cfg : PB) : PB :=
+  -- The accumulator is the current `Cfg`. The body applies `singleTapeTM_step`
+  -- (an `Option Cfg`); on `some next` we continue with `next`, on `none` we keep
+  -- the current `acc` (which has `state = none`, signalling halt to `while_`).
+  PB.while_ cfg
+    (fun acc => (singleTapeTMStep tr acc).optionElim acc (fun next => next))
+
+lemma tmWhileLoop_computes
+    [Inhabited Symbol] [Fintype Symbol]
+    {tm : SingleTapeTM Symbol}
+    [DataEncode tm.State]
+    {p_tr p_cfg : PB}
+    {cfg : tm.Cfg}
+    (h_tr : p_tr.ComputesEnc env
+      ((Fintype.elems : Finset tm.State).toList.map (fun q' =>
+        (q', (Fintype.elems : Finset (Option Symbol)).toList.map
+          (fun c' => (c', tm.tr q' c'))))))
+    (h_cfg : p_cfg.ComputesEnc env cfg)
+    (h_halts : ∃ n, (((fun c => (tm.step c).getD c)^[n] cfg)).state = none) :
+    (tmWhileLoop p_tr p_cfg).ComputesEnc env
+      ((fun c => (tm.step c).getD c)^[Nat.find h_halts] cfg) := by
+  -- Totalise `tm.step`; halting states become fixed points.
+  set step : tm.Cfg → tm.Cfg := fun c => (tm.step c).getD c with step_def
+  have halt_fix : ∀ c : tm.Cfg, c.state = none → step c = c := by
+    intro c hc
+    obtain ⟨s, t⟩ := c
+    cases s with
+    | none => simp [step_def]
+    | some q => simp at hc
+  -- The head of an encoded `Cfg` is empty iff its state is `none` (the loop's halt condition).
+  have headEmpty_iff : ∀ c : tm.Cfg,
+      (DataEncode.encode c).asList.head?.getD (Data.l []) = Data.l [] ↔ c.state = none := by
+    rintro ⟨s, t⟩; cases s <;> simp [DataEncode.encode]
+  -- One iteration of the loop body computes `step c`.
+  have body_computes : ∀ c : tm.Cfg,
+      PB.computesFun₁ env (.data (DataEncode.encode c))
+        (fun acc => PB.optionElim (singleTapeTMStep p_tr acc) acc (fun next => next))
+        (.data (DataEncode.encode (step c))) := by
+    intro c
+    apply PB.computesFun₁_branch
+    intro ext
+    have h_acc : (PB.var (env.length + ext.length)).ComputesEnc _ c := PB.var_computes_fresh ext []
+    have h_step := singleTapeTMStep_computes (h_tr.extend ext |>.extend _) h_acc
+    cases hsc : tm.step c with
+    | none =>
+      rw [show step c = c from by simp only [step_def, hsc, Option.getD_none]]
+      exact PB.optionElim_computesEnc_none (hsc ▸ h_step) h_acc
+    | some next =>
+      rw [show step c = next from by simp only [step_def, hsc, Option.getD_some]]
+      refine PB.optionElim_computesEnc_some (hsc ▸ h_step)
+        (PB.computesFun₂_branch (fun ext2 => PB.var_computes_fresh ext2 _))
+  -- Iterate the body from `c` to its halting configuration after `n` steps.
+  have loop : ∀ (n : ℕ) (c : tm.Cfg), (step^[n] c).state = none →
+      PB.WhileComputes env
+        (fun acc => PB.optionElim (singleTapeTMStep p_tr acc) acc (fun next => next))
+        (DataEncode.encode c) (DataEncode.encode (step^[n] c)) := by
+    intro n
+    induction n with
+    | zero => exact fun c hc => PB.WhileComputes.halt ((headEmpty_iff c).mpr hc)
+    | succ n ih =>
+      intro c hc
+      by_cases hstate : c.state = none
+      · rw [Function.iterate_fixed (halt_fix c hstate) (n + 1)]
+        exact PB.WhileComputes.halt ((headEmpty_iff c).mpr hstate)
+      · rw [Function.iterate_succ, Function.comp_apply] at hc ⊢
+        exact PB.WhileComputes.step
+          (fun h => hstate ((headEmpty_iff c).mp h)) (body_computes c) (ih (step c) hc)
+  exact PB.while_computes h_cfg (loop (Nat.find h_halts) cfg (Nat.find_spec h_halts))
+
+
+/-- Compute the final output from the tape contents: the symbol under the head followed by the
+contents to its right, with blank (`none`) cells removed.
+
+This is only meaningful for halting configurations whose tape is in canonical (`mk₁`) form, i.e.
+with an empty left part — which is exactly the shape of the `haltCfg`s produced by `Outputs`. -/
+def finalConfigToOutput (cfg : PB) : PB :=
+  (PB.cons (bitapeHead (cfgBitape cfg)) (bitapeRight (cfgBitape cfg))).listReduceOption
+
 lemma finalConfigToOutput_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
     {p_cfg : PB} {cfg : tm.Cfg}
@@ -661,7 +750,7 @@ lemma finalConfigToOutput_computes [Inhabited Symbol] [Fintype Symbol]
       (bitapeRight_computes (cfgBitape_computes h_cfg)))
 
 def tmSimulator (input : PB) :=
-  finalConfigToOutput (tmMainLoop input.fst.snd (initialConfig input.fst.fst input.snd))
+  finalConfigToOutput (tmWhileLoop input.fst.snd (initialConfig input.fst.fst input.snd))
 
 /-- Translate Relation.ReflTransGen, the construct underlying `SingleTapeTM.Outputs`, into
 iteration of the step function. -/
@@ -700,7 +789,7 @@ omit env [DataEncode Symbol] in
 /-- If the totalised step function reaches a halting configuration `y` after `N` iterations,
 then it also reaches `y` at the *first* halting index `Nat.find h_halts` (halting configurations
 are fixpoints of the totalised step, so the orbit stabilises). This bridges
-`reflTransGen_iff_exists_iter` (which gives *some* witness `N`) and `tmMainLoop_computes` (whose
+`reflTransGen_iff_exists_iter` (which gives *some* witness `N`) and `tmWhileLoop_computes` (whose
 result is indexed by `Nat.find h_halts`). -/
 private lemma iterate_find_state_eq [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol}
@@ -760,13 +849,13 @@ lemma tmSimulatorComputes [Inhabited Symbol] [Fintype Symbol]
   -- From `Outputs`, the totalised step reaches `haltCfg output` after some `N` iterations.
   obtain ⟨N, hN⟩ := (reflTransGen_iff_exists_iter
     tm.step (x := tm.initCfg input) (y := tm.haltCfg output)).mp h_outputs
-  -- Hence it eventually reaches a halting state, and `tmMainLoop` computes that config.
+  -- Hence it eventually reaches a halting state, and `tmWhileLoop` computes that config.
   have h_halts : ∃ n, ((fun c => (tm.step c).getD c)^[n] (tm.initCfg input)).state = none :=
     ⟨N, by rw [hN]; rfl⟩
   have h_main :
-      (tmMainLoop p_input.fst.snd (initialConfig p_input.fst.fst p_input.snd)).ComputesEnc
+      (tmWhileLoop p_input.fst.snd (initialConfig p_input.fst.fst p_input.snd)).ComputesEnc
         env (tm.haltCfg output) := by
-    have := tmMainLoop_computes (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input)) h_cfg h_halts
+    have := tmWhileLoop_computes (PB.snd_ComputesEnc (PB.fst_ComputesEnc h_input)) h_cfg h_halts
     rwa [iterate_find_state_eq hN rfl h_halts] at this
   -- The simulator extracts the output from the halting configuration's canonical tape.
   have hval : ((tm.haltCfg output).BiTape.head ::
