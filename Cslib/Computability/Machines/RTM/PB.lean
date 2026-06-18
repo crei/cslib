@@ -78,6 +78,27 @@ def app (f a : PB) : PB := fun n => .app (f n) (a n)
 /-- Close a builder into a concrete `Prog`. -/
 def build (p : PB) : Prog := p 0
 
+/-- A proof that a `PB` that takes another `PB` as input computes a certain value.
+This is mainly used for final results. During composition, `computesFun₁` is more useful
+since it allows capturing the environment. -/
+def ComputesFunInTimeAndSpace (p : PB → PB) (input output : Data) (t s : ℕ) : Prop :=
+  ∀ env, ProgSem (env ++ [.data input]) (p (PB.var env.length) (env.length + 1))
+    (.data output) t s
+
+/-- The `PB → PB` analogue of `Prog.ComputesInTimeAndSpace`: viewing `p` as a transformation from
+an argument builder to a result builder, `p` computes `output` from `input` using `t` time and `s`
+space. The input is supplied as the last entry of the environment and read back through a variable,
+and the `∀ env` makes the statement hold under any outer environment (so it can be plugged into a
+larger program). -/
+def ComputesInTimeAndSpace (p : PB → PB) (input output : Data) (t s : ℕ) : Prop :=
+  ∀ env, ProgSem (env ++ [.data input]) (p (PB.var env.length) (env.length + 1))
+    (.data output) t s
+
+/-- Encoded form of `ComputesInTimeAndSpace`: `p` maps a value encoding `input : α` to one encoding
+`output : β`, using `t` time and `s` space. -/
+def ComputesEncInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+    (p : PB → PB) (input : α) (output : β) (t s : ℕ) : Prop :=
+  ComputesInTimeAndSpace p (DataEncode.encode input) (DataEncode.encode output) t s
 
 variable {env : List Value}
 
@@ -113,6 +134,42 @@ lemma Computes.extend {impl : PB} {out : Value} (more : List Value)
 This allows statements that `PB`s compute functions on lean datatypes. -/
 def ComputesEnc {α : Type} [DataEncode α] (env : List Value) (impl : PB) (x : α) :=
   Computes env impl (.data (DataEncode.encode x))
+
+/-- A `PB → PB` transformation `p` computes the (mathematical) function `φ`. Stated parametrically
+over the *argument builder* `a` together with a hypothesis that `a` computes the input: this is the
+shape of all the `_computes` lemmas (e.g. `tmMainLoop_computes`, `bitapeLeft_computes`), and it is
+what makes them composable. Resource-erased; for resource bounds see `ComputesInTimeAndSpace`. -/
+def ComputesFunEnc {α β : Type} [DataEncode α] [DataEncode β]
+    (p : PB → PB) (φ : α → β) : Prop :=
+  ∀ (env : List Value) (a : PB) (x : α), a.ComputesEnc env x → (p a).ComputesEnc env (φ x)
+
+/-- Composition of `PB → PB` transformations is function composition of the computed functions.
+This is the formal statement of the implicit composition used throughout `TMSimulator`. -/
+theorem ComputesFunEnc.comp {α β γ : Type} [DataEncode α] [DataEncode β] [DataEncode γ]
+    {p q : PB → PB} {φ : α → β} {ψ : β → γ}
+    (hp : ComputesFunEnc p φ) (hq : ComputesFunEnc q ψ) :
+    ComputesFunEnc (fun a => q (p a)) (ψ ∘ φ) :=
+  fun env a x h => hq env (p a) (φ x) (hp env a x h)
+
+/-- The identity transformation computes the identity function. -/
+theorem ComputesFunEnc.id {α : Type} [DataEncode α] :
+    ComputesFunEnc (α := α) (fun a => a) id :=
+  fun _ _ _ h => h
+
+/-- Resource-tracked analogue of `ComputesFunEnc`: `p` computes `φ`, charging its own time `t x`
+and space `s x` *on top of* the argument's cost. The costs are functions of the (decoded) input, so
+the bound can scale with the actual argument (e.g. with the simulated machine and step count). Given
+any argument builder `a` that computes `x` in time `ta` and space `sa`, the result builder `p a`
+computes `φ x` in time `t x + ta` and space `max (s x) sa`. Threading the argument cost this way is
+what makes the bounds additive under composition. -/
+def ComputesFunEncInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+    (p : PB → PB) (φ : α → β) (t s : α → ℕ) : Prop :=
+  ∀ (env : List Value) (a : PB) (x : α) (ta sa : ℕ),
+    (∀ ext : List Value, ProgSem (env ++ ext) (a (env.length + ext.length))
+      (.data (DataEncode.encode x)) ta sa) →
+    (∀ ext : List Value, ProgSem (env ++ ext) (p a (env.length + ext.length))
+      (.data (DataEncode.encode (φ x))) (t x + ta) (max (s x) sa))
+
 
 /-- Var-lookup: `PB.var i` reads the `i`-th entry of the environment. -/
 @[simp]
