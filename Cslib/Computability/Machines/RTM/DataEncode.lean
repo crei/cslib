@@ -36,6 +36,9 @@ instance : DataEncode Data where
   encode b := b
   h_inj := by intros a b h_eq; grind
 
+@[simp, scoped grind =]
+lemma DataEncode_encode_data (d : Data) : DataEncode.encode d = d := rfl
+
 instance : DataEncode Bool where
   encode b := if b then Data.l [ Data.l [] ] else Data.l []
   h_inj := by intros a b h_eq; grind

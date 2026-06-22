@@ -72,19 +72,37 @@ inductive Value where
   | closure (body : Prog) (env : List Value)
 deriving Repr
 
-def Value.size : Value → ℕ
-  | .data d => d.size
-  | .closure _ env => 2 + (env.map Value.size).sum
-
 abbrev Value.empty : Value := .data (Data.l [])
 
-@[simp]
-lemma Value.size_data {d : Data} : (Value.data d).size = d.size := by simp [Value.size]
+def Prog.hasVar (i : ℕ) : Prog → Bool
+  | .var j => i = j
+  | .empty => false
+  | .cons h t => h.hasVar i || t.hasVar i
+  | .elim v emp cs => v.hasVar i || emp.hasVar i || cs.hasVar i
+  | .ifEq x y then_ else_ =>
+      x.hasVar i || y.hasVar i || then_.hasVar i || else_.hasVar i
+  | .while_ init body => init.hasVar i || body.hasVar i
+  | .fn body => body.hasVar i
+  | .app f arg => f.hasVar i || arg.hasVar i
 
-lemma Value.size_pos {v : Value} : 0 < v.size := by
-  cases v with
-  | data d => simp only [Value.size]; exact Data.size_le
-  | closure _ env => simp only [Value.size]; omega
+
+mutual
+  def closureSize (body : Prog) (env : List Value) : ℕ :=
+    let rec go (depth : ℕ) (env : List Value) : ℕ :=
+      match env with
+      | [] => 0
+      | hd :: tl => go (depth + 1) tl + if body.hasVar depth then hd.size else 0
+    go 0 env
+
+  /-- The size of a `Value`. The size of data is the length of its encoding and the size
+  of a closure is the sum of the sizes of the referenced variables. -/
+  def Value.size : Value → ℕ
+    | .data d => d.size
+    | .closure p env => closureSize p env
+end
+
+@[simp, scoped grind =]
+lemma Value.size_data {d : Data} : (Value.data d).size = d.size := by simp [Value.size]
 
 mutual
 /-- Semantics of `Prog` including time and space resource bounds.
@@ -101,51 +119,38 @@ inductive ProgSem : (List Value) → Prog → Value → ℕ → ℕ → Prop
   | elim_nil
       (h₁ : ProgSem σ val (.data (Data.l [])) t_v s_v)
       (h₂ : ProgSem σ emp r t_emp s_emp) :
-      ProgSem σ (.elim val emp cs) r (t_v + t_emp) (max s_v s_emp)
+      ProgSem σ (.elim val emp cs) r (t_v + t_emp) (s_v + s_emp)
   /-- `elim`, cons branch: `v` destructures to `hd :: tl`; evaluate the function `cs` to a
       closure and apply it first to `hd` and then to `tl` (so `cs` is a curried
-      two-argument function).
-      TODO: We could syntactically require that the `cs` argument always has the form
-      `.fn .fn ...`, then we could change the cost function so that we do not need to charge
-      for creating the closure (and the same for all similar constructs).
-       -/
+      two-argument function). -/
   | elim_cons
       (h_v : ProgSem σ val (.data (Data.l (hd :: tl))) t_v s_v)
       (h_cs : ProgSem σ cs cv t_cs s_cs)
       (h_app₁ : AppSem cv (.data hd) cv' t₁ s₁)
       (h_app₂ : AppSem cv' (.data (Data.l tl)) r t₂ s₂) :
-      ProgSem σ (.elim val emp cs) r (t_v + t_cs + t₁ + t₂)
-        (max (max (max s_v s_cs) s₁) s₂)
+      ProgSem σ (.elim val emp cs) r (t_v + t_cs + t₁ + t₂) (s_v + s_cs + s₁ + s₂)
   | ifEq_then
       (h_x : ProgSem σ x (.data vx) t_x s_x)
       (h_y : ProgSem σ y (.data vx) t_y s_y)
       (h_then : ProgSem σ then_ r t_then s_then) :
-      ProgSem σ (.ifEq x y then_ else_) r
-        (t_x + t_y + t_then)
-        (max (max s_x s_y) s_then)
+      ProgSem σ (.ifEq x y then_ else_) r (t_x + t_y + t_then) (s_x + s_y + s_then)
   | ifEq_else
       (h_x : ProgSem σ x (.data vx) t_x s_x)
       (h_y : ProgSem σ y (.data vy) t_y s_y)
       (h_neq : vx ≠ vy)
       (h_else : ProgSem σ else_ r t_else s_else) :
-      ProgSem σ (.ifEq x y then_ else_) r
-        (t_x + t_y + t_else)
-        (max (max s_x s_y) s_else)
+      ProgSem σ (.ifEq x y then_ else_) r (t_x + t_y + t_else) (s_x + s_y + s_else)
   /-- `while_ init body`: evaluate `init` to the starting accumulator and `body` to a
       one-argument closure, then iterate the closure via `WhileSem` until it halts. -/
   | while_
       (h_init : ProgSem σ init (.data acc) t_init s_init)
       (h_body : ProgSem σ body bodyVal t_body s_body)
       (h_while : WhileSem bodyVal acc r t_w s_w) :
-      ProgSem σ (.while_ init body) (.data r) (t_init + t_body + t_w)
-        (max (max s_init s_body) s_w)
+      ProgSem σ (.while_ init body) (.data r) (t_init + t_body + t_w) (s_init + s_body + s_w)
   /-- `fn body`: evaluate to a closure capturing the current environment `σ`. The cost is the
       size of the resulting closure (mirroring `var`, which charges the size of the value it
-      produces).
-      TODO: We could charge only the size of the referenced variables, which would make it
-      more or less free to create a non-capturing closure. -/
-  | fn :
-      ProgSem σ (.fn body) (.closure body σ)
+      produces). -/
+  | fn : ProgSem σ (.fn body) (.closure body σ)
         (Value.closure body σ).size (Value.closure body σ).size
   /-- `app fn arg`: evaluate `fn` to a closure, evaluate `arg` to a value, then run the
       closure's body in the *captured* environment extended with the argument (static
@@ -154,7 +159,7 @@ inductive ProgSem : (List Value) → Prog → Value → ℕ → ℕ → Prop
       (h_fn : ProgSem σ fn fv t_f s_f)
       (h_arg : ProgSem σ arg v t_a s_a)
       (h_app : AppSem fv v r t_b s_b) :
-      ProgSem σ (.app fn arg) r (t_f + t_a + t_b) (max (max s_f s_a) s_b)
+      ProgSem σ (.app fn arg) r (t_f + t_a + t_b) (s_f + s_a + s_b)
 
 /-- Application of a value to an argument value. `AppSem f v r t s` means that applying the
 closure `f` to the argument `v` yields `r` using `t` time and `s` space. Only closures can be
@@ -180,6 +185,28 @@ inductive WhileSem : Value → Data → Data → ℕ → ℕ → Prop
       (h_rest : WhileSem bodyVal v r t_r s_r) :
       WhileSem bodyVal acc r (t_b + t_r) (max s_b s_r)
 end
+
+/-- Producing a value costs at least its size, in both time and space. This holds because every
+`ProgSem` derivation either reads/builds the value directly (charging its size) or returns a
+value produced by a sub-derivation whose cost it includes. Provable by mutual induction over
+`ProgSem`/`AppSem`/`WhileSem`. -/
+lemma ProgSem.size_le {σ : List Value} {p : Prog} {v : Value} {t s : ℕ}
+    (h : ProgSem σ p v t s) : v.size ≤ t ∧ v.size ≤ s := by
+  -- cases h with
+  -- | var => simp
+  -- | empty => simp
+  -- | cons h₁ h₂ =>
+  --     constructor
+  --     · let r := (ProgSem.size_le h₁).left
+  --       let q := (ProgSem.size_le h₂).left
+  --       rw [Value.size_data] at r
+  --       rw [Value.size_data] at q
+  --       simp [Value.size] at *
+  --       grind
+  --     ·
+  --       sorry
+  -- | _ => sorry
+  sorry
 
 /-- The program `p` computes the value `y` from the value `x` in time `t` and space `s`. -/
 def Prog.ComputesInTimeAndSpace (p : Prog) (x y : Data) (t : ℕ) (s : ℕ) : Prop :=
@@ -225,6 +252,12 @@ inductive InPlace : Prog → Prop
       accumulator. -/
   | while_ (hinit : InPlace init) (hbody : InPlace body) :
       InPlace (.while_ init (.fn body))
+  /-- `app` whose operator is a literal one-argument function `fn body`: this is a `let`,
+      binding the value of `arg` and running `body` on the spot. The abstraction is consumed
+      immediately, so no closure escapes. Nested applications of this form give multi-argument
+      `let`-chains; arbitrary arities follow by repeated use of this constructor. -/
+  | app (hbody : InPlace body) (harg : InPlace arg) :
+      InPlace (.app (.fn body) arg)
 
 
 end RoseTreeMachine

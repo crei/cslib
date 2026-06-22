@@ -58,6 +58,9 @@ namespace Turing
 
 namespace RoseTreeMachine
 
+-- TODO we should distinguish at the type level between Var (a variable / reference to a slot)
+-- and ℕ (the environment depth)
+
 /-- A program builder: given the current binder depth (the size of `env` at the point of
 insertion), produce a `Prog`. -/
 abbrev PB := ℕ → Prog
@@ -72,14 +75,20 @@ def elim (v em : PB) (cs : PB → PB → PB) : PB := fun n =>
 def ifEq (x y then_ else_ : PB) : PB := fun n => .ifEq (x n) (y n) (then_ n) (else_ n)
 def while_ (init : PB) (body : PB → PB) : PB := fun n =>
   .while_ (init n) (.fn (body (var n) (n + 1)))
-def fn (body : PB → PB) : PB := fun n => .fn (body (var n) (n + 1))
+def fn (body : ℕ → PB) : PB := fun n => .fn (body n (n + 1))
 def app (f a : PB) : PB := fun n => .app (f n) (a n)
+
+def letIn (e : PB) (body : ℕ → PB) : PB := app (fn body) e
+
+macro "PBlet " x:ident ":=" e:term " in " body:term : term => do
+  `(PB.letIn $e (fun $x => $body))
 
 /-- Close a builder into a concrete `Prog`. -/
 def build (p : PB) : Prog := p 0
 
 
 variable {env : List Value}
+
 
 /-! ### Resource-erased (`ProgSem`-based) semantics for program builders
 
@@ -113,6 +122,54 @@ lemma Computes.extend {impl : PB} {out : Value} (more : List Value)
 This allows statements that `PB`s compute functions on lean datatypes. -/
 def ComputesEnc {α : Type} [DataEncode α] (env : List Value) (impl : PB) (x : α) :=
   Computes env impl (.data (DataEncode.encode x))
+
+def EnvEnc {α : Type} [DataEncode α] (env : List Value) (var : ℕ) (x : α) :=
+  ∀ ext, (env ++ ext)[var]?.getD Value.empty = .data (DataEncode.encode x)
+
+
+------------------- Resource Consumption -------------------------
+
+@[scoped grind =]
+def envSize (env : List Value) : ℕ := env.map (fun x : Value => x.size) |>.sum
+
+def TimeBounded (env : List Value) (impl : PB) (t : ℕ) :=
+  ∀ x t' s, ProgSem env (impl env.length) x t' s → t' ≤ t
+
+def SpaceBounded (env : List Value) (impl : PB) (s : ℕ) :=
+  ∀ x t s', ProgSem env (impl env.length) x t s' → s' ≤ s
+
+def OTime (impl : PB) (t : List Value → ℕ) :=
+  ∃ k, ∀ env, TimeBounded env impl (k * (t env) + k)
+
+def OSpace (impl : PB) (s : List Value → ℕ) :=
+  ∃ k, ∀ env, SpaceBounded env impl (k * (s env) + k)
+
+def OTimeFun₁ (impl : PB → PB) (t : List Value → ℕ) :=
+  ∃ k, ∀ env x y t' s, ProgSem (env ++ [x]) (impl (.var env.length) (env.length + 1)) y t' s →
+    t' ≤ k * (t (env ++ [x])) + k
+
+def OSpaceFun₁ (impl : PB → PB) (s : List Value → ℕ) :=
+  ∃ k, ∀ env x y t s', ProgSem (env ++ [x]) (impl (.var env.length) (env.length + 1)) y t s' →
+    s' ≤ k * (s (env ++ [x])) + k
+
+def OTimeFun₂ (impl : PB → PB → PB) (t : List Value → ℕ) :=
+  ∃ k, ∀ env x y z t' s, ProgSem (env ++ [x, y])
+    (impl (.var env.length) (.var (env.length + 1)) (env.length + 2)) z t' s →
+      t' ≤ k * (t (env ++ [x, y])) + k
+
+def OSpaceFun₂ (impl : PB → PB → PB) (s : List Value → ℕ) :=
+  ∃ k, ∀ env x y z t s', ProgSem (env ++ [x, y])
+    (impl (.var env.length) (.var (env.length + 1)) (env.length + 2)) z t s' →
+      s' ≤ k * (s (env ++ [x, y])) + k
+
+/-- The space and time complexity of `impl` is linear in the size of the environment.
+Note that this is more or less the best complexity we can have. -/
+def Linear (impl : PB) := OTime impl envSize ∧ OSpace impl envSize
+
+def LinearFun₂ (impl : PB → PB → PB) :=
+  OTimeFun₂ impl envSize ∧ OSpaceFun₂ impl envSize
+
+--------------------- Lemmas for combinators -------------------------------
 
 /-- Var-lookup: `PB.var i` reads the `i`-th entry of the environment. -/
 @[simp]
@@ -151,6 +208,13 @@ lemma var_computes_fresh2 {v w : Value} (ext binds : List Value) :
     Computes (env ++ ext ++ (v :: w :: binds)) (PB.var (env.length + ext.length + 1)) w := by
   exact var_computes_fresh' ext (v :: w :: binds) (j := 1) (by simp)
 
+lemma var_computes_of_envEnc {α : Type} [DataEncode α] {var : ℕ} {x : α} (h : EnvEnc env var x) :
+    Computes env (PB.var var) (.data (DataEncode.encode x)) := by
+  intro ext
+  exact ⟨_, _, (h ext) ▸ ProgSem.var⟩
+
+lemma empty_linear : Linear (PB.empty) := by sorry
+
 @[simp]
 lemma empty_computes : Computes env empty (.data (.l [])) := by
   intro ext
@@ -178,6 +242,10 @@ lemma cons_computesEnc {α : Type} [DataEncode α] {p_hd p_tl : PB} {hd : α} {t
   obtain ⟨tt, st, ht'⟩ := h_tl ext
   exact ⟨_, _, ProgSem.cons hh' ht'⟩
 
+lemma cons_linear {h t : PB} (hh : Linear h) (ht : Linear t) :
+    Linear (PB.cons h t) := by
+  sorry
+
 /-- A `PB.var` at the absolute level of the `j`-th freshly-bound variable reads `binds[j]`. -/
 @[simp]
 lemma var_computesFun {binds : List Value} {j : ℕ} (ext : List Value) :
@@ -189,6 +257,16 @@ lemma var_computesFun {binds : List Value} {j : ℕ} (ext : List Value) :
       simp [List.length_append]
     rw [e1, List.getElem?_append_right (Nat.le_add_right _ _), Nat.add_sub_cancel_left]
   exact ⟨_, _, hval ▸ ProgSem.var⟩
+
+/-- Inversion for a variable lookup: a `.var i` derivation reads `σ[i]` and charges exactly its
+size for both time and space. -/
+lemma ProgSem.var_inv {σ : List Value} {i : ℕ} {v : Value} {t s : ℕ}
+    (h : ProgSem σ (.var i) v t s) :
+    v = σ[i]?.getD Value.empty ∧ t = v.size ∧ s = v.size := by
+  cases h
+  exact ⟨rfl, rfl, rfl⟩
+
+lemma var_linear {i : ℕ} : Linear (PB.var i) := by sorry
 
 /-- The code in `body` computes a function of two arguments `x`, `y` and returns `out`. -/
 def computesFun₂ (env : List Value) (x y : Value) (body : PB → PB → PB) (out : Value) : Prop :=
@@ -227,6 +305,14 @@ def computesFun₁ (env : List Value) (x : Value) (body : PB → PB) (out : Valu
   ∀ ext : List Value, ∃ t s, ProgSem (env ++ ext ++ [x])
     (body (PB.var (env.length + ext.length)) (env.length + ext.length + 1))
     out t s
+
+/-- The code in `body` computes a function of one argument `x` and returns `out`.
+-- TODO use this instead of the above -/
+def computesFun₁v (env : List Value) (x : Value) (body : ℕ → PB) (out : Value) : Prop :=
+  ∀ ext : List Value, ∃ t s, ProgSem (env ++ ext ++ [x])
+    (body (env.length + ext.length) (env.length + ext.length + 1))
+    out t s
+
 
 /-- To run a one-argument body on its freshly-bound argument, it suffices that `body` applied to
 the fresh variable computes `out` in the extended environment. This hides the
@@ -273,6 +359,22 @@ lemma elim_cons_computes {v em : PB} {cs : PB → PB → PB}
     rw [hmap]; exact hb
   exact ⟨_, _, ProgSem.elim_cons hv' ProgSem.fn (AppSem.mk ProgSem.fn) (AppSem.mk hb')⟩
 
+lemma elim_linear
+    {v em : PB} {cs : PB → PB → PB}
+    (h_v : Linear v)
+    (h_em : Linear em)
+    (h_cs : LinearFun₂ cs) :
+  Linear (PB.elim v em cs) := by
+  sorry
+
+lemma elim_time {v em : PB} {cs : PB → PB → PB}
+    {t_v t_em t_cs : List Value → ℕ}
+    (h_v : OTime v t_v)
+    (h_em : OTime em t_em)
+    (h_cs : OTimeFun₂ cs t_cs) :
+  OTime (PB.elim v em cs) (fun env => t_v env + t_em env + t_cs env) := by sorry
+
+
 @[simp]
 lemma ifeq_eq_computes {x y then_ else_ : PB} {vx : Data} {out : Value}
     (hx : Computes env x (.data vx))
@@ -313,9 +415,9 @@ lemma ifeq_computes {x y then_ else_ : PB} {vx vy : Data} {out₁ out₂ : Value
 /-- In-place application of a literal abstraction (a `let` binding): if `arg` computes `dx`
 and `body` computes `out` with its parameter bound to `dx`, then `app (fn body) arg` computes
 `out`. -/
-lemma app_fn_computes {body : PB → PB} {arg : PB} {dx out : Value}
+lemma app_fn_computes {body : ℕ → PB} {arg : PB} {dx out : Value}
     (harg : Computes env arg dx)
-    (hbody : computesFun₁ env dx body out) :
+    (hbody : computesFun₁v env dx body out) :
     Computes env (PB.app (PB.fn body) arg) out := by
   intro ext
   obtain ⟨ta, sa, ha⟩ := harg ext
@@ -325,7 +427,7 @@ lemma app_fn_computes {body : PB → PB} {arg : PB} {dx out : Value}
       = (env ++ ext ++ [dx]) := by
     simp
   have hb' : ProgSem ((env ++ ext) ++ [dx])
-      (body (PB.var (env.length + ext.length)) (env.length + ext.length + 1))
+      (body (env.length + ext.length) (env.length + ext.length + 1))
       out tb sb := by
     rw [hmap]; exact hb
   exact ⟨_, _, ProgSem.app ProgSem.fn ha (AppSem.mk hb')⟩
@@ -408,6 +510,26 @@ theorem WhileComputes.rec' {body : PB → PB} (μ : Data → ℕ) (result : Data
 
 ------------------- Resource Consumption -------------------------
 
+-- /-- Resource-erased relational semantics of a program builder. -/
+-- def UsesTimeAndSpace (env : List Value) (impl : PB) (t s : ℕ) : Prop :=
+--   ∀ ext : List Value,
+--     ∃ out, ProgSem (env ++ ext) (impl (env.length + ext.length))
+--       out t s
+
+-- def LinearOverhead (impl : PB → PB) : Prop :=
+--   ∃ k, ∀ env p t s,
+--     UsesTimeAndSpace env p t s →
+--     ∃ t' ≤ k * t + k, ∃ s' ≤ k * s + k,
+--     UsesTimeAndSpace env (impl p) t' s'
+
+-- def LinearOverhead₂ (impl : PB → PB → PB) : Prop :=
+--   ∃ k, ∀ env p₁ p₂ t₁ s₁ t₂ s₂,
+--     UsesTimeAndSpace env p₁ t₁ s₁ →
+--     UsesTimeAndSpace env p₂ t₂ s₂ →
+--     ∃ t' ≤ k * (t₁ + t₂) + k, ∃ s' ≤ k * (s₁ + s₂) + k,
+--     UsesTimeAndSpace env (impl p₁ p₂) t' s'
+
+
 def OutputsOSize (impl : PB) (s : List Value → ℕ) : Prop :=
   ∃ a b, ∀ env, ∃ out,
     impl.Computes env out ∧ out.size ≤ a * (s env) + b
@@ -424,23 +546,28 @@ def UsesLinearTimeAndSpace (impl : PB) : Prop :=
   PB.UsesOTime impl (fun env => (env.map fun x => x.size).sum) ∧
   PB.UsesOSpace impl (fun env => (env.map fun x => x.size).sum)
 
-def ComputesInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
-    (p : PB → PB) (x : α) (y : β) (t s : α → ℕ) : Prop :=
-  ∀ (env : List Value) (a : PB) (ta sa : ℕ),
+-- def ComputesInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+--     (env : List Value) (p : PB) (y : β) (t s : ℕ) : Prop :=
+--   ∀ ext, ProgSem (env ++ ext) (p (env.length + ext.length))
+--       (.data (DataEncode.encode y)) t s
+
+def ComputesFunInAdditionalTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+    (env : List Value) (p : PB → PB) (x : α) (y : β) (t s : α → ℕ) : Prop :=
+  ∀ (a : PB) (ta sa : ℕ),
     (∀ ext, ProgSem (env ++ ext) (a (env.length + ext.length))
       (.data (DataEncode.encode x)) ta sa) →
     (∀ ext, ∃ t' ≤ t x, ∃ s' ≤ s x, ProgSem (env ++ ext) (p a (env.length + ext.length))
-      (.data (DataEncode.encode y)) (t' + ta) (max s' sa))
+      (.data (DataEncode.encode y)) (t' + ta) (s' + sa))
 
-def ComputesFunInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
-    (p : PB → PB) (φ : α → β) (t s : α → ℕ) : Prop :=
-  ∀ x, ComputesInTimeAndSpace p x (φ x) t s
+-- def ComputesFunInTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+--     (p : PB → PB) (φ : α → β) (t s : α → ℕ) : Prop :=
+--   ∀ x, ComputesFunInAdditionalTimeAndSpace p x (φ x) t s
 
-def ComputesFunInLinearTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
-    (p : PB → PB) (φ : α → β) : Prop :=
-  ∃ k, ComputesFunInTimeAndSpace p φ
-    (fun x => k * (DataEncode.encode x).size + k)
-    (fun x => k * (DataEncode.encode x).size + k)
+-- def ComputesFunInLinearTimeAndSpace {α β : Type} [DataEncode α] [DataEncode β]
+--     (p : PB → PB) (φ : α → β) : Prop :=
+--   ∃ k, ComputesFunInTimeAndSpace p φ
+--     (fun x => k * (DataEncode.encode x).size + k)
+--     (fun x => k * (DataEncode.encode x).size + k)
 
 end PB
 

@@ -64,11 +64,13 @@ lemma constantEnc_computesEnc {α : Type} [DataEncode α] {a : α} :
   simp [ComputesEnc, constantEnc]
 
 
+lemma constant_linear {α : Type} [DataEncode α] {a : α} :
+  Linear (constantEnc a) := by
+  sorry
+
+
 /-- Returns the tail of a list-valued builder (`[]` when empty). -/
 def tail (x : PB) : PB := .elim x .empty (fun _hd tl => tl)
-
-/-- Returns the head of a list-valued builder (`Data.l []` when empty). -/
-def head (x : PB) : PB := .elim x .empty (fun hd _tl => hd)
 
 @[simp]
 lemma tail_computes {x : PB} {dx : Data} (hx : x.Computes env (.data dx)) :
@@ -82,6 +84,14 @@ lemma tail_computes {x : PB} {dx : Data} (hx : x.Computes env (.data dx)) :
     simpa [PB.computesFun₂, var] using
       var_computesFun (binds := [.data hd, .data (Data.l tl)]) (j := 1) ext
 
+lemma tail_linear (x : PB) (h_x : Linear x) : Linear (tail x) := by
+  refine elim_linear h_x empty_linear ⟨?_, ?_⟩ <;>
+  refine ⟨1, fun env a b z t s h => ?_⟩ <;>
+  grind [ProgSem.var_inv h]
+
+/-- Returns the head of a list-valued builder (`Data.l []` when empty). -/
+def head (x : PB) : PB := .elim x .empty (fun hd _tl => hd)
+
 @[simp]
 lemma head_computes {x : PB} {dx : Data} (hx : x.Computes env (.data dx)) :
     Computes env (PB.head x) (.data (dx.asList.headD (Data.l []))) := by
@@ -94,6 +104,11 @@ lemma head_computes {x : PB} {dx : Data} (hx : x.Computes env (.data dx)) :
     simpa [PB.computesFun₂, var] using
       var_computesFun (binds := [.data hd, .data (Data.l tl)]) (j := 0) ext
 
+lemma head_linear (x : PB) (h_x : Linear x) : Linear (head x) := by
+  refine elim_linear h_x empty_linear ⟨?_, ?_⟩ <;>
+  refine ⟨1, fun env a b z t s h => ?_⟩ <;>
+  grind [ProgSem.var_inv h]
+
 /-- First projection (`head`). -/
 def fst (x : PB) : PB := head x
 
@@ -101,6 +116,8 @@ lemma fst_ComputesEnc {x : PB} {a : α × β} (hx : x.ComputesEnc env a) :
     (fst x).ComputesEnc env a.fst := by
   obtain ⟨a, b⟩ := a
   apply PB.head_computes hx
+
+lemma fst_linear (x : PB) (h_x : Linear x) : Linear (fst x) := head_linear x h_x
 
 /-- Second projection (`head` of `tail`). -/
 def snd (x : PB) : PB := head (PB.tail x)
@@ -110,10 +127,15 @@ lemma snd_ComputesEnc {x : PB} {a : α × β} (hx : x.ComputesEnc env a) :
   obtain ⟨a, b⟩ := a
   apply PB.head_computes (PB.tail_computes hx)
 
+lemma snd_linear (x : PB) (h_x : Linear x) : Linear (snd x) := by
+  apply head_linear (tail x) (tail_linear x h_x)
+
 def none : PB := .empty
 
 lemma none_computes : none.ComputesEnc env (Option.none : Option α) := by
   apply empty_computes
+
+lemma none_linear : Linear none := empty_linear
 
 /-- `Option.some` as a singleton list. -/
 def some (x : PB) : PB := cons x empty
@@ -121,6 +143,9 @@ def some (x : PB) : PB := cons x empty
 lemma some_ComputesEnc {x : PB} {a : α} (hx : x.ComputesEnc env a) :
     (PB.some x).ComputesEnc env (Option.some a) := by
   apply PB.cons_computes hx empty_computes
+
+def some_linear (x : PB) (h_x : Linear x) : Linear (some x) := by
+  sorry
 
 /-- Eliminate an `Option`: on `none` (empty) run `noneCase`, on `some v` run `someCase v`. -/
 def optionElim (x noneCase : PB) (someCase : PB → PB) : PB :=

@@ -335,25 +335,26 @@ lemma singleTapeTMStep_computes
     exact PB.head_computes (cfgBitape_computes (h_cfg.extend ext |>.extend _))
 
 /-- Run the step function for `steps` iterations, staying at a halting configuration. -/
-def timeBoundedSimulatorMain (tr cfg steps : PB) : PB :=
-  PB.forLoop steps cfg (fun _ cfg => (singleTapeTMStep tr cfg).optionElim cfg (fun next => next))
+def timeBoundedSimulatorMain (tr cfg steps : ℕ) : PB :=
+  PB.forLoop (.var steps) (.var cfg)
+    (fun _ cfg => (singleTapeTMStep (.var tr) cfg).optionElim cfg (fun next => next))
 
 lemma timeBoundedSimulatorMain_computes
     [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol}
     [DataEncode tm.State]
-    {p_tr p_cfg p_steps : PB}
+    {p_tr p_cfg p_steps : ℕ}
     {cfg : tm.Cfg}
     {steps : ℕ}
     {stateEnum : List tm.State}
     {symEnum : List (Option Symbol)}
     (h_stateEnum : ∀ q', q' ∈ stateEnum)
     (h_symEnum : ∀ c', c' ∈ symEnum)
-    (h_tr : p_tr.ComputesEnc env
+    (h_tr : PB.EnvEnc env p_tr
       (stateEnum.map (fun q' =>
         (q', symEnum.map (fun c' : Option Symbol => (c', tm.tr q' c'))))))
-    (h_cfg : p_cfg.ComputesEnc env cfg)
-    (h_steps : p_steps.ComputesEnc env steps) :
+    (h_cfg : PB.EnvEnc env p_cfg cfg)
+    (h_steps : PB.EnvEnc env p_steps steps) :
     (timeBoundedSimulatorMain p_tr p_cfg p_steps).ComputesEnc env
       ((fun c => (tm.step c).getD c)^[steps] cfg) := by
   have : ∀ g m (b : tm.Cfg), g^[m] b = (List.range m).foldl (fun c _ => g c) b := by
@@ -373,6 +374,26 @@ lemma timeBoundedSimulatorMain_computes
   | some next =>
     exact PB.optionElim_computesEnc_some (hsc ▸ hstep)
       (PB.computesFun₂_branch (fun ext => PB.var_computes_fresh ext _))
+
+set_option autoImplicit false in
+lemma timeBoundedSimulatorMain_complexity : ∃ k, ∀ Symbol
+    [Inhabited Symbol] [Fintype Symbol] [DataEncode Symbol]
+    {tm : SingleTapeTM Symbol}
+    [DataEncode tm.State]
+    {p_tr p_cfg p_steps : ℕ}
+    {cfg : tm.Cfg}
+    {steps : ℕ}
+    {stateEnum : List tm.State}
+    {symEnum : List (Option Symbol)}
+    (h_stateEnum : ∀ q', q' ∈ stateEnum)
+    (h_symEnum : ∀ c', c' ∈ symEnum)
+    (h_tr : PB.EnvEnc env p_tr
+      (stateEnum.map (fun q' =>
+        (q', symEnum.map (fun c' : Option Symbol => (c', tm.tr q' c'))))))
+    (h_cfg : PB.EnvEnc env p_cfg cfg)
+    (h_steps : PB.EnvEnc env p_steps steps),
+    PB.TimeBounded env (timeBoundedSimulatorMain p_tr p_cfg p_steps)
+      (k * (Fintype.card Symbol) * (Fintype.card tm.State) * (steps + 1) ^ 2) := by sorry
 
 def stringToTape (input : PB) : PB :=
   PB.toPair input.listHeadOption (PB.toPair .empty (input.tail.listMap .some))
@@ -591,6 +612,15 @@ def timeBoundedSimulator (input : PB) :=
   let cfg := timeBoundedSimulatorMain tr (initialConfig q₀ inputStr) steps
   PB.boolIte cfg.fst.isNone .none (tapeToOutput cfg.snd)
 
+def timeBoundedSimulator' (input : PB) :=
+  --let q₀ := input.fst
+  PBlet q₀ := input.fst.fst in
+  PBlet tr := input.fst.snd in
+  PBlet inputStr := input.snd.fst in
+  PBlet steps := input.snd.snd in
+  let cfg := timeBoundedSimulatorMain tr (initialConfig q₀ inputStr) steps
+  PB.boolIte cfg.fst.isNone .none (tapeToOutput cfg.snd)
+
 def timeBoundedSimulatorF [Inhabited Symbol] [Fintype Symbol]
     (tm : SingleTapeTM Symbol) [DataEncode tm.State]
     (input : List Symbol)
@@ -626,6 +656,25 @@ lemma timeBoundedSimulator_computes [Inhabited Symbol] [Fintype Symbol]
     PB.none_computes
     (tapeToOutput_computes (cfgBitape_computes h_main))
 
+lemma timeBoundedSimulator_time [Inhabited Symbol] [Fintype Symbol]
+    {p_input : PB}
+    {tm : SingleTapeTM Symbol} [DataEncode tm.State]
+    {input : List Symbol}
+    {steps : ℕ}
+    {stateEnum : List tm.State}
+    {symEnum : List (Option Symbol)}
+    (h_stateEnum : ∀ q', q' ∈ stateEnum)
+    (h_symEnum : ∀ c', c' ∈ symEnum)
+    (h_input : p_input.ComputesEnc env
+      ((tm.q₀, (stateEnum.map (fun q' =>
+        (q', symEnum.map (fun c' : Option Symbol => (c', tm.tr q' c')))))),
+       input,
+       steps)) :
+    PB.OTime
+      (timeBoundedSimulator p_input)
+      (fun _ => steps * steps) := by
+  sorry
+
 /-- Encode `Bool` into an alphabet of size at least 2. -/
 def boolIntoFink {k} : Bool → Fin (k + 2)
   | true => 0
@@ -643,6 +692,27 @@ instance {k : ℕ} : DataEncode (Fin k) where
   encode x := DataEncode.encode x.val
   h_inj := by grind [DataEncode.h_inj, Function.Injective]
 
+lemma universal_time_bounded_simulator_inner' :
+  ∃ overhead : ℕ, ∀
+  {k₁ : ℕ}
+  (tm : SingleTapeTM (Fin (k₁ + 2)))
+  [DataEncode tm.State]
+  (input output : List Bool)
+  (steps : ℕ),
+  tm.OutputsWithinTime (input.map boolIntoFink) (output.map boolIntoFink) steps ↔
+    ∃ s,
+    ComputesFunInAdditionalTimeAndSpace
+      timeBoundedSimulator
+      ((tm.q₀, encodeTMTr tm), input, steps)
+      (Option.some output)
+      -- The simulation has quadratic overhead (`steps * steps`), but it is independent
+      -- of the input size.
+      (overhead * (DataEncode.encode (encodeTMTr tm)).size * steps * steps +
+        overhead * (DataEncode.encode (encodeTMTr tm)).size)
+      s
+   := by
+  sorry
+
 lemma universal_time_bounded_simulator_inner :
   ∃ overhead : ℕ, ∀
   {k₁ : ℕ}
@@ -652,7 +722,7 @@ lemma universal_time_bounded_simulator_inner :
   (steps : ℕ),
   tm.OutputsWithinTime (input.map boolIntoFink) (output.map boolIntoFink) steps ↔
     ∃ s,
-    PB.ComputesInTimeAndSpace
+    ComputesFunInAdditionalTimeAndSpace
       timeBoundedSimulator
       ((tm.q₀, encodeTMTr tm), input, steps)
       (Option.some output)
