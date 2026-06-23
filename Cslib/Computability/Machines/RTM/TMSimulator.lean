@@ -8,7 +8,7 @@ module
 
 public import Cslib.Computability.Machines.RTM.Tools
 public import Cslib.Computability.Machines.RTM.Arith
-public import Cslib.Computability.Machines.SingleTapeTuring.Basic
+public import Cslib.Computability.Machines.Turing.SingleTape.Deterministic
 public import Mathlib.Data.List.ReduceOption
 
 /-! # Universal Turing-machine simulator as a rose tree machine
@@ -46,23 +46,25 @@ namespace RoseTreeMachine
 -- then, we show that the time and space of each iteration is linear in its input.
 -- so overall, t iterations are computed in O(t^2) time and O(t) space.
 
+open Cslib.Turing
+
 variable [DataEncode Symbol]
 
 variable {env : List Value}
 
-public instance : DataEncode (Turing.StackTape Symbol) where
+public instance : DataEncode (StackTape Symbol) where
   encode t := DataEncode.encode t.toList
   h_inj := by
     intro ⟨l₁, h₁⟩ ⟨l₂, h₂⟩ h
     grind [DataEncode.h_inj h]
 
-public instance : DataEncode (Turing.BiTape Symbol) where
+public instance : DataEncode (Cslib.Turing.BiTape Symbol) where
   encode t := DataEncode.encode (t.head, t.left, t.right)
   h_inj := by
     intro ⟨h₁, l₁, r₁⟩ ⟨h₂, l₂, r₂⟩ h
     grind [DataEncode.h_inj h]
 
-lemma encode_biTape (t : Turing.BiTape Symbol) :
+lemma encode_biTape (t : BiTape Symbol) :
     DataEncode.encode t = DataEncode.encode (t.head, t.left, t.right) := by
     simp [DataEncode.encode]
 
@@ -213,7 +215,7 @@ lemma bitapeOptionMove_computes {p_t p_dir : PB}
 
 /-- Encoding of a `SingleTapeTM`, assuming the state set and alphabet are encodable. -/
 instance [Inhabited Symbol] [Fintype Symbol] (tm : SingleTapeTM Symbol) [DataEncode tm.State] :
-    DataEncode (Turing.SingleTapeTM.Cfg tm) where
+    DataEncode (SingleTapeTM.Cfg tm) where
   encode cfg := DataEncode.encode (cfg.state, cfg.BiTape)
   h_inj := by
     intro ⟨s₁, t₁⟩ ⟨s₂, t₂⟩ h
@@ -225,14 +227,14 @@ def cfgBitape (cfg : PB) : PB := cfg.snd
 
 lemma cfgState_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
-    {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
+    {p : PB} {cfg : SingleTapeTM.Cfg tm}
     (h : p.ComputesEnc env cfg) :
     (cfgState p).ComputesEnc env cfg.state :=
   PB.fst_ComputesEnc (a := (cfg.state, cfg.BiTape)) h
 
 lemma cfgBitape_computes [Inhabited Symbol] [Fintype Symbol]
     {tm : SingleTapeTM Symbol} [DataEncode tm.State]
-    {p : PB} {cfg : Turing.SingleTapeTM.Cfg tm}
+    {p : PB} {cfg : SingleTapeTM.Cfg tm}
     (h : p.ComputesEnc env cfg) :
     (cfgBitape p).ComputesEnc env cfg.BiTape :=
   PB.snd_ComputesEnc (a := (cfg.state, cfg.BiTape)) h

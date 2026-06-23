@@ -87,10 +87,8 @@ lemma tail_computes {x : PB} {dx : Data} (hx : x.Computes env (.data dx)) :
 lemma tail_linear (x : PB) (h_x : Linear x) : Linear (tail x) := by
   refine elim_linear h_x empty_linear ⟨?_, ?_⟩ <;>
   · refine ⟨1, fun env a b z t s h => ?_⟩
-    obtain ⟨hz, ht, hs⟩ := ProgSem.var_inv h; subst hz
-    have hlt : env.length + 1 < (env ++ [a, b]).length := by simp
-    simp only [accessedEnvSizeFun₂, var, Value.size, closureSize_var, hlt, if_true]
-    omega
+    obtain ⟨rfl, ht, hs⟩ := ProgSem.var_inv h
+    simp [accessedEnvSizeFun₂, var, ht, hs]
 
 /-- Returns the head of a list-valued builder (`Data.l []` when empty). -/
 def head (x : PB) : PB := .elim x .empty (fun hd _tl => hd)
@@ -110,10 +108,8 @@ lemma head_computes {x : PB} {dx : Data} (hx : x.Computes env (.data dx)) :
 lemma head_linear (x : PB) (h_x : Linear x) : Linear (head x) := by
   refine elim_linear h_x empty_linear ⟨?_, ?_⟩ <;>
   · refine ⟨1, fun env a b z t s h => ?_⟩
-    obtain ⟨hz, ht, hs⟩ := ProgSem.var_inv h; subst hz
-    have hlt : env.length < (env ++ [a, b]).length := by simp
-    simp only [accessedEnvSizeFun₂, var, Value.size, closureSize_var, hlt, if_true]
-    omega
+    obtain ⟨rfl, ht, hs⟩ := ProgSem.var_inv h
+    simp [accessedEnvSizeFun₂, var, ht, hs]
 
 /-- First projection (`head`). -/
 def fst (x : PB) : PB := head x
@@ -150,7 +146,7 @@ lemma some_ComputesEnc {x : PB} {a : α} (hx : x.ComputesEnc env a) :
     (PB.some x).ComputesEnc env (Option.some a) := by
   apply PB.cons_computes hx empty_computes
 
-def some_linear (x : PB) (h_x : Linear x) : Linear (some x) := by
+lemma some_linear (x : PB) (h_x : Linear x) : Linear (some x) := by
   sorry
 
 /-- Eliminate an `Option`: on `none` (empty) run `noneCase`, on `some v` run `someCase v`. -/

@@ -96,6 +96,7 @@ mutual
 
   /-- The size of a `Value`. The size of data is the length of its encoding and the size
   of a closure is the sum of the sizes of the referenced variables. -/
+  @[simp]
   def Value.size : Value → ℕ
     | .data d => d.size
     | .closure p env => closureSize p env
