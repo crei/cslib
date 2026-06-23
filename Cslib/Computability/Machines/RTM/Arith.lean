@@ -497,6 +497,23 @@ lemma forLoop_computes {pn pinit : PB} {pf : PB → PB → PB}
     while_computes h_init (forLoop_loop hf n init n 0 init (by omega) (by simp))
   exact snd_ComputesEnc (snd_ComputesEnc (snd_ComputesEnc hwhile))
 
+-- for loop complexity. If the
+
+lemma forLoop_complexity_constant
+    {vn vinit : ℕ} {pf : PB → PB → PB}
+    {n : ℕ} {init : α} {f : ℕ → α → α}
+    --(h_linear : ∃ k₁, ∀ env, TimeBounded env pf LinearFun₂ pf)
+      :
+    ∃ k, ∀ env,
+    (hn : PB.EnvEnc env vn n) →
+    (hinit : PB.EnvEnc env vinit init) →
+    (hf : ∀ e {pi pacc : ℕ} {i : ℕ} {a : α}, env <+: e →
+      PB.EnvEnc e pi i → PB.EnvEnc e pacc a → (pf (.var pi) (.var pacc)).ComputesEnc e (f i a)) →
+    (h_grow : ∃ c, ∀ i a, (DataEncode.encode (f i a)).size ≤ (DataEncode.encode a).size + c) →
+    -- TODO is that the right condition?
+    TimeBounded env (forLoop (.var vn) (.var vinit) pf) (k * envSize env * n * n) := by
+  sorry
+
 end PB
 
 end RoseTreeMachine

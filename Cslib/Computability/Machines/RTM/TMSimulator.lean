@@ -393,7 +393,8 @@ lemma timeBoundedSimulatorMain_complexity : ∃ k, ∀ Symbol
     (h_cfg : PB.EnvEnc env p_cfg cfg)
     (h_steps : PB.EnvEnc env p_steps steps),
     PB.TimeBounded env (timeBoundedSimulatorMain p_tr p_cfg p_steps)
-      (k * (Fintype.card Symbol) * (Fintype.card tm.State) * (steps + 1) ^ 2) := by sorry
+      (k * (DataEncode.encode cfg).size *
+        (Fintype.card Symbol) * (Fintype.card tm.State) * (steps + 1) ^ 2) := by sorry
 
 def stringToTape (input : PB) : PB :=
   PB.toPair input.listHeadOption (PB.toPair .empty (input.tail.listMap .some))

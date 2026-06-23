@@ -102,7 +102,70 @@ mutual
 end
 
 @[simp, scoped grind =]
+lemma closureSize_of_noVar {body : Prog} {env : List Value} (h : ∀ i, ¬body.hasVar i) :
+    closureSize body env = 0 := by
+  have (depth : ℕ) : closureSize.go body depth env = 0 := by
+    induction env generalizing depth with
+    | nil => simp [closureSize.go]
+    | cons hd tl ih => simp [closureSize.go, h depth, ih]
+  simp [closureSize, this]
+
+@[simp, scoped grind =]
 lemma Value.size_data {d : Data} : (Value.data d).size = d.size := by simp [Value.size]
+
+/-- Splitting the environment of a closure size computation across an append. -/
+lemma closureSize.go_append (body : Prog) (depth : ℕ) (l1 l2 : List Value) :
+    closureSize.go body depth (l1 ++ l2)
+      = closureSize.go body depth l1 + closureSize.go body (depth + l1.length) l2 := by
+  induction l1 generalizing depth with
+  | nil => simp [closureSize.go]
+  | cons hd tl ih =>
+      have he : depth + 1 + tl.length = depth + (tl.length + 1) := by omega
+      simp only [List.cons_append, closureSize.go, List.length_cons, ih (depth + 1), he]
+      omega
+
+/-- The closure size over an appended environment splits into the size over the prefix plus the
+contribution of the suffix (counted starting at depth `l1.length`). -/
+lemma closureSize_append (body : Prog) (l1 l2 : List Value) :
+    closureSize body (l1 ++ l2)
+      = closureSize body l1 + closureSize.go body l1.length l2 := by
+  simp only [closureSize, closureSize.go_append, Nat.zero_add]
+
+/-- `closureSize.go` is monotone in the set of accessed variables. -/
+lemma closureSize.go_mono {body1 body2 : Prog} (env : List Value)
+    (h : ∀ i, body1.hasVar i → body2.hasVar i) (depth : ℕ) :
+    closureSize.go body1 depth env ≤ closureSize.go body2 depth env := by
+  induction env generalizing depth with
+  | nil => simp [closureSize.go]
+  | cons hd tl ih =>
+      simp only [closureSize.go]
+      have hb : (if body1.hasVar depth then hd.size else 0)
+          ≤ (if body2.hasVar depth then hd.size else 0) := by
+        by_cases hv : body1.hasVar depth
+        · simp [hv, h depth hv]
+        · simp [hv]
+      have := ih (depth + 1)
+      omega
+
+/-- If every variable accessed by `body1` is also accessed by `body2`, then `body1` has a smaller
+closure size over any environment. -/
+lemma closureSize_mono {body1 body2 : Prog} (env : List Value)
+    (h : ∀ i, body1.hasVar i → body2.hasVar i) :
+    closureSize body1 env ≤ closureSize body2 env := by
+  have := closureSize.go_mono env h 0
+  simpa only [closureSize] using this
+
+/-- The closure size is bounded by the total size of the environment. -/
+lemma closureSize.go_le_sum (body : Prog) (depth : ℕ) (env : List Value) :
+    closureSize.go body depth env ≤ (env.map Value.size).sum := by
+  induction env generalizing depth with
+  | nil => simp [closureSize.go]
+  | cons hd tl ih =>
+      simp only [closureSize.go, List.map_cons, List.sum_cons]
+      have h1 := ih (depth + 1)
+      have h2 : (if body.hasVar depth then hd.size else 0) ≤ hd.size := by
+        by_cases hv : body.hasVar depth <;> simp [hv]
+      omega
 
 mutual
 /-- Semantics of `Prog` including time and space resource bounds.
@@ -192,21 +255,13 @@ value produced by a sub-derivation whose cost it includes. Provable by mutual in
 `ProgSem`/`AppSem`/`WhileSem`. -/
 lemma ProgSem.size_le {σ : List Value} {p : Prog} {v : Value} {t s : ℕ}
     (h : ProgSem σ p v t s) : v.size ≤ t ∧ v.size ≤ s := by
-  -- cases h with
-  -- | var => simp
-  -- | empty => simp
-  -- | cons h₁ h₂ =>
-  --     constructor
-  --     · let r := (ProgSem.size_le h₁).left
-  --       let q := (ProgSem.size_le h₂).left
-  --       rw [Value.size_data] at r
-  --       rw [Value.size_data] at q
-  --       simp [Value.size] at *
-  --       grind
-  --     ·
-  --       sorry
-  -- | _ => sorry
-  sorry
+  induction h using ProgSem.rec
+    (motive_2 := fun _ _ r t s _ => r.size ≤ t ∧ r.size ≤ s)
+    (motive_3 := fun _ _ r t s _ => (Value.data r).size ≤ t ∧ (Value.data r).size ≤ s) with
+  | empty => exact ⟨by simp, by simp⟩
+  | var | cons | elim_nil | elim_cons | ifEq_then | ifEq_else
+  | while_ | fn | app  | mk | halt | step
+    => grind [Value.size_data, Data.cons_size, Data.asList_l]
 
 /-- The program `p` computes the value `y` from the value `x` in time `t` and space `s`. -/
 def Prog.ComputesInTimeAndSpace (p : Prog) (x y : Data) (t : ℕ) (s : ℕ) : Prop :=

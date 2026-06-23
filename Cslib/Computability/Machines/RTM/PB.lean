@@ -8,6 +8,7 @@ module
 
 public import Cslib.Computability.Machines.RTM.Prog
 public import Cslib.Computability.Machines.RTM.DataEncode
+import Mathlib.Tactic.Linarith
 
 /-! # Program builder for rose tree machines
 
@@ -129,11 +130,27 @@ def EnvEnc {α : Type} [DataEncode α] (env : List Value) (var : ℕ) (x : α) :
 
 ------------------- Resource Consumption -------------------------
 
+/-- The sum of the sizes of the values in an environment. -/
 @[scoped grind =]
 def envSize (env : List Value) : ℕ := env.map (fun x : Value => x.size) |>.sum
 
+/-- The sum of the sizes of the variables accessed by `impl`.. This is essentially the size of the
+closure, so it is implemented via that. -/
+def accessedEnvSize (impl : PB) (env : List Value) :=
+  (Value.closure (impl env.length) env).size
+
+def accessedEnvSizeFun₂ (impl : PB → PB → PB) (env : List Value) (x y : Value) :=
+  (Value.closure
+    (impl (.var env.length) (.var (env.length + 1)) (env.length + 2))
+    (env ++ [x, y])).size
+
+/-- An upper bound on the runtime of the program `impl`. Note that this assumes that the program
+always halts. -/
 def TimeBounded (env : List Value) (impl : PB) (t : ℕ) :=
   ∀ x t' s, ProgSem env (impl env.length) x t' s → t' ≤ t
+
+def TimeBoundedFun₁ (env : List Value) (impl : PB → PB) (t : ℕ) :=
+  ∀ e, env <+: e → ∀ x, TimeBounded (e ++ [x]) (impl (.var e.length)) t
 
 def SpaceBounded (env : List Value) (impl : PB) (s : ℕ) :=
   ∀ x t s', ProgSem env (impl env.length) x t s' → s' ≤ s
@@ -152,22 +169,22 @@ def OSpaceFun₁ (impl : PB → PB) (s : List Value → ℕ) :=
   ∃ k, ∀ env x y t s', ProgSem (env ++ [x]) (impl (.var env.length) (env.length + 1)) y t s' →
     s' ≤ k * (s (env ++ [x])) + k
 
-def OTimeFun₂ (impl : PB → PB → PB) (t : List Value → ℕ) :=
+def OTimeFun₂ (impl : PB → PB → PB) (t : List Value → Value → Value → ℕ) :=
   ∃ k, ∀ env x y z t' s, ProgSem (env ++ [x, y])
     (impl (.var env.length) (.var (env.length + 1)) (env.length + 2)) z t' s →
-      t' ≤ k * (t (env ++ [x, y])) + k
+      t' ≤ k * (t env x y) + k
 
-def OSpaceFun₂ (impl : PB → PB → PB) (s : List Value → ℕ) :=
+def OSpaceFun₂ (impl : PB → PB → PB) (s : List Value → Value → Value → ℕ) :=
   ∃ k, ∀ env x y z t s', ProgSem (env ++ [x, y])
     (impl (.var env.length) (.var (env.length + 1)) (env.length + 2)) z t s' →
-      s' ≤ k * (s (env ++ [x, y])) + k
+      s' ≤ k * (s env x y) + k
 
-/-- The space and time complexity of `impl` is linear in the size of the environment.
+/-- The space and time complexity of `impl` is linear in the size of the accessed environment.
 Note that this is more or less the best complexity we can have. -/
-def Linear (impl : PB) := OTime impl envSize ∧ OSpace impl envSize
+def Linear (impl : PB) := OTime impl (accessedEnvSize impl) ∧ OSpace impl (accessedEnvSize impl)
 
 def LinearFun₂ (impl : PB → PB → PB) :=
-  OTimeFun₂ impl envSize ∧ OSpaceFun₂ impl envSize
+  OTimeFun₂ impl (accessedEnvSizeFun₂ impl) ∧ OSpaceFun₂ impl (accessedEnvSizeFun₂ impl)
 
 --------------------- Lemmas for combinators -------------------------------
 
@@ -213,7 +230,21 @@ lemma var_computes_of_envEnc {α : Type} [DataEncode α] {var : ℕ} {x : α} (h
   intro ext
   exact ⟨_, _, (h ext) ▸ ProgSem.var⟩
 
-lemma empty_linear : Linear (PB.empty) := by sorry
+lemma empty_linear : Linear (PB.empty) := by
+  have hcs : ∀ env, accessedEnvSize PB.empty env = 0 := fun env => by
+    simp only [accessedEnvSize, PB.empty, Value.size]
+    exact closureSize_of_noVar (fun i => by simp [Prog.hasVar])
+  refine ⟨⟨2, fun env => ?_⟩, ⟨2, fun env => ?_⟩⟩
+  · unfold TimeBounded
+    intro x t' s h
+    simp only [PB.empty] at h
+    cases h
+    simp [hcs]
+  · unfold SpaceBounded
+    intro x t s' h
+    simp only [PB.empty] at h
+    cases h
+    simp [hcs]
 
 @[simp]
 lemma empty_computes : Computes env empty (.data (.l [])) := by
@@ -359,20 +390,116 @@ lemma elim_cons_computes {v em : PB} {cs : PB → PB → PB}
     rw [hmap]; exact hb
   exact ⟨_, _, ProgSem.elim_cons hv' ProgSem.fn (AppSem.mk ProgSem.fn) (AppSem.mk hb')⟩
 
+/-- Shared core for the linearity of `PB.elim`: bounds a single cost dimension (selected by the
+additive projection `π`, instantiated as `fun t _ => t` for time and `fun _ s => s` for space). -/
+private lemma elim_linear_aux
+    {v em : PB} {cs : PB → PB → PB} {k_v k_e k_c : ℕ}
+    (π : ℕ → ℕ → ℕ)
+    (πadd : ∀ a b c d, π (a + b) (c + d) = π a c + π b d)
+    (πid : ∀ a, π a a = a)
+    (hv : ∀ env x t s, ProgSem env (v env.length) x t s
+      → π t s ≤ k_v * accessedEnvSize v env + k_v)
+    (he : ∀ env x t s, ProgSem env (em env.length) x t s
+      → π t s ≤ k_e * accessedEnvSize em env + k_e)
+    (hc : ∀ env x y z t s, ProgSem (env ++ [x, y])
+        (cs (.var env.length) (.var (env.length + 1)) (env.length + 2)) z t s
+      → π t s ≤ k_c * accessedEnvSizeFun₂ cs env x y + k_c)
+    (hsize : ∀ env p out t s, ProgSem env p out t s → out.size ≤ π t s) :
+    ∃ K, ∀ env x t s, ProgSem env ((PB.elim v em cs) env.length) x t s
+      → π t s ≤ K * accessedEnvSize (PB.elim v em cs) env + K := by
+  refine ⟨((2+k_c)*(1+k_v) + ((2+k_c)*k_v + k_c)) + (k_v + k_e), fun env x t s h => ?_⟩
+  set A := accessedEnvSize (PB.elim v em cs) env with hA
+  have hA_cs : A = closureSize ((PB.elim v em cs) env.length) env := by
+    simp only [hA, accessedEnvSize, Value.size]
+  have hBcs : ∀ i, (cs (PB.var env.length) (PB.var (env.length+1)) (env.length+2)).hasVar i
+      → ((PB.elim v em cs) env.length).hasVar i := by
+    intro i hi; simp only [PB.elim, Prog.hasVar]; simp [hi]
+  have aes_v : accessedEnvSize v env ≤ A := by
+    simp only [hA, accessedEnvSize, Value.size]
+    exact closureSize_mono env (by intro i hi; simp only [PB.elim, Prog.hasVar]; simp [hi])
+  have aes_em : accessedEnvSize em env ≤ A := by
+    simp only [hA, accessedEnvSize, Value.size]
+    exact closureSize_mono env (by intro i hi; simp only [PB.elim, Prog.hasVar]; simp [hi])
+  simp only [PB.elim] at h
+  cases h with
+  | elim_nil h₁ h₂ =>
+      simp only [πadd]
+      have hv2 := hv env _ _ _ h₁
+      have he2 := he env _ _ _ h₂
+      nlinarith [hv2, he2, Nat.mul_le_mul_left k_v aes_v, Nat.mul_le_mul_left k_e aes_em,
+        Nat.zero_le A, Nat.zero_le k_c, Nat.zero_le k_v]
+  | elim_cons h_v' h_cs' h_app₁ h_app₂ =>
+      cases h_cs'
+      cases h_app₁ with
+      | mk hb1 =>
+        cases hb1
+        cases h_app₂ with
+        | mk hb2 =>
+          rename_i hd tl t_v s_v t₂ s₂
+          set X := cs (PB.var env.length) (PB.var (env.length+1)) (env.length+2) with hXdef
+          simp only [πadd, πid]
+          set a := π t_v s_v with ha_def
+          have ha : a ≤ k_v * A + k_v := by
+            have h0 : a ≤ k_v * accessedEnvSize v env + k_v := hv env _ _ _ h_v'
+            have := Nat.mul_le_mul_left k_v aes_v; omega
+          have hsize_v : hd.size + (Data.l tl).size ≤ a := by
+            have h0 := hsize env _ _ _ _ h_v'
+            simp only [Value.size_data, Data.cons_size] at h0; omega
+          have hb : (Value.closure (Prog.fn X) env).size ≤ A := by
+            simp only [Value.size]; rw [hA_cs]
+            exact closureSize_mono env (fun i hi => hBcs i (by simpa [Prog.hasVar] using hi))
+          have hc1 : (Value.closure X (env ++ [Value.data hd])).size ≤ A + a := by
+            simp only [Value.size, closureSize_append]
+            have h2 : closureSize.go X env.length [Value.data hd] ≤ hd.size := by
+              have := closureSize.go_le_sum X env.length [Value.data hd]; simpa using this
+            have h1 : closureSize X env ≤ A := by rw [hA_cs]; exact closureSize_mono env hBcs
+            omega
+          have hb2' : ProgSem (env ++ [Value.data hd, Value.data (Data.l tl)]) X x t₂ s₂ := by
+            have e : env ++ [Value.data hd] ++ [Value.data (Data.l tl)]
+                   = env ++ [Value.data hd, Value.data (Data.l tl)] := by simp
+            rw [e] at hb2; exact hb2
+          have haef : accessedEnvSizeFun₂ cs env (Value.data hd) (Value.data (Data.l tl))
+              ≤ A + a := by
+            simp only [accessedEnvSizeFun₂, Value.size, closureSize_append]
+            rw [← hXdef]
+            have h2 : closureSize.go X env.length [Value.data hd, Value.data (Data.l tl)]
+                ≤ hd.size + (Data.l tl).size := by
+              have := closureSize.go_le_sum X env.length [Value.data hd, Value.data (Data.l tl)]
+              simpa using this
+            have h1 : closureSize X env ≤ A := by rw [hA_cs]; exact closureSize_mono env hBcs
+            omega
+          have hd2 : π t₂ s₂ ≤ k_c * (A + a) + k_c := by
+            have h0 : π t₂ s₂ ≤ k_c
+                * accessedEnvSizeFun₂ cs env (Value.data hd) (Value.data (Data.l tl))
+                + k_c := hc env _ _ _ _ _ hb2'
+            have := Nat.mul_le_mul_left k_c haef; omega
+          nlinarith [ha, hb, hc1, hd2, Nat.zero_le A, Nat.zero_le k_c, Nat.zero_le k_v,
+            Nat.zero_le k_e]
+
 lemma elim_linear
     {v em : PB} {cs : PB → PB → PB}
-    (h_v : Linear v)
-    (h_em : Linear em)
-    (h_cs : LinearFun₂ cs) :
-  Linear (PB.elim v em cs) := by
-  sorry
+    (h_v : Linear v) (h_em : Linear em) (h_cs : LinearFun₂ cs) :
+    Linear (PB.elim v em cs) := by
+  obtain ⟨⟨k_vt, hvt⟩, ⟨k_vs, hvs⟩⟩ := h_v
+  obtain ⟨⟨k_et, het⟩, ⟨k_es, hes⟩⟩ := h_em
+  obtain ⟨⟨k_ct, hct⟩, ⟨k_cs, hcs⟩⟩ := h_cs
+  refine ⟨?_, ?_⟩
+  · exact elim_linear_aux (fun t _ => t) (fun _ _ _ _ => rfl) (fun _ => rfl)
+      (fun env x t s h => hvt env x t s h) (fun env x t s h => het env x t s h)
+      (fun env x y z t s h => hct env x y z t s h)
+      (fun _ _ _ _ _ h => (ProgSem.size_le h).1)
+  · exact elim_linear_aux (fun _ s => s) (fun _ _ _ _ => rfl) (fun _ => rfl)
+      (fun env x t s h => hvs env x t s h) (fun env x t s h => hes env x t s h)
+      (fun env x y z t s h => hcs env x y z t s h)
+      (fun _ _ _ _ _ h => (ProgSem.size_le h).2)
+
 
 lemma elim_time {v em : PB} {cs : PB → PB → PB}
-    {t_v t_em t_cs : List Value → ℕ}
+    {t_v t_em : List Value → ℕ} {t_cs : List Value → Value → Value → ℕ}
     (h_v : OTime v t_v)
     (h_em : OTime em t_em)
     (h_cs : OTimeFun₂ cs t_cs) :
-  OTime (PB.elim v em cs) (fun env => t_v env + t_em env + t_cs env) := by sorry
+  OTime (PB.elim v em cs) (fun env => t_v env + t_em env) := by sorry
 
 
 @[simp]
@@ -508,6 +635,54 @@ theorem WhileComputes.rec' {body : PB → PB} (μ : Data → ℕ) (result : Data
       rw [← hres]
       exact WhileComputes.step h hbody (ih (μ v) (hn ▸ hlt) v rfl)
 
+/-- Core complexity lemma for `WhileSem`: if each body application on input of size `s` takes
+time at most `T s` (with `T` monotone) and grows the accumulator size by at most `k`, then
+there exist `n` steps such that `r.size ≤ acc.size + n * k` and the total time satisfies
+`t ≤ ∑ i < n, T (acc.size + i * k) + r.size`.
+
+The monotonicity of `T` is needed to handle the ≤ in `h_size`: when shifting the inductive
+hypothesis's sum from `v.size` to `acc.size`, we use `v.size + i * k ≤ acc.size + (i+1) * k`
+together with monotonicity to bound each summand upward. -/
+lemma WhileSem.time_bound
+    {bodyVal : Value} {acc r : Data} {t s : ℕ}
+    (h : WhileSem bodyVal acc r t s)
+    {k : ℕ} {T : ℕ → ℕ}
+    (h_mono : Monotone T)
+    (h_time : ∀ v w t' s', AppSem bodyVal (.data v) (.data w) t' s' → t' ≤ T v.size)
+    (h_size : ∀ v w t' s', AppSem bodyVal (.data v) (.data w) t' s' → w.size ≤ v.size + k) :
+    ∃ n : ℕ, r.size ≤ acc.size + n * k ∧
+      t ≤ ((List.range n).map (fun i => T (acc.size + i * k))).sum + r.size := by
+  sorry
+
+/-- Complexity of a `while_` loop whose body runs in time ≤ `c * envSize e + c` on any
+environment `e`, and grows the accumulator size by at most `k` per step.
+
+For any outer extension `ext`, there exist a step count `n` and a time `T` such that
+`T ≤ acc.size + envSize (env ++ ext) +
+    ∑ i < n, (c * (envSize (env ++ ext) + acc.size + i * k) + c) + r.size`
+and the program evaluates to `r` in time `T`. The three additive components are:
+- `acc.size`: cost of evaluating the initial variable (via `ProgSem.var`);
+- `envSize (env ++ ext)`: cost of forming the body closure (closure size ≤ env size);
+- the sum: accumulated body cost at each iteration (each step at size `acc.size + i * k`);
+- `r.size`: the final halt check cost in `WhileSem.halt`. -/
+theorem while_complexity
+    {init : ℕ} {body : PB → PB} {c k : ℕ}
+    (h_body_time : ∀ (e : List Value) (x : Value) y t' s',
+      ProgSem (e ++ [x]) (body (.var e.length) (e.length + 1)) y t' s' →
+      t' ≤ c * envSize (e ++ [x]) + c)
+    (h_body_size : ∀ (e : List Value) (x : Value) y t' s',
+      ProgSem (e ++ [x]) (body (.var e.length) (e.length + 1)) y t' s' →
+      y.size ≤ x.size + k)
+    {acc r : Data}
+    (h_init : EnvEnc env init acc)
+    (h_loop : WhileComputes env body acc r) :
+    ∀ ext : List Value, ∃ n : ℕ,
+      ∃ T ≤ acc.size + envSize (env ++ ext) +
+            ((List.range n).map (fun i => c * (envSize (env ++ ext) + acc.size + i * k) + c)).sum +
+            r.size,
+        ∃ S, ProgSem (env ++ ext)
+          (PB.while_ (.var init) body (env.length + ext.length)) (.data r) T S := by
+  sorry
 ------------------- Resource Consumption -------------------------
 
 -- /-- Resource-erased relational semantics of a program builder. -/
