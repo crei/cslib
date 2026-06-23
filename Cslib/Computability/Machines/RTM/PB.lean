@@ -297,7 +297,15 @@ lemma ProgSem.var_inv {σ : List Value} {i : ℕ} {v : Value} {t s : ℕ}
   cases h
   exact ⟨rfl, rfl, rfl⟩
 
-lemma var_linear {i : ℕ} : Linear (PB.var i) := by sorry
+lemma var_linear {i : ℕ} : Linear (PB.var i) := by
+  constructor <;>
+  · use 2
+    intro env x t s h
+    cases h
+    simp only [accessedEnvSize, var, Value.size, closureSize_of_var]
+    cases env[i]? with
+    | none => simp
+    | some v => grind
 
 /-- The code in `body` computes a function of two arguments `x`, `y` and returns `out`. -/
 def computesFun₂ (env : List Value) (x y : Value) (body : PB → PB → PB) (out : Value) : Prop :=

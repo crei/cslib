@@ -111,6 +111,19 @@ lemma closureSize_of_noVar {body : Prog} {env : List Value} (h : ∀ i, ¬body.h
   simp [closureSize, this]
 
 @[simp, scoped grind =]
+lemma closureSize_of_var {env : List Value} :
+    closureSize (.var i) env = (env[i]?.map fun v => v.size).getD 0 := by
+  unfold closureSize
+  have (d : ℕ) : closureSize.go (.var i) d env =
+      if h : d ≤ i ∧ i - d < env.length then (env[i - d]'(by grind)).size else 0 := by
+    induction env generalizing d with
+    | nil => simp [closureSize.go]
+    | cons hd tl ih =>
+      grind [closureSize.go, List.length_cons, Prog.hasVar]
+  grind
+
+
+@[simp, scoped grind =]
 lemma Value.size_data {d : Data} : (Value.data d).size = d.size := by simp [Value.size]
 
 /-- Splitting the environment of a closure size computation across an append. -/
