@@ -277,9 +277,62 @@ lemma ProgSem.size_le {σ : List Value} {p : Prog} {v : Value} {t s : ℕ}
   | while_ | fn | app  | mk | halt | step
     => grind [Value.size_data, Data.cons_size, Data.asList_l]
 
+/-- Value-determinism of the relational semantics: a program evaluates to at most one value in a
+given environment. The mutually-defined `AppSem`/`WhileSem` relations are value-deterministic too.
+The potential branch overlaps (`elim_nil`/`elim_cons`, `ifEq_then`/`ifEq_else`) are ruled out by
+value-determinism of the scrutinee / compared values, supplied by the induction hypotheses. -/
+theorem ProgSem.value_det {σ : List Value} {p : Prog} {v₁ : Value} {t₁ s₁ : ℕ}
+    (h₁ : ProgSem σ p v₁ t₁ s₁) :
+    ∀ (v₂ : Value) (t₂ s₂ : ℕ), ProgSem σ p v₂ t₂ s₂ → v₁ = v₂ := by
+  induction h₁ using ProgSem.rec
+    (motive_2 := fun f a r₁ _ _ _ =>
+      ∀ (r₂ : Value) (t₂ s₂ : ℕ), AppSem f a r₂ t₂ s₂ → r₁ = r₂)
+    (motive_3 := fun b acc r₁ _ _ _ =>
+      ∀ (r₂ : Data) (t₂ s₂ : ℕ), WhileSem b acc r₂ t₂ s₂ → r₁ = r₂) with
+  | var | empty | fn => rintro _ _ _ h₂; cases h₂; rfl
+  | cons _ _ ih₁ ih₂ =>
+    rintro _ _ _ h₂; cases h₂ with
+    | cons h₁' h₂' => have := ih₁ _ _ _ h₁'; have := ih₂ _ _ _ h₂'; grind
+  | elim_nil _ _ ih_v _ =>
+    rintro _ _ _ h₂; cases h₂ with
+    | elim_nil h_v' _ => grind
+    | elim_cons h_v' _ _ _ => have := ih_v _ _ _ h_v'; grind
+  | elim_cons _ _ _ _ ih_v ih_cs ih₁ ih₂ =>
+    rintro _ _ _ h₂; cases h₂ with
+    | elim_nil h_v' _ => have := ih_v _ _ _ h_v'; grind
+    | elim_cons h_v' h_cs' h_a₁' h_a₂' =>
+      have := ih_v _ _ _ h_v'; have := ih_cs _ _ _ h_cs'
+      grind
+  | ifEq_then _ _ _ ih_x ih_y ih_then =>
+    rintro _ _ _ h₂; cases h₂ with
+    | ifEq_then h_x' _ h_then' => have := ih_then _ _ _ h_then'; grind
+    | ifEq_else h_x' h_y' h_neq _ =>
+      have := ih_x _ _ _ h_x'; have := ih_y _ _ _ h_y'; grind
+  | ifEq_else _ _ _ _ ih_x ih_y ih_else =>
+    rintro _ _ _ h₂; cases h₂ with
+    | ifEq_then h_x' h_y' _ => have := ih_x _ _ _ h_x'; have := ih_y _ _ _ h_y'; grind
+    | ifEq_else _ _ _ h_else' => have := ih_else _ _ _ h_else'; grind
+  | while_ _ _ _ ih_init ih_body ih_while =>
+    rintro _ _ _ h₂; cases h₂ with
+    | while_ h_init' h_body' h_while' =>
+      have := ih_init _ _ _ h_init'; have := ih_body _ _ _ h_body'; grind
+  | app _ _ _ ih_fn ih_arg ih_app =>
+    rintro _ _ _ h₂; cases h₂ with
+    | app h_fn' h_arg' h_app' =>
+      have := ih_fn _ _ _ h_fn'; have := ih_arg _ _ _ h_arg'; grind
+  | mk _ ih_body =>
+    rename_i h₂; cases h₂ with
+    | mk h_body' => exact ih_body _ _ _ h_body'
+  | halt _
+  | step _ _ _ ih_app ih_rest =>
+    rename_i h₂; cases h₂ with
+    | halt h_stop => grind
+    | step _ h_app' h_rest' => grind
+
 /-- The program `p` computes the value `y` from the value `x` in time `t` and space `s`. -/
 def Prog.ComputesInTimeAndSpace (p : Prog) (x y : Data) (t : ℕ) (s : ℕ) : Prop :=
   ProgSem [.data x] p (.data y) t s
+
 
 /-- The program `p` computes the function `f` (on binary strings) in time `t` and space `s`.
 This is the main definition that defines complexity for this computation model. -/

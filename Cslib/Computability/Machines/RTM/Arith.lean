@@ -497,7 +497,9 @@ lemma forLoop_computes {pn pinit : PB} {pf : PB → PB → PB}
     while_computes h_init (forLoop_loop hf n init n 0 init (by omega) (by simp))
   exact snd_ComputesEnc (snd_ComputesEnc (snd_ComputesEnc hwhile))
 
--- for loop complexity. If the
+-- TODO continue here: IF the body function is Linear (in the new sense)
+-- and the output grows at most by an additive constant,
+--- then...
 
 lemma forLoop_complexity_constant
     {vn vinit : ℕ} {pf : PB → PB → PB}

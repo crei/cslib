@@ -9,6 +9,7 @@ module
 public import Cslib.Computability.Machines.RTM.Prog
 public import Cslib.Computability.Machines.RTM.DataEncode
 import Mathlib.Tactic.Linarith
+import Mathlib.Algebra.BigOperators.Group.List.Defs
 
 /-! # Program builder for rose tree machines
 
@@ -139,6 +140,9 @@ closure, so it is implemented via that. -/
 def accessedEnvSize (impl : PB) (env : List Value) :=
   (Value.closure (impl env.length) env).size
 
+def accessedEnvSizeFun₁ (impl : PB → PB) (env : List Value) (x : Value) :=
+  (Value.closure (impl (.var env.length) (env.length + 1)) (env ++ [x])).size
+
 def accessedEnvSizeFun₂ (impl : PB → PB → PB) (env : List Value) (x y : Value) :=
   (Value.closure
     (impl (.var env.length) (.var (env.length + 1)) (env.length + 2))
@@ -161,13 +165,13 @@ def OTime (impl : PB) (t : List Value → ℕ) :=
 def OSpace (impl : PB) (s : List Value → ℕ) :=
   ∃ k, ∀ env, SpaceBounded env impl (k * (s env) + k)
 
-def OTimeFun₁ (impl : PB → PB) (t : List Value → ℕ) :=
+def OTimeFun₁ (impl : PB → PB) (t : List Value → Value → ℕ) :=
   ∃ k, ∀ env x y t' s, ProgSem (env ++ [x]) (impl (.var env.length) (env.length + 1)) y t' s →
-    t' ≤ k * (t (env ++ [x])) + k
+    t' ≤ k * (t env x) + k
 
-def OSpaceFun₁ (impl : PB → PB) (s : List Value → ℕ) :=
+def OSpaceFun₁ (impl : PB → PB) (s : List Value → Value → ℕ) :=
   ∃ k, ∀ env x y t s', ProgSem (env ++ [x]) (impl (.var env.length) (env.length + 1)) y t s' →
-    s' ≤ k * (s (env ++ [x])) + k
+    s' ≤ k * (s env x) + k
 
 def OTimeFun₂ (impl : PB → PB → PB) (t : List Value → Value → Value → ℕ) :=
   ∃ k, ∀ env x y z t' s, ProgSem (env ++ [x, y])
@@ -183,8 +187,16 @@ def OSpaceFun₂ (impl : PB → PB → PB) (s : List Value → Value → Value �
 Note that this is more or less the best complexity we can have. -/
 def Linear (impl : PB) := OTime impl (accessedEnvSize impl) ∧ OSpace impl (accessedEnvSize impl)
 
+def LinearFun₁ (impl : PB → PB) :=
+  OTimeFun₁ impl (accessedEnvSizeFun₁ impl) ∧ OSpaceFun₁ impl (accessedEnvSizeFun₁ impl)
+
 def LinearFun₂ (impl : PB → PB → PB) :=
   OTimeFun₂ impl (accessedEnvSizeFun₂ impl) ∧ OSpaceFun₂ impl (accessedEnvSizeFun₂ impl)
+
+def AdditiveGrowthFun₁ (impl : PB → PB) : Prop :=
+  ∃ k, ∀ e x y t' s',
+    ProgSem (e ++ [x]) (impl (.var e.length) (e.length + 1)) y t' s' →
+    y.size ≤ x.size + k
 
 --------------------- Lemmas for combinators -------------------------------
 
@@ -643,54 +655,310 @@ theorem WhileComputes.rec' {body : PB → PB} (μ : Data → ℕ) (result : Data
       rw [← hres]
       exact WhileComputes.step h hbody (ih (μ v) (hn ▸ hlt) v rfl)
 
-/-- Core complexity lemma for `WhileSem`: if each body application on input of size `s` takes
-time at most `T s` (with `T` monotone) and grows the accumulator size by at most `k`, then
-there exist `n` steps such that `r.size ≤ acc.size + n * k` and the total time satisfies
-`t ≤ ∑ i < n, T (acc.size + i * k) + r.size`.
+/-- Resource-erased iteration of a `while_` loop body, indexed by the exact number of iterations.
+`WhileIterates env body acc r n` says that, starting from accumulator `acc`, the loop performs
+exactly `n` body steps and halts with result `r`. This exposes the iteration count `n` (which is
+left existential in `WhileComputes`), making it available as a meaningful parameter in complexity
+statements: `r` is the result of iterating the body `n` times from `acc`. -/
+inductive WhileIterates (env : List Value) (body : PB → PB) : Data → Data → ℕ → Prop
+  | halt {acc : Data}
+      (h_stop : acc.asList.head?.getD (Data.l []) = Data.l []) :
+      WhileIterates env body acc acc 0
+  | step {acc v r : Data} {n : ℕ}
+      (h_cont : acc.asList.head?.getD (Data.l []) ≠ Data.l [])
+      (h_body : computesFun₁ env (.data acc) body (.data v))
+      (h_rest : WhileIterates env body v r n) :
+      WhileIterates env body acc r (n + 1)
 
-The monotonicity of `T` is needed to handle the ≤ in `h_size`: when shifting the inductive
-hypothesis's sum from `v.size` to `acc.size`, we use `v.size + i * k ≤ acc.size + (i+1) * k`
-together with monotonicity to bound each summand upward. -/
-lemma WhileSem.time_bound
-    {bodyVal : Value} {acc r : Data} {t s : ℕ}
-    (h : WhileSem bodyVal acc r t s)
-    {k : ℕ} {T : ℕ → ℕ}
-    (h_mono : Monotone T)
-    (h_time : ∀ v w t' s', AppSem bodyVal (.data v) (.data w) t' s' → t' ≤ T v.size)
-    (h_size : ∀ v w t' s', AppSem bodyVal (.data v) (.data w) t' s' → w.size ≤ v.size + k) :
-    ∃ n : ℕ, r.size ≤ acc.size + n * k ∧
-      t ≤ ((List.range n).map (fun i => T (acc.size + i * k))).sum + r.size := by
+/-- Every `WhileComputes` run has a well-defined iteration count: it iterates the body some
+number `n` of times. This is the translation from the existential reachability relation
+`WhileComputes` to the iteration-counted `WhileIterates`. -/
+lemma WhileComputes.exists_iterates {body : PB → PB} {acc r : Data}
+    (h : WhileComputes env body acc r) :
+    ∃ n : ℕ, WhileIterates env body acc r n := by
   sorry
 
-/-- Complexity of a `while_` loop whose body runs in time ≤ `c * envSize e + c` on any
-environment `e`, and grows the accumulator size by at most `k` per step.
-
-For any outer extension `ext`, there exist a step count `n` and a time `T` such that
-`T ≤ acc.size + envSize (env ++ ext) +
-    ∑ i < n, (c * (envSize (env ++ ext) + acc.size + i * k) + c) + r.size`
-and the program evaluates to `r` in time `T`. The three additive components are:
-- `acc.size`: cost of evaluating the initial variable (via `ProgSem.var`);
-- `envSize (env ++ ext)`: cost of forming the body closure (closure size ≤ env size);
-- the sum: accumulated body cost at each iteration (each step at size `acc.size + i * k`);
-- `r.size`: the final halt check cost in `WhileSem.halt`. -/
-theorem while_complexity
-    {init : ℕ} {body : PB → PB} {c k : ℕ}
-    (h_body_time : ∀ (e : List Value) (x : Value) y t' s',
-      ProgSem (e ++ [x]) (body (.var e.length) (e.length + 1)) y t' s' →
-      t' ≤ c * envSize (e ++ [x]) + c)
-    (h_body_size : ∀ (e : List Value) (x : Value) y t' s',
-      ProgSem (e ++ [x]) (body (.var e.length) (e.length + 1)) y t' s' →
-      y.size ≤ x.size + k)
-    {acc r : Data}
-    (h_init : EnvEnc env init acc)
-    (h_loop : WhileComputes env body acc r) :
-    ∀ ext : List Value, ∃ n : ℕ,
-      ∃ T ≤ acc.size + envSize (env ++ ext) +
-            ((List.range n).map (fun i => c * (envSize (env ++ ext) + acc.size + i * k) + c)).sum +
-            r.size,
-        ∃ S, ProgSem (env ++ ext)
-          (PB.while_ (.var init) body (env.length + ext.length)) (.data r) T S := by
+/-- An iteration-counted run is in particular a `WhileComputes` run (forgetting the count). -/
+lemma WhileIterates.toWhileComputes {body : PB → PB} {acc r : Data} {n : ℕ}
+    (h : WhileIterates env body acc r n) :
+    WhileComputes env body acc r := by
   sorry
+
+/-- After `n` iterations of a body that grows the accumulator size by at most `k` per step, the
+result size has grown by at most `n * k`. This is the solved size recurrence `s_n ≤ s_0 + n * k`
+for the `a = 1` regime. -/
+lemma WhileIterates.size_le
+    {body : PB → PB}
+    (h_additive : AdditiveGrowthFun₁ body) :
+    ∃ k, ∀ env acc r n, WhileIterates env body acc r n → r.size ≤ acc.size + n * k := by
+  obtain ⟨k, hk⟩ := h_additive
+  refine ⟨k, ?_⟩
+  intro env acc r n h
+  induction h with
+  | halt => simp
+  | @step acc v r n h_cont h_body h_rest ih =>
+    obtain ⟨t, s, hp⟩ := h_body []
+    simp only [List.append_nil, Nat.add_zero] at hp
+    have hv : v.size ≤ acc.size + k := by
+      have := hk env (.data acc) (.data v) t s hp
+      simpa using this
+    calc r.size ≤ v.size + n * k := ih
+      _ ≤ (acc.size + k) + n * k := Nat.add_le_add_right hv _
+      _ = acc.size + (n + 1) * k := by rw [add_one_mul]; omega
+
+/-- The accessed-environment size when the argument is `x` is bounded by the closure size over `σ`
+alone (the `x`-independent part) plus `x.size`: the only `x`-dependent contribution is the captured
+argument slot, whose size is at most `x.size`. Holds for any `body`, `σ`, `x`. -/
+lemma accessedEnvSizeFun₁_le_closure_add (body : PB → PB) (σ : List Value) (x : Value) :
+    accessedEnvSizeFun₁ body σ x
+      ≤ (Value.closure (body (.var σ.length) (σ.length + 1)) σ).size + x.size := by
+  simp only [accessedEnvSizeFun₁, Value.size, closureSize_append]
+  have hgo := closureSize.go_le_sum (body (.var σ.length) (σ.length + 1)) σ.length [x]
+  simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero] at hgo
+  exact Nat.add_le_add_left hgo _
+
+/-- The loop-body closure captured over `σ` alone has size at most `accessedEnvSizeFun₁ body σ x`,
+the size of the same closure over `σ` extended with the argument `x`: appending the argument can
+only add to the closure size. Holds for any `body`, `σ`, `x` (no semantic assumptions). -/
+@[grind .]
+lemma accessedEnvSizeFun₁_closure_le (body : PB → PB) (σ : List Value) (x : Value) :
+    (Value.closure (body (.var σ.length) (σ.length + 1)) σ).size
+      ≤ accessedEnvSizeFun₁ body σ x := by
+  simp [accessedEnvSizeFun₁, Value.size, closureSize_append]
+
+/-- The accessed-environment size of a one-argument body is monotone in (an additive constant of)
+the argument: replacing the argument `y` by `x` adds at most `x.size`, because the only
+`x`-dependent contribution to the closure size is the captured argument slot, whose size is
+`≤ x.size`. This is the `accessedEnvSize`-native splitting lemma that bounds the per-iteration
+measure on `vᵢ` by the measure on the initial accumulator plus `vᵢ.size`. -/
+lemma accessedEnvSizeFun₁_mono_arg (body : PB → PB) (σ : List Value) (x y : Value) :
+    accessedEnvSizeFun₁ body σ x ≤ accessedEnvSizeFun₁ body σ y + x.size :=
+  le_trans (accessedEnvSizeFun₁_le_closure_add body σ x)
+    (Nat.add_le_add_right (accessedEnvSizeFun₁_closure_le body σ y) _)
+
+/-- The affine per-iteration cost function is monotone in the accumulator size. -/
+lemma monotone_affine (c C : ℕ) : Monotone (fun m => c * (C + m) + c) := by
+  intro a b hab
+  exact Nat.add_le_add_right (Nat.mul_le_mul_left _ (Nat.add_le_add_left hab _)) c
+
+/-- Summation collapse for the `a = 1` regime: a sum of `n` affine terms whose argument grows by
+`k` each step is bounded by `n` times the largest term, yielding the `O(n · final_size)` shape. -/
+lemma sum_range_affine_le (c M k n : ℕ) :
+    ((List.range n).map (fun i => c * (M + i * k) + c)).sum ≤ n * (c * (M + n * k) + c) := by
+  -- TODO should be provable through
+  -- calc
+  --   ((List.range n).map (fun i => c * (M + i * k) + c)).sum
+  --     ≤ ((List.range n).map (fun _ => c * (M + n * k) + c)).sum := by sorry
+  --   _ = n * (c * (M + n * k) + c) := by exact List.sum_eq_card_nsmul _ (c * (M + n * k) + c) (by simp)
+
+  induction n with
+  | zero => simp
+  | succ n ih =>
+    have hT : c * (M + n * k) + c ≤ c * (M + (n + 1) * k) + c := by
+      have hk : n * k ≤ (n + 1) * k := Nat.mul_le_mul_right _ (Nat.le_succ n)
+      exact Nat.add_le_add_right (Nat.mul_le_mul_left _ (Nat.add_le_add_left hk _)) c
+    have hS : ((List.range n).map (fun i => c * (M + i * k) + c)).sum
+        ≤ n * (c * (M + (n + 1) * k) + c) := le_trans ih (Nat.mul_le_mul_left _ hT)
+    rw [List.range_succ, List.map_append, List.sum_append]
+    simp only [List.map_cons, List.map_nil, List.sum_cons, List.sum_nil, Nat.add_zero]
+    calc ((List.range n).map (fun i => c * (M + i * k) + c)).sum + (c * (M + n * k) + c)
+        ≤ n * (c * (M + (n + 1) * k) + c) + (c * (M + (n + 1) * k) + c) := Nat.add_le_add hS hT
+      _ = (n + 1) * (c * (M + (n + 1) * k) + c) := by
+            rw [add_one_mul n (c * (M + (n + 1) * k) + c)]
+
+/-- Transports the linear *time* bound on `body` to the application of the captured `while_` body
+closure: applying it to an accumulator `v` runs in time at most
+`c * accessedEnvSizeFun₁ body σ v + c`, straight from `OTimeFun₁` (via `AppSem.mk` inversion). The
+split into a σ-fixed part plus the argument size is handled by `accessedEnvSizeFun₁_mono_arg`. -/
+lemma bodyClosure_app_time {body : PB → PB} (h : LinearFun₁ body) (σ : List Value) :
+    ∃ c : ℕ, ∀ (v w : Data) (t' s' : ℕ),
+        AppSem (.closure (body (.var σ.length) (σ.length + 1)) σ) (.data v) (.data w) t' s' →
+          t' ≤ c * accessedEnvSizeFun₁ body σ (.data v) + c := by
+  obtain ⟨c, hc⟩ := h.1
+  refine ⟨c, ?_⟩
+  intro v w t' s' happ
+  cases happ with
+  | mk hp => exact hc σ (.data v) (.data w) t' s' hp
+
+/-- Transports the linear *space* bound on `body` to the application of the captured `while_` body
+closure. -/
+lemma bodyClosure_app_space {body : PB → PB} (h : LinearFun₁ body) (σ : List Value) :
+    ∃ c : ℕ, ∀ (v w : Data) (t' s' : ℕ),
+        AppSem (.closure (body (.var σ.length) (σ.length + 1)) σ) (.data v) (.data w) t' s' →
+          s' ≤ c * accessedEnvSizeFun₁ body σ (.data v) + c := by
+  obtain ⟨c, hc⟩ := h.2
+  refine ⟨c, ?_⟩
+  intro v w t' s' happ
+  cases happ with
+  | mk hp => exact hc σ (.data v) (.data w) t' s' hp
+
+/-- Internal inductive core for `WhileIterates.time_bound_of_linear_body`: bounds the cost of the
+`WhileSem` loop iteration itself (excluding the `init` read and the `fn`-closure build). Proven by
+induction on `WhileIterates` in lockstep with `WhileSem`, collapsing the per-iteration affine costs
+(`bodyClosure_app_time` + `accessedEnvSizeFun₁_mono_arg`, monotone via `monotone_affine`) with
+`sum_range_affine_le`, and folding the halting `acc.size`/`r.size` cost via `WhileIterates.size_le`.
+The trailing `(M + n)` term is the `WhileSem.halt` cost. -/
+lemma WhileIterates.whileSem_time_le {body : PB → PB}
+    (h_body : LinearFun₁ body) (h_growth : AdditiveGrowthFun₁ body) :
+    ∃ C, ∀ (env : List Value) (acc r : Data) (n : ℕ) {t s : ℕ},
+      WhileIterates env body acc r n →
+      WhileSem (.closure (body (.var env.length) (env.length + 1)) env) acc r t s →
+      t ≤ C * (n * (accessedEnvSizeFun₁ body env (.data acc) + acc.size + n))
+          + (accessedEnvSizeFun₁ body env (.data acc) + acc.size + n) := by
+  obtain ⟨c, hc⟩ := h_body.1
+  obtain ⟨k, hgrow⟩ := h_growth
+  refine ⟨c * k + 2 * c + k + 1, ?_⟩
+  intro env
+  -- The σ-only part of the closure size (independent of the accumulator).
+  set base := (Value.closure (body (.var env.length) (env.length + 1)) env).size with hbase
+  -- Core max-term bound: each of the `m` iterations costs at most the largest per-iteration term
+  -- `c * (base + acc.size + m * k) + c`, plus the final accumulator size `acc.size + m * k`.
+  have core : ∀ (acc r : Data) (m : ℕ) (t s : ℕ),
+      WhileIterates env body acc r m →
+      WhileSem (.closure (body (.var env.length) (env.length + 1)) env) acc r t s →
+      t ≤ m * (c * (base + acc.size + m * k) + c) + (acc.size + m * k) := by
+    intro acc r m t s h_iter
+    induction h_iter generalizing t s with
+    | @halt acc h_stop =>
+      intro h_sem
+      cases h_sem with
+      | halt _ => simp
+      | step h_cont _ _ => exact absurd h_stop h_cont
+    | @step acc v r n h_cont h_body' h_rest ih =>
+      intro h_sem
+      cases h_sem with
+      | halt h_stop => exact absurd h_stop h_cont
+      | step h_cont' h_app h_rest' =>
+        rename_i vv tb sb tr sr
+        -- The first body step `acc → vv`; align `vv = v` via value-determinism.
+        obtain ⟨tb', sb', hpb⟩ := h_body' []
+        simp only [List.append_nil, Nat.add_zero] at hpb
+        cases h_app with
+        | mk hpa =>
+          have hvveq : Value.data v = Value.data vv := ProgSem.value_det hpb _ _ _ hpa
+          obtain rfl : v = vv := by injection hvveq
+          -- The largest per-iteration term for the `n+1`-iteration run.
+          set T := c * (base + acc.size + (n + 1) * k) + c with hT
+          -- Body-step cost `tb ≤ T`.
+          have htb : tb ≤ T := by
+            have h1 := hc env (.data acc) (.data v) tb sb hpa
+            have h2 : accessedEnvSizeFun₁ body env (.data acc) ≤ base + acc.size := by
+              rw [hbase]
+              simpa using accessedEnvSizeFun₁_le_closure_add body env (.data acc)
+            have : base + acc.size ≤ base + acc.size + (n + 1) * k := Nat.le_add_right _ _
+            calc tb ≤ c * accessedEnvSizeFun₁ body env (.data acc) + c := h1
+              _ ≤ c * (base + acc.size) + c := Nat.add_le_add_right (Nat.mul_le_mul_left c h2) c
+              _ ≤ T := Nat.add_le_add_right (Nat.mul_le_mul_left c this) c
+          -- One-step size growth `v.size ≤ acc.size + k`.
+          have hvk : v.size ≤ acc.size + k := by
+            simpa using hgrow env (.data acc) (.data v) tb' sb' hpb
+          -- Recursive bound on the remaining `n` iterations.
+          have htr : tr ≤ n * T + (acc.size + (n + 1) * k) := by
+            have hih := ih tr sr h_rest'
+            have hmono : c * (base + v.size + n * k) + c ≤ T := by
+              rw [hT]
+              have hb : base + v.size + n * k ≤ base + acc.size + (n + 1) * k := by
+                rw [add_one_mul]; omega
+              exact Nat.add_le_add_right (Nat.mul_le_mul_left c hb) c
+            have hlast : v.size + n * k ≤ acc.size + (n + 1) * k := by rw [add_one_mul]; omega
+            calc tr ≤ n * (c * (base + v.size + n * k) + c) + (v.size + n * k) := hih
+              _ ≤ n * T + (acc.size + (n + 1) * k) :=
+                  Nat.add_le_add (Nat.mul_le_mul_left n hmono) hlast
+          calc tb + tr ≤ T + (n * T + (acc.size + (n + 1) * k)) := Nat.add_le_add htb htr
+            _ = (n + 1) * T + (acc.size + (n + 1) * k) := by rw [add_one_mul n T]; omega
+  -- Collapse the core bound into the public `C`-shape.
+  intro acc r n t s h_iter h_sem
+  have hcore := core acc r n t s h_iter h_sem
+  set P := accessedEnvSizeFun₁ body env (.data acc) with hP
+  have hbaseP : base ≤ P := by
+    rw [hbase, hP]; exact accessedEnvSizeFun₁_closure_le body env (.data acc)
+  set Mt := P + acc.size + n with hMt
+  have hGMt : base + acc.size ≤ Mt := by omega
+  have hnMt : n ≤ Mt := by omega
+  have haccMt : acc.size ≤ Mt := by omega
+  -- `n ≤ n * Mt` (trivial when `n = 0`, else `Mt ≥ n ≥ 1`).
+  have hnq : n ≤ n * Mt := by
+    rcases Nat.eq_zero_or_pos n with h | h
+    · simp [h]
+    · have h1 : 1 ≤ Mt := le_trans h hnMt
+      calc n = n * 1 := (Nat.mul_one n).symm
+        _ ≤ n * Mt := Nat.mul_le_mul_left n h1
+  have hn2 : n * n ≤ n * Mt := Nat.mul_le_mul_left n hnMt
+  -- Per-monomial bounds, all dominated by multiples of `n * Mt`.
+  have p1 : c * (n * (base + acc.size)) ≤ c * (n * Mt) :=
+    Nat.mul_le_mul_left c (Nat.mul_le_mul_left n hGMt)
+  have p2 : c * k * (n * n) ≤ c * k * (n * Mt) := Nat.mul_le_mul_left (c * k) hn2
+  have p3 : c * n ≤ c * (n * Mt) := Nat.mul_le_mul_left c hnq
+  have p4 : k * n ≤ k * (n * Mt) := Nat.mul_le_mul_left k hnq
+  nlinarith [hcore, p1, p2, p3, p4, haccMt]
+
+/-- Internal inductive core for `WhileIterates.space_bound_of_linear_body`. Like the time core, but
+space is a *maximum* over iterations, so the per-iteration linear space bound collapses to its value
+at the final accumulator size; no `sum_range_affine_le` is needed. -/
+lemma WhileIterates.whileSem_space_le {body : PB → PB}
+    (h_body : LinearFun₁ body) (h_growth : AdditiveGrowthFun₁ body) :
+    ∃ C, ∀ (env : List Value) (acc r : Data) (n : ℕ) {t s : ℕ},
+      WhileIterates env body acc r n →
+      WhileSem (.closure (body (.var env.length) (env.length + 1)) env) acc r t s →
+      s ≤ C * (accessedEnvSizeFun₁ body env (.data acc) + acc.size + n) + C := by
+  sorry
+
+/-- **While-loop time complexity, `a = 1` regime.** If the body is linear-time/space (`LinearFun₁`)
+and grows the accumulator additively (`AdditiveGrowthFun₁`), then for a single constant `C`
+depending only on `body`, every run of the loop `while_ (.var init) body` (accumulator at slot
+`init`, `EnvEnc`) that iterates the body exactly `n` times costs time at most
+`C * ((n + 1) * (M + n)) + C`, where `M = accessedEnvSizeFun₁ body env (.data acc) + acc.size`. The
+constant `C` is quantified *outside* `env`, `n`, and the run. The bound is `O((n + 1) · (M + n))`,
+i.e. quadratic in the iteration count.
+
+The `(n + 1)` factor (rather than `n`) is forced by the `n = 0` case: the loop still pays `acc.size`
+for the initial `.var init` read and the `WhileSem.halt` step, which are `≤ M` but not bounded by
+the additive constant `C`, so the leading term must survive at `n = 0`. -/
+theorem WhileIterates.time_bound_of_linear_body {body : PB → PB}
+    (h_body : LinearFun₁ body) (h_growth : AdditiveGrowthFun₁ body) :
+    ∃ C, ∀ (env : List Value) (init : ℕ) (acc r : Data) (n : ℕ) {t s : ℕ},
+      EnvEnc env init acc →
+      WhileIterates env body acc r n →
+      ProgSem env (PB.while_ (.var init) body env.length) (.data r) t s →
+      t ≤ C * ((n + 1) * (accessedEnvSizeFun₁ body env (.data acc) + acc.size + n)) + C := by
+  obtain ⟨C₀, hcore⟩ := WhileIterates.whileSem_time_le h_body h_growth
+  refine ⟨max C₀ 2, ?_⟩
+  intro env init acc r n t s h_env h_iter h_prog
+  -- Expose the `while_` program as an explicit `Prog.while_` and invert it.
+  have hprog' : ProgSem env
+      (.while_ (.var init) (.fn (body (.var env.length) (env.length + 1)))) (.data r) t s := h_prog
+  cases hprog' with
+  | while_ h_init h_body h_while =>
+    -- The `init` read produces the accumulator (via `EnvEnc`) at cost `acc.size`.
+    obtain ⟨hv, ht_init, -⟩ := ProgSem.var_inv h_init
+    have he : env[init]?.getD Value.empty = Value.data acc := by simpa using h_env []
+    injection hv.trans he with hacc
+    rw [hacc] at h_while ht_init
+    simp only [Value.size_data] at ht_init
+    -- The `fn` build produces the loop-body closure; its cost is bounded by `accessedEnvSizeFun₁`.
+    cases h_body
+    have h_tb := accessedEnvSizeFun₁_closure_le body env (.data acc)
+    -- The loop iteration cost is handled by the inductive core.
+    set M := accessedEnvSizeFun₁ body env (.data acc) with hMdef
+    set P := M + acc.size + n with hPdef
+    have hCn : C₀ * (n * P) ≤ max C₀ 2 * (n * P) := mul_le_mul_left (le_max_left C₀ 2) _
+    have hCP : 2 * P ≤ max C₀ 2 * P := mul_le_mul_left (le_max_right C₀ 2) _
+    grind
+
+/-- **While-loop space complexity, `a = 1` regime.** Space analogue of
+`WhileIterates.time_bound_of_linear_body`. Space is the *maximum* over iterations (not a sum), so
+the per-iteration linear space bound collapses to its value at the final accumulator size, giving
+`C * (M + n) + C` — linear in the iteration count. Here the additive `M` already survives at `n = 0`
+(covering the `.var init` read and `WhileSem.halt`'s `acc.size` cost), so no `(n + 1)` is needed. -/
+theorem WhileIterates.space_bound_of_linear_body {body : PB → PB}
+    (h_body : LinearFun₁ body) (h_growth : AdditiveGrowthFun₁ body) :
+    ∃ C, ∀ (env : List Value) (init : ℕ) (acc r : Data) (n : ℕ) {t s : ℕ},
+      EnvEnc env init acc →
+      WhileIterates env body acc r n →
+      ProgSem env (PB.while_ (.var init) body env.length) (.data r) t s →
+      s ≤ C * (accessedEnvSizeFun₁ body env (.data acc) + acc.size + n) + C := by
+  sorry
+
 ------------------- Resource Consumption -------------------------
 
 -- /-- Resource-erased relational semantics of a program builder. -/
