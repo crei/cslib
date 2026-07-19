@@ -49,7 +49,8 @@ section CongrState
 variable {k : ℕ} {Symbol State State' : Type*}
 
 /-- Relabel the state of a configuration along `eState : State ↪ State'`. -/
-def Cfg.congrState (eState : State ↪ State') (cfg : Cfg k Symbol State) : Cfg k Symbol State' :=
+def Cfg.congrState {input : List Symbol} (eState : State ↪ State')
+    (cfg : Cfg k Symbol State input) : Cfg k Symbol State' input :=
   { cfg with state := cfg.state.map eState }
 
 /-- Relabel the state type of a Turing machine along an embedding `eState : State ↪ State'`.
@@ -70,8 +71,8 @@ noncomputable def congrState (eState : State ↪ State') (tm : MultiTapeTM k Sym
 
 /-- The step function commutes with state relabeling. -/
 @[simp]
-lemma step_congrState (eState : State ↪ State') (tm : MultiTapeTM k Symbol State)
-    (cfg : Cfg k Symbol State) :
+lemma step_congrState {input : List Symbol} (eState : State ↪ State')
+    (tm : MultiTapeTM k Symbol State) (cfg : Cfg k Symbol State input) :
     (tm.congrState eState).step (cfg.congrState eState)
       = (tm.step cfg).congrState eState := by
   unfold step
@@ -85,8 +86,8 @@ lemma step_congrState (eState : State ↪ State') (tm : MultiTapeTM k Symbol Sta
     rfl
 
 /-- The configuration sequence commutes with state relabeling. -/
-lemma configs_congrState (eState : State ↪ State') (tm : MultiTapeTM k Symbol State)
-    (cfg : Cfg k Symbol State) (t : ℕ) :
+lemma configs_congrState {input : List Symbol} (eState : State ↪ State')
+    (tm : MultiTapeTM k Symbol State) (cfg : Cfg k Symbol State input) (t : ℕ) :
     (tm.congrState eState).configs (cfg.congrState eState) t
       = (tm.configs cfg t).congrState eState := by
   unfold configs
@@ -132,16 +133,14 @@ section CongrSymbol
 
 variable {k : ℕ} {Symbol Symbol' State : Type*}
 
-/-- Relabel the tape alphabet of a configuration along `eSym : Symbol ≃ Symbol'`. -/
-def Cfg.congrSymbol (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbol State) : Cfg k Symbol' State where
+def Cfg.congrSymbol {input : List Symbol} (eSym : Symbol ≃ Symbol')
+    (cfg : Cfg k Symbol State input) : Cfg k Symbol' State (input.map eSym) where
   state := cfg.state
-  input := cfg.input.map eSym
   inputPos := Fin.cast (by rw [List.length_map]) cfg.inputPos
   workTapes i z := (cfg.workTapes i z).map eSym
   workTapePos := cfg.workTapePos
   output := cfg.output.map eSym
 
-/-- Relabel the tape alphabet of a Turing machine along `eSym : Symbol ≃ Symbol'`. -/
 def congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol State) :
     MultiTapeTM k Symbol' State where
   q₀ := tm.q₀
@@ -152,35 +151,29 @@ def congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol State) :
       outS := o.outS.map eSym
       q' := o.q' }
 
-@[simp]
-lemma Cfg.congrSymbol_state (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbol State) :
+variable {input : List Symbol}
+
+@[simp] lemma Cfg.congrSymbol_state (eSym : Symbol ≃ Symbol')
+    (cfg : Cfg k Symbol State input) :
     (cfg.congrSymbol eSym).state = cfg.state := rfl
-
-@[simp]
-lemma Cfg.congrSymbol_output (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbol State) :
+@[simp] lemma Cfg.congrSymbol_output (eSym : Symbol ≃ Symbol')
+    (cfg : Cfg k Symbol State input) :
     (cfg.congrSymbol eSym).output = cfg.output.map eSym := rfl
-
-@[simp]
-lemma Cfg.congrSymbol_workTapePos (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbol State) :
+@[simp] lemma Cfg.congrSymbol_workTapePos (eSym : Symbol ≃ Symbol')
+    (cfg : Cfg k Symbol State input) :
     (cfg.congrSymbol eSym).workTapePos = cfg.workTapePos := rfl
-
-@[simp]
-lemma Cfg.congrSymbol_input (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbol State) :
-    (cfg.congrSymbol eSym).input = cfg.input.map eSym := rfl
-
-@[simp]
-lemma Cfg.congrSymbol_inputPos_val (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbol State) :
+@[simp] lemma Cfg.congrSymbol_inputPos_val (eSym : Symbol ≃ Symbol')
+    (cfg : Cfg k Symbol State input) :
     (cfg.congrSymbol eSym).inputPos.val = cfg.inputPos.val := rfl
 
-/-- The symbol read by the input head commutes with symbol relabeling. -/
-@[simp]
-lemma Cfg.congrSymbol_inputSymbol (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbol State) :
+@[simp] lemma Cfg.congrSymbol_inputSymbol (eSym : Symbol ≃ Symbol')
+    (cfg : Cfg k Symbol State input) :
     (cfg.congrSymbol eSym).inputSymbol = cfg.inputSymbol.map eSym := by
   have hz : ((cfg.congrSymbol eSym).inputPos = 0) ↔ (cfg.inputPos = 0) := by
     simp only [Fin.ext_iff, Cfg.congrSymbol_inputPos_val, Fin.val_zero]
-  have he : ((cfg.congrSymbol eSym).inputPos = (cfg.congrSymbol eSym).input.length + 1)
-      ↔ (cfg.inputPos = cfg.input.length + 1) := by
-    simp only [Cfg.congrSymbol_inputPos_val, Cfg.congrSymbol_input, List.length_map]
+  have he : ((cfg.congrSymbol eSym).inputPos = (input.map eSym).length + 1)
+      ↔ (cfg.inputPos = input.length + 1) := by
+    simp only [Cfg.congrSymbol_inputPos_val, List.length_map]
   unfold Cfg.inputSymbol
   simp only [hz, he]
   split_ifs with h1 h2
@@ -188,21 +181,18 @@ lemma Cfg.congrSymbol_inputSymbol (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbo
   · rfl
   · simp [Cfg.congrSymbol, List.getElem_map]
 
-/-- The symbol read by a work-tape head commutes with symbol relabeling. -/
-@[simp]
-lemma Cfg.congrSymbol_workTapeSymbols (eSym : Symbol ≃ Symbol') (cfg : Cfg k Symbol State)
-    (i : Fin k) :
+@[simp] lemma Cfg.congrSymbol_workTapeSymbols (eSym : Symbol ≃ Symbol')
+    (cfg : Cfg k Symbol State input) (i : Fin k) :
     (cfg.congrSymbol eSym).workTapeSymbols i = (cfg.workTapeSymbols i).map eSym := rfl
 
-/-- Moving the input head commutes with the `Fin.cast` coming from `List.length_map`. -/
+
 lemma moveInputPos_cast {n m : ℕ} (h : n + 2 = m + 2) (pos : Fin (n + 2)) (mv : SignType) :
     moveInputPos (Fin.cast h pos) mv = Fin.cast h (moveInputPos pos mv) := by
   obtain rfl : n = m := by omega
   simp
 
-/-- The step function commutes with symbol relabeling. -/
 lemma step_congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol State)
-    (cfg : Cfg k Symbol State) :
+    (cfg : Cfg k Symbol State input) :
     (tm.congrSymbol eSym).step (cfg.congrSymbol eSym)
       = (tm.step cfg).congrSymbol eSym := by
   have key : ∀ x : Option Symbol, Option.map (⇑eSym.symm) (Option.map (⇑eSym) x) = x := by
@@ -218,8 +208,7 @@ lemma step_congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol St
     conv_rhs => rw [step]
     simp only [Cfg.congrSymbol_state, hs, Cfg.congrSymbol_inputSymbol,
       Cfg.congrSymbol_workTapeSymbols, congrSymbol, key]
-    refine Cfg.ext ?_ ?_ (heq_of_eq ?_) ?_ ?_ ?_
-    · rfl
+    refine Cfg.ext ?_ ?_ ?_ ?_ ?_
     · rfl
     · exact moveInputPos_cast (by simp) _ _
     · funext i z
@@ -232,9 +221,9 @@ lemma step_congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol St
       · simp [Cfg.congrSymbol]
       · simp [Cfg.congrSymbol]
 
-/-- The configuration sequence commutes with symbol relabeling. -/
+
 lemma configs_congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol State)
-    (cfg : Cfg k Symbol State) (t : ℕ) :
+    (cfg : Cfg k Symbol State input) (t : ℕ) :
     (tm.congrSymbol eSym).configs (cfg.congrSymbol eSym) t
       = (tm.configs cfg t).congrSymbol eSym := by
   unfold configs
@@ -246,19 +235,15 @@ lemma configs_congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol
 lemma initCfg_congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol State)
     (input : List Symbol) :
     (tm.congrSymbol eSym).initCfg (input.map eSym) = (tm.initCfg input).congrSymbol eSym := by
-  refine Cfg.ext ?_ ?_ (heq_of_eq ?_) ?_ ?_ ?_ <;>
+  refine Cfg.ext ?_ ?_ ?_ ?_ ?_ <;>
     simp [initCfg, Cfg.congrSymbol, congrSymbol, Fin.ext_iff]
 
-/-- Symbol relabeling preserves the space used, since it does not touch the tape head positions. -/
 lemma spaceUsed_congrSymbol (eSym : Symbol ≃ Symbol') (tm : MultiTapeTM k Symbol State)
-    (cfg : Cfg k Symbol State) (t : ℕ) :
+    (cfg : Cfg k Symbol State input) (t : ℕ) :
     (tm.congrSymbol eSym).spaceUsed (cfg.congrSymbol eSym) t = tm.spaceUsed cfg t := by
   unfold spaceUsed spaceUsedByTape
   simp only [configs_congrSymbol, Cfg.congrSymbol_workTapePos]
 
-/-- Relabeling the tape alphabet of a Turing machine transports its computations along the
-equivalence: `tm.congrSymbol eSym` computes the relabeled output from the relabeled input in the
-same time and space as `tm`. -/
 lemma computesInTimeAndSpace_congrSymbol (eSym : Symbol ≃ Symbol')
     (tm : MultiTapeTM k Symbol State) (input output : List Symbol) (t s : ℕ)
     (h : tm.ComputesInTimeAndSpace input output t s) :
@@ -310,35 +295,30 @@ lemma moveInputPos_pos {n : ℕ} (pos : Fin (n + 2)) (h : pos.val + 1 < n + 2) :
   rw [Fin.val_add_one_of_lt (by rw [Fin.lt_def, Fin.val_last]; omega)]
 
 /-- Invariant of the simulation: after `t ≤ |input|` steps, `ofDFA M` is in the state `M` would be
-in after reading the first `t` input symbols, has produced no output, still holds the same input,
-and its head is at position `1 + t`. -/
+in after reading the first `t` input symbols, has produced no output, and its head is at position
+`1 + t`. -/
 lemma ofDFA_sim {IOSymbol : Type} [Inhabited IOSymbol] {σ : Type} (M : DFA IOSymbol σ)
     (input : List IOSymbol) :
     ∀ t, t ≤ input.length →
       ((ofDFA M).configs ((ofDFA M).initCfg input) t).state = some (M.eval (input.take t)) ∧
       ((ofDFA M).configs ((ofDFA M).initCfg input) t).output = [] ∧
-      ((ofDFA M).configs ((ofDFA M).initCfg input) t).input = input ∧
       ((ofDFA M).configs ((ofDFA M).initCfg input) t).inputPos.val = 1 + t := by
   intro t
   induction t with
-  | zero => intro _; refine ⟨?_, ?_, ?_, ?_⟩ <;> simp [configs, ofDFA]
+  | zero => intro _; refine ⟨?_, ?_, ?_⟩ <;> simp [configs, ofDFA]
   | succ t ih =>
     intro ht
-    obtain ⟨hst, hout, hin, hpos⟩ := ih (by omega)
+    obtain ⟨hst, hout, hpos⟩ := ih (by omega)
     have hlt : t < input.length := by omega
     set c := (ofDFA M).configs ((ofDFA M).initCfg input) t with hc
-    have hlt' : t < c.input.length := by rw [hin]; exact hlt
-    have hsym : c.inputSymbol = some input[t] := by
-      have h := inputSymbolInner (cfg := c) t hpos hlt'
-      rw [h]; simp only [hin]
+    have hsym : c.inputSymbol = some input[t] := inputSymbolInner (cfg := c) t hpos hlt
     have hstep : (ofDFA M).configs ((ofDFA M).initCfg input) (t + 1) = (ofDFA M).step c := by
       rw [hc, configs, configs, Function.iterate_succ_apply']
     rw [hstep]
-    refine ⟨?_, ?_, ?_, ?_⟩
+    refine ⟨?_, ?_, ?_⟩
     · rw [step, hst, hsym]; simp only [ofDFA]
       rw [List.take_succ_eq_append_getElem hlt, M.eval_append_singleton]
     · rw [step, hst, hsym]; simp [ofDFA, hout]
-    · rw [step, hst, hsym]; simp [hin]
     · rw [step, hst, hsym]; simp only [ofDFA]
       rw [moveInputPos_pos c.inputPos (by omega)]; omega
 
@@ -349,10 +329,9 @@ lemma ofDFA_computes {IOSymbol : Type} [Inhabited IOSymbol] {σ : Type} (M : DFA
     (input : List IOSymbol) :
     (ofDFA M).ComputesInTimeAndSpace input
       (if M.eval input ∈ M.accept then [default] else []) (input.length + 1) 0 := by
-  obtain ⟨hst, hout, hin, hpos⟩ := ofDFA_sim M input input.length le_rfl
+  obtain ⟨hst, hout, hpos⟩ := ofDFA_sim M input input.length le_rfl
   set c := (ofDFA M).configs ((ofDFA M).initCfg input) input.length with hc
-  have hlen : c.input.length = input.length := by rw [hin]
-  have hval : c.inputPos.val = c.input.length + 1 := by omega
+  have hval : c.inputPos.val = input.length + 1 := by omega
   have hsym : c.inputSymbol = none := by
     unfold Cfg.inputSymbol
     rw [dif_neg (by simp [Fin.ext_iff, hval]), dif_pos (by simp [hval])]

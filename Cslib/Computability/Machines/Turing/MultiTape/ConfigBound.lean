@@ -53,7 +53,7 @@ variable {k sym state : ℕ}
 def storageBound (k sym state s : ℕ) : ℕ :=
   (state + 1) * ((sym + 1) ^ (2 * s + 1) * (2 * s + 1)) ^ k
 
-def Cfg.storage {k : ℕ} {Sym St : Type*} (c : Cfg k Sym St) :
+def Cfg.storage {k : ℕ} {Sym St : Type*} {input : List Sym} (c : Cfg k Sym St input) :
     Option St × (Fin k → ℤ → Option Sym) × (Fin k → ℤ) :=
   (c.state, c.workTapes, c.workTapePos)
 
@@ -124,7 +124,8 @@ lemma headPos_natAbs_le_space (T s : ℕ) (hs : tm.spaceUsed (tm.initCfg input) 
   omega
 
 
-lemma step_workTapes_mem (c : Cfg k (Fin sym) (Fin state)) (j : Fin k) (z : ℤ)
+lemma step_workTapes_mem {inp : List (Fin sym)} (c : Cfg k (Fin sym) (Fin state) inp)
+    (j : Fin k) (z : ℤ)
     (h : (tm.step c).workTapes j z ≠ none) :
     z = c.workTapePos j ∨ c.workTapes j z ≠ none := by
   rw [step] at h
@@ -233,20 +234,6 @@ theorem card_image_storage_le (tm : MultiTapeTM k (Fin sym) (Fin state))
   exact storage_windowP tm input T s hs (by omega)
 
 
-lemma step_input (tm : MultiTapeTM k (Fin sym) (Fin state)) (c : Cfg k (Fin sym) (Fin state)) :
-    (tm.step c).input = c.input := by
-  rw [step]; cases c.state <;> rfl
-
-lemma configs_input (tm : MultiTapeTM k (Fin sym) (Fin state)) (input : List (Fin sym)) (t : ℕ) :
-    (tm.configs (tm.initCfg input) t).input = input := by
-  induction t with
-  | zero => rfl
-  | succ t ih =>
-    have hstep : tm.configs (tm.initCfg input) (t + 1)
-        = tm.step (tm.configs (tm.initCfg input) t) := by
-      rw [configs, configs, Function.iterate_succ_apply']
-    rw [hstep, step_input, ih]
-
 open scoped Classical in
 theorem card_image_config_le (tm : MultiTapeTM k (Fin sym) (Fin state))
     (input : List (Fin sym)) (T s : ℕ) (hs : tm.spaceUsed (tm.initCfg input) T ≤ s) :
@@ -265,10 +252,7 @@ theorem card_image_config_le (tm : MultiTapeTM k (Fin sym) (Fin state))
     simp only [Finset.coe_image, Set.mem_image, Finset.mem_coe, Finset.mem_range] at hx
     obtain ⟨t, ht, rfl⟩ := hx
     simp only [Finset.mem_coe, Finset.mem_product, Finset.mem_range, Finset.mem_univ, and_true]
-    have hlt := (tm.configs (tm.initCfg input) t).inputPos.isLt
-    have hlen : (tm.configs (tm.initCfg input) t).input.length = input.length := by
-      rw [configs_input]
-    omega
+    exact (tm.configs (tm.initCfg input) t).inputPos.isLt
   · intro x hx y hy hxy
     simp only [Finset.coe_image, Set.mem_image, Finset.mem_coe, Finset.mem_range] at hx hy
     obtain ⟨tx, htx, rfl⟩ := hx
