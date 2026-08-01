@@ -12,6 +12,7 @@ public import Mathlib.Data.Fintype.Pi
 public import Mathlib.Data.Fintype.Prod
 public import Mathlib.Data.Fintype.Option
 public import Mathlib.Algebra.Order.BigOperators.GroupWithZero.Finset
+public import Cslib.Foundations.Data.Nat.BigO
 
 /-!
 # A bound on the number of reachable configurations in bounded space
@@ -35,9 +36,11 @@ The key lemmas in this file are:
 * `MultiTapeTM.card_configs_le` additionally tracks the input head position, giving the bound
   `(n + 2) * storageBound Symbol State k s` on the number of full configurations of an input of
   length `n`.
-* `MultiTapeTM.card_configs_le_pow` restates the previous bound as `(n + 2) * a * 2 ^ (c * s)`
-  for constants `a` and `c` depending only on the machine, so it can be used to time-bound
-  space-bounded machines.
+* `MultiTapeTM.storageBound_mem_ExpO` states that `storageBound` composed with a bound function
+  lies in the class `2 ^ (O(σ))` of the big-O calculus of `Cslib.BoundFun`. This is where the
+  machine-specific configuration count enters the calculus.
+* `MultiTapeTM.card_configs_le_exp2` restates the configuration bound as
+  `(n + 2) * a * 2 ^ (O(s))`, so it can be used to time-bound space-bounded machines.
 
 ## Design
 
@@ -61,7 +64,7 @@ the model.
 
 @[expose] public section
 
-open Cslib
+open Cslib Cslib.BoundFun
 
 namespace Turing.MultiTapeTM
 
@@ -190,36 +193,28 @@ factor counts the possible head positions; the dominant factor `(|Symbol|+1)^(2s
 def storageBound (Symbol State : Type*) [Fintype Symbol] [Fintype State] (k s : ℕ) : ℕ :=
   (Fintype.card State + 1) * ((2 * s + 1) ^ k * (Fintype.card Symbol + 1) ^ (2 * s + k))
 
-/-- `storageBound` grows at most exponentially in the space `s`: there exist constants `a` and `c`
-(depending on the machine's alphabet, state set and tape count) with
-`storageBound Symbol State k s ≤ a * 2 ^ (c * s)` for all `s`. The multiplicative constant `a` is
-needed since `storageBound … 0` is a nonzero constant while `2 ^ 0 = 1`; it is harmless downstream
-because the complexity classes absorb constant factors. This is what lets a `storageBound`-based
-configuration count be phrased as `2 ^ (O(s))`. -/
-lemma storageBound_le_pow [Fintype Symbol] [Fintype State] (k : ℕ) :
-    ∃ a c : ℕ, ∀ s, storageBound Symbol State k s ≤ a * 2 ^ (c * s) := by
-  set syms := Fintype.card Symbol + 1 with hB
-  set states := Fintype.card State + 1 with hQ
-  -- The strategy is to bound each factor of `storageBound` by a power of `2`, using `B ≤ 2 ^ B`
-  -- and `2 * s + 1 ≤ 2 ^ (s + 1)`. Collecting the exponents then yields
-  -- `(s + 1) * k + B * (2 * s + k)`, which splits into the constant part `B * k + k`
-  -- (absorbed into `a`) and the part `(2 * B + k) * s` linear in `s` (which is `c * s`).
-  refine ⟨states * 2 ^ (syms * k + k), 2 * syms + k, fun s => ?_⟩
-  have hB2 : syms ≤ 2 ^ syms := Nat.lt_two_pow_self.le
-  have h2s1 : 2 * s + 1 ≤ 2 ^ (s + 1) := by
-    have : s < 2 ^ s := Nat.lt_two_pow_self
-    rw [pow_succ]
-    omega
-  calc storageBound Symbol State k s
-      = states * ((2 * s + 1) ^ k * syms ^ (2 * s + k)) := rfl
-    -- bound both bases by powers of `2`
-    _ ≤ states * ((2 ^ (s + 1)) ^ k * (2 ^ syms) ^ (2 * s + k)) := by
-        gcongr <;> exact Nat.zero_le _
-    -- collect everything into a single exponent
-    _ = states * 2 ^ ((s + 1) * k + syms * (2 * s + k)) := by rw [← pow_mul, ← pow_mul, ← pow_add]
-    -- split the exponent into its constant part and its part linear in `s`
-    _ = states * 2 ^ ((syms * k + k) + (2 * syms + k) * s) := by ring_nf
-    _ = states * 2 ^ (syms * k + k) * 2 ^ ((2 * syms + k) * s) := by rw [pow_add, mul_assoc]
+/-- `storageBound` composed with a bound function is `2 ^ (O(σ))`: the number of storage
+configurations available within space `σ n` lies in the class `BoundFun.ExpO σ`, with the machine's
+alphabet, state set and tape count only affecting the (invisible) constant in the exponent. This is
+the point where the machine-specific configuration count enters the big-O calculus.
+
+The proof splits `storageBound` into its three factors with `BoundFun.ofFun_mul_mem_ExpO` and
+applies the membership rules of the calculus to each of them: the state count is a constant, the
+head positions are a polynomial in `σ` (`BoundFun.ofFun_pow_mem_ExpO`) and the tape contents are a
+power of a fixed base with an exponent affine in `σ` (`BoundFun.ofFun_base_pow_mem_ExpO`). -/
+lemma storageBound_mem_ExpO [Fintype Symbol] [Fintype State] (k : ℕ) (σ : BoundFun) :
+    BoundFun.ofFun (fun n => storageBound Symbol State k (σ n)) ∈ ExpO σ := by
+  -- The state, a constant.
+  have hstate : BoundFun.ofFun (fun _ => Fintype.card State + 1) ∈ ExpO σ :=
+    BoundFun.ofFun_const_mem_ExpO ..
+  -- The head positions of the `k` work tapes, a polynomial in `σ`.
+  have hheads : BoundFun.ofFun (fun n => (2 * σ n + 1) ^ k) ∈ ExpO σ :=
+    BoundFun.ofFun_pow_mem_ExpO k 3 fun n => by have := σ.one_le_apply n; omega
+  -- The contents of the work tapes, a power with an exponent affine in `σ`.
+  have htapes : BoundFun.ofFun (fun n => (Fintype.card Symbol + 1) ^ (2 * σ n + k)) ∈ ExpO σ :=
+    BoundFun.ofFun_base_pow_mem_ExpO _ 2 k fun _ => le_rfl
+  unfold storageBound
+  exact BoundFun.ofFun_mul_mem_ExpO hstate (BoundFun.ofFun_mul_mem_ExpO hheads htapes)
 
 /-- The per-tape product is bounded by `storageBound`: each tape uses at most the total space `s`,
 and the tapes together use at most `s`, which collapses the alphabet exponent to `2s + k`. -/
@@ -321,23 +316,28 @@ theorem card_configs_le
 
 open scoped Classical in
 /-- The number of distinct configurations reachable in space `s` is at most `2 ^ (O(s))`, up to the
-`(n + 2)` factor for the input-head position: there are constants `a` and `c` (depending only on
-the machine's alphabet, state set and tape count) that bound the configuration count for *every*
-input and step count. This is the form used to time-bound space-bounded machines. -/
-theorem card_configs_le_pow
-    [Finite Symbol] [Finite State] :
-    ∃ a c : ℕ, ∀ (input : List Symbol) (t s : ℕ),
-      tm.spaceUsed (tm.initCfg input) t ≤ s →
+`(n + 2)` factor for the input-head position: there are a constant `a` and a bound function
+`exp2 (const c * s)` (depending only on the machine's alphabet, state set and tape count) that
+bound the configuration count for *every* input and step count. This is the form used to
+time-bound space-bounded machines; it is the pointwise reading of `storageBound_mem_ExpO`. -/
+theorem card_configs_le_exp2
+    [Finite Symbol] [Finite State] (s : BoundFun) :
+    ∃ a c : ℕ, ∀ (input : List Symbol) (t : ℕ),
+      tm.spaceUsed (tm.initCfg input) t ≤ s input.length →
       ((Finset.range (t + 1)).image (tm.configs (tm.initCfg input))).card
-        ≤ (input.length + 2) * a * 2 ^ (c * s) := by
+        ≤ (input.length + 2) * a * exp2 (const c * s) input.length := by
   have : Fintype Symbol := Fintype.ofFinite Symbol
   have : Fintype State := Fintype.ofFinite State
-  obtain ⟨a, c, hpow⟩ := storageBound_le_pow (Symbol := Symbol) (State := State) k
-  refine ⟨a, c, fun input t s hs => ?_⟩
+  obtain ⟨c, a, ha⟩ := storageBound_mem_ExpO (Symbol := Symbol) (State := State) k s
+  refine ⟨a, c, fun input t hs => ?_⟩
+  have hpt : storageBound Symbol State k (s input.length)
+      ≤ a * exp2 (const c * s) input.length :=
+    (BoundFun.le_ofFun (fun n => storageBound Symbol State k (s n)) input.length).trans
+      (ha input.length)
   calc ((Finset.range (t + 1)).image (tm.configs (tm.initCfg input))).card
-      ≤ (input.length + 2) * storageBound Symbol State k s :=
-        tm.card_configs_le t s hs
-    _ ≤ (input.length + 2) * (a * 2 ^ (c * s)) := Nat.mul_le_mul_left _ (hpow s)
-    _ = (input.length + 2) * a * 2 ^ (c * s) := by ring
+      ≤ (input.length + 2) * storageBound Symbol State k (s input.length) :=
+        tm.card_configs_le t _ hs
+    _ ≤ (input.length + 2) * (a * exp2 (const c * s) input.length) := by gcongr
+    _ = (input.length + 2) * a * exp2 (const c * s) input.length := by ring
 
 end Turing.MultiTapeTM
