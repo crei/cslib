@@ -15,9 +15,17 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Fold
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.While
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListIndex
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListMap
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListUpdate
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.NatMul
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.Lookup
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.LookupTable
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.MachineDesc
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.Tape
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.TapeView
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.TapeStep
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.SimConfig
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.InputCursor
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.SpaceBound
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.Universal
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.NatArith
 

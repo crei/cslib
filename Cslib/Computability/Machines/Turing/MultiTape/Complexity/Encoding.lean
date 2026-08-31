@@ -8,6 +8,7 @@ module
 
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Data
 public import Mathlib.Data.Nat.Size
+public import Mathlib.Data.Sign.Defs
 
 /-!
 # Encoding Lean types into rose trees
@@ -215,6 +216,28 @@ instance : DataEncode ℕ where
       cases b <;> simp [Data.ofBit, Data.depth]
     have := foldr_max_le n.bits (Data.depth ∘ Data.ofBit) 3 (fun b _ => hb b)
     omega
+
+instance (n : ℕ) : DataEncode (Fin n) where
+  encode i := DataEncode.encode i.val
+  h_inj := fun _ _ h => Fin.ext (DataEncode.h_inj h)
+  depth := DataEncode.depth (α := ℕ)
+  h_depth i := DataEncode.h_depth i.val
+
+/-- The three head movements of a `MultiTapeTM`, as `none` / `some false` / `some true`. -/
+def signToOptBool : SignType → Option Bool
+  | .zero => none
+  | .neg => some false
+  | .pos => some true
+
+lemma signToOptBool_injective : Function.Injective signToOptBool := by
+  intro a b h
+  cases a <;> cases b <;> simp_all [signToOptBool]
+
+instance : DataEncode SignType where
+  encode m := DataEncode.encode (signToOptBool m)
+  h_inj := fun _ _ h => signToOptBool_injective (DataEncode.h_inj h)
+  depth := DataEncode.depth (α := Option Bool)
+  h_depth m := DataEncode.h_depth (signToOptBool m)
 
 /-! ### Encoded sizes
 

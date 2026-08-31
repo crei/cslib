@@ -237,6 +237,18 @@ def tail : Bounds (fun xs : List α => xs.tail) where
       have h2 := Data.two_le_size (DataEncode.encode x)
       simpa using by omega
 
+/-- **Emptiness test.** Whether the input node has any children at all — one look at the tape,
+no work space. -/
+def isEmpty : Bounds (fun l : List α => l.isEmpty) where
+  time n := n + 2
+  space _ := 0
+  outSize _ := 4
+  time_mono := fun _ _ h => Nat.add_le_add_right h 2
+  space_mono := monotone_const
+  outSize_mono := monotone_const
+  computes := sorry
+  out_le l := DataEncode.size_bool _
+
 /-- **Branching.** Evaluate the condition, then whichever branch it selects. `cond` is used
 rather than `if` so that no `Decidable` instance travels with the statement. -/
 def ite {c : α → Bool} {f g : α → β} (hc : Bounds c) (hf : Bounds f) (hg : Bounds g) :
