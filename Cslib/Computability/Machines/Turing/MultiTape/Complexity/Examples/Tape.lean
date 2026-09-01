@@ -72,7 +72,7 @@ def moveL (blank : S) (t : Tape S) : Tape S := (t.1.tail, t.1.head?.getD blank :
 
 /-- Reading is the head of the right-hand list. -/
 def readBounds (blank : S) : Bounds (read (S := S) blank) :=
-  (Bounds.comp (Bounds.headD blank) Bounds.snd).congr rfl
+  (Bounds.comp (Bounds.headD blank) Bounds.snd)
 
 /-- Writing replaces the head of the right-hand list. -/
 def writeBounds : Bounds (write : Tape S × S → Tape S) :=
@@ -83,12 +83,12 @@ def writeBounds : Bounds (write : Tape S × S → Tape S) :=
 /-- Moving right pops the right-hand list and pushes onto the left-hand one. -/
 def moveRBounds (blank : S) : Bounds (moveR (S := S) blank) :=
   (Bounds.pair (Bounds.cons (Bounds.comp (Bounds.headD blank) Bounds.snd) Bounds.fst)
-    (Bounds.comp Bounds.tail Bounds.snd)).congr rfl
+    (Bounds.comp Bounds.tail Bounds.snd))
 
 /-- Moving left pops the left-hand list and pushes onto the right-hand one. -/
 def moveLBounds (blank : S) : Bounds (moveL (S := S) blank) :=
   (Bounds.pair (Bounds.comp Bounds.tail Bounds.fst)
-    (Bounds.cons (Bounds.comp (Bounds.headD blank) Bounds.fst) Bounds.snd)).congr rfl
+    (Bounds.cons (Bounds.comp (Bounds.headD blank) Bounds.fst) Bounds.snd))
 
 /-! ### How much the tape can grow
 
@@ -176,22 +176,20 @@ def applyInstr (blank : S) (p : Instr Q S × (Q × Tape S)) : Q × Tape S :=
 def applyInstrBounds (blank : S) : Bounds (applyInstr (Q := Q) blank) :=
   let i : Bounds (fun p : Instr Q S × (Q × Tape S) => p.1) := Bounds.fst
   let st : Bounds (fun p : Instr Q S × (Q × Tape S) => p.1.1) :=
-    (Bounds.comp (Bounds.fst : Bounds (Prod.fst : Instr Q S → Q)) i).congr rfl
+    (Bounds.comp Bounds.fst i)
   let sym : Bounds (fun p : Instr Q S × (Q × Tape S) => p.1.2.1) :=
-    (Bounds.comp (Bounds.comp (Bounds.fst : Bounds (Prod.fst : S × Bool → S))
-      (Bounds.snd : Bounds (Prod.snd : Instr Q S → S × Bool))) i).congr rfl
+    Bounds.comp' _ (Bounds.comp Bounds.fst Bounds.snd) i
   let dir : Bounds (fun p : Instr Q S × (Q × Tape S) => p.1.2.2) :=
-    (Bounds.comp (Bounds.comp (Bounds.snd : Bounds (Prod.snd : S × Bool → Bool))
-      (Bounds.snd : Bounds (Prod.snd : Instr Q S → S × Bool))) i).congr rfl
+    Bounds.comp' _ (Bounds.comp Bounds.snd Bounds.snd) i
   let tp : Bounds (fun p : Instr Q S × (Q × Tape S) => p.2.2) :=
-    (Bounds.comp (Bounds.snd : Bounds (Prod.snd : Q × Tape S → Tape S))
-      (Bounds.snd : Bounds (Prod.snd : Instr Q S × (Q × Tape S) → Q × Tape S))).congr rfl
+    (Bounds.comp Bounds.snd
+      Bounds.snd)
   let written : Bounds (fun p : Instr Q S × (Q × Tape S) => write (p.2.2, p.1.2.1)) :=
-    (Bounds.comp writeBounds (Bounds.pair tp sym)).congr rfl
+    (Bounds.comp writeBounds (Bounds.pair tp sym))
   (Bounds.pair st
     (Bounds.ite dir
       (Bounds.comp (moveRBounds blank) written)
-      (Bounds.comp (moveLBounds blank) written))).congr rfl
+      (Bounds.comp (moveLBounds blank) written)))
 
 /-! ### One step of a simulated machine with a fixed transition function -/
 
@@ -205,12 +203,12 @@ def simStepBounds [Fintype Q] [Fintype S] (blank : S) (tr : Q × S → Instr Q S
     Bounds (simStep blank tr) :=
   let rd : Bounds (fun c : Q × Tape S => read blank c.2) :=
     (Bounds.comp (readBounds blank)
-      (Bounds.snd : Bounds (Prod.snd : Q × Tape S → Tape S))).congr rfl
+      Bounds.snd)
   let instr : Bounds (fun c : Q × Tape S => tr (c.1, read blank c.2)) :=
     (Bounds.comp (Bounds.ofFintype tr)
-      (Bounds.pair (Bounds.fst : Bounds (Prod.fst : Q × Tape S → Q)) rd)).congr rfl
+      (Bounds.pair Bounds.fst rd))
   (Bounds.comp (applyInstrBounds blank)
-    (Bounds.pair instr (Bounds.id : Bounds (id : Q × Tape S → Q × Tape S)))).congr rfl
+    (Bounds.pair instr Bounds.id))
 
 end Simulation
 

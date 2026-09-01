@@ -120,8 +120,8 @@ def mapBounds (f : α → β) (c : ℕ)
     (hstep : Bounds (Function.uncurry (mapStep f)))
     (h_out : ∀ x : α, (DataEncode.encode (f x)).size ≤ c * (DataEncode.encode x).size) :
     Bounds (fun l : List α => l.map f) :=
-  (Bounds.fold (Bounds.id : Bounds (id : List α → List α))
-      (Bounds.const [] : Bounds (mapInit : List α → List β)) hstep
+  (Bounds.fold Bounds.id
+      (Bounds.const []) hstep
       (fun n => 2 + c * n)
       (by intro x y h; exact Nat.add_le_add_left (Nat.mul_le_mul_left c h) 2)
       (mapAccSize f c h_out)).congr (funext (foldFun_map f))

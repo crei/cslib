@@ -61,31 +61,31 @@ variable [DataEncode α]
 /-- Reading the cursor is taking the head of its second component. -/
 def cursorReadBounds (d : α) : Bounds (cursorRead d) :=
   (Bounds.comp (Bounds.headD d)
-    (Bounds.snd : Bounds (Prod.snd : Cursor α → List α))).congr rfl
+    Bounds.snd)
 
 /-- Moving right: test whether the tail is empty, then either do nothing or shift one cell. -/
 def cursorRBounds (d : α) : Bounds (cursorR d) :=
   (Bounds.ite
     (Bounds.comp Bounds.isEmpty
-      (Bounds.comp Bounds.tail (Bounds.snd : Bounds (Prod.snd : Cursor α → List α))))
-    (Bounds.id : Bounds (id : Cursor α → Cursor α))
+      (Bounds.comp Bounds.tail Bounds.snd))
+    Bounds.id
     (Bounds.pair
       (Bounds.cons (Bounds.comp (Bounds.headD d)
-          (Bounds.snd : Bounds (Prod.snd : Cursor α → List α)))
-        (Bounds.fst : Bounds (Prod.fst : Cursor α → List α)))
+          Bounds.snd)
+        Bounds.fst)
       (Bounds.comp Bounds.tail
-        (Bounds.snd : Bounds (Prod.snd : Cursor α → List α))))).congr rfl
+        Bounds.snd)))
 
 /-- Moving left. -/
 def cursorLBounds (d : α) : Bounds (cursorL d) :=
   (Bounds.ite
-    (Bounds.comp Bounds.isEmpty (Bounds.fst : Bounds (Prod.fst : Cursor α → List α)))
-    (Bounds.id : Bounds (id : Cursor α → Cursor α))
+    (Bounds.comp Bounds.isEmpty Bounds.fst)
+    Bounds.id
     (Bounds.pair
-      (Bounds.comp Bounds.tail (Bounds.fst : Bounds (Prod.fst : Cursor α → List α)))
+      (Bounds.comp Bounds.tail Bounds.fst)
       (Bounds.cons (Bounds.comp (Bounds.headD d)
-          (Bounds.fst : Bounds (Prod.fst : Cursor α → List α)))
-        (Bounds.snd : Bounds (Prod.snd : Cursor α → List α))))).congr rfl
+          Bounds.fst)
+        Bounds.snd)))
 
 /-! ### The input tape as a finite list -/
 

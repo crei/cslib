@@ -61,22 +61,22 @@ def applyAction (blank : S) (a : Option S × SignType) (t : Tape S) : Tape S :=
 @[simp] lemma signCast_neg : ((SignType.neg : SignType) : ℤ) = -1 := rfl
 @[simp] lemma signCast_pos : ((SignType.pos : SignType) : ℤ) = 1 := rfl
 
-@[simp] lemma applyAction_none_zero (blank : S) (t : Tape S) :
+lemma applyAction_none_zero (blank : S) (t : Tape S) :
     applyAction blank (none, SignType.zero) t = t := rfl
 
-@[simp] lemma applyAction_none_neg (blank : S) (t : Tape S) :
+lemma applyAction_none_neg (blank : S) (t : Tape S) :
     applyAction blank (none, SignType.neg) t = moveL blank t := rfl
 
-@[simp] lemma applyAction_none_pos (blank : S) (t : Tape S) :
+lemma applyAction_none_pos (blank : S) (t : Tape S) :
     applyAction blank (none, SignType.pos) t = moveR blank t := rfl
 
-@[simp] lemma applyAction_some_zero (blank : S) (s : S) (t : Tape S) :
+lemma applyAction_some_zero (blank : S) (s : S) (t : Tape S) :
     applyAction blank (some s, SignType.zero) t = write (t, s) := rfl
 
-@[simp] lemma applyAction_some_neg (blank : S) (s : S) (t : Tape S) :
+lemma applyAction_some_neg (blank : S) (s : S) (t : Tape S) :
     applyAction blank (some s, SignType.neg) t = moveL blank (write (t, s)) := rfl
 
-@[simp] lemma applyAction_some_pos (blank : S) (s : S) (t : Tape S) :
+lemma applyAction_some_pos (blank : S) (s : S) (t : Tape S) :
     applyAction blank (some s, SignType.pos) t = moveR blank (write (t, s)) := rfl
 
 /-- **A work-tape action on the zipper implements the one `MultiTapeTM.step` performs.** -/

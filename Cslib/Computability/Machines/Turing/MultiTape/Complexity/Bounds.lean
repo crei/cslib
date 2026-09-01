@@ -67,21 +67,32 @@ namespace Bounds
 
 /-- Transport a certificate along an equality of functions. Used to turn a certificate for the
 literal shape a combinator produces into one for the function actually of interest. -/
-def congr {f g : α → β} (b : Bounds f) (h : f = g := by rfl) : Bounds g := h ▸ b
+def congr {f g : α → β} (b : Bounds f) (h : f = g := by rfl) : Bounds g where
+  time := b.time
+  space := b.space
+  outSize := b.outSize
+  time_mono := b.time_mono
+  space_mono := b.space_mono
+  outSize_mono := b.outSize_mono
+  computes := h ▸ b.computes
+  out_le := h ▸ b.out_le
 
-/-- Transport leaves the time bound alone. Without this (and its siblings) the resource fields of
-a transported certificate are stuck behind `Eq.rec` and cannot be read off, which would block
-`Bounds.polyTimeLinSpace` for every certificate built via `congr`. -/
+/-- Transport leaves the time bound alone.
+
+`congr` copies the resource fields *verbatim* and confines `Eq.rec` to the `Prop` fields, so this
+and its siblings hold by `rfl` and a transported certificate's bounds stay definitionally readable
+through any chain of retargets. Transporting the whole structure instead would leave them stuck
+behind `Eq.rec`, silently disabling `Bounds.polyTimeLinSpace` for every derived certificate. -/
 @[simp] lemma congr_time {f g : α → β} (b : Bounds f) (h : f = g) :
-    (b.congr h).time = b.time := by cases h; rfl
+    (b.congr h).time = b.time := rfl
 
 /-- Transport leaves the space bound alone. -/
 @[simp] lemma congr_space {f g : α → β} (b : Bounds f) (h : f = g) :
-    (b.congr h).space = b.space := by cases h; rfl
+    (b.congr h).space = b.space := rfl
 
 /-- Transport leaves the output-size bound alone. -/
 @[simp] lemma congr_outSize {f g : α → β} (b : Bounds f) (h : f = g) :
-    (b.congr h).outSize = b.outSize := by cases h; rfl
+    (b.congr h).outSize = b.outSize := rfl
 
 /-- Weaken all three bounds at once. Composition produces one specific closed form; this is how
 one restates it more readably. -/

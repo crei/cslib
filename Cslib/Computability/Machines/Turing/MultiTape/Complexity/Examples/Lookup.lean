@@ -109,13 +109,13 @@ primitives is assumed. -/
 def lookupBounds [Fintype K] [Fintype V] :
     Bounds (lookupFn : Table K V × K → Option V) :=
   let hl : Bounds (lookupList : Table K V × K → Table K V) :=
-    (Bounds.fst : Bounds (Prod.fst : Table K V × K → Table K V)).congr rfl
+    Bounds.fst
   let hi : Bounds (lookupInit : Table K V × K → K × Option V) :=
-    (Bounds.pair (Bounds.snd : Bounds (Prod.snd : Table K V × K → K))
-      (Bounds.const (none : Option V))).congr rfl
+    (Bounds.pair Bounds.snd
+      (Bounds.const (none : Option V)))
   let hs : Bounds (Function.uncurry (lookupStep : K × Option V → K × V → K × Option V)) :=
     Bounds.ofFintype _
-  Bounds.comp (Bounds.snd : Bounds (Prod.snd : K × Option V → Option V))
+  Bounds.comp Bounds.snd
     (Bounds.fold hl hi hs (fun _ => accBound K V) monotone_const lookupAccSize)
 
 end Lookup

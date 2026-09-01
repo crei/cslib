@@ -70,29 +70,29 @@ def uHalt (halting : Q → Bool) (c : UCfg Q S) : Bool := halting c.2.1
 /-- A certificate for the halting test. -/
 def uHaltBounds [Fintype Q] (halting : Q → Bool) : Bounds (uHalt (S := S) halting) :=
   (Bounds.comp (Bounds.ofFintype halting)
-    (Bounds.comp (Bounds.fst : Bounds (Prod.fst : Q × Tape S → Q))
-      (Bounds.snd : Bounds (Prod.snd : UCfg Q S → Q × Tape S)))).congr rfl
+    (Bounds.comp Bounds.fst
+      Bounds.snd))
 
 /-- **A certificate for one universal step**, composed from the table lookup and the tape
 operations. -/
 def uStepBounds [Fintype Q] [Fintype S] (blank : S) (dflt : Instr Q S) :
     Bounds (uStep blank dflt) :=
   let tbl : Bounds (fun c : UCfg Q S => c.1) :=
-    (Bounds.fst : Bounds (Prod.fst : UCfg Q S → UTable Q S))
+    Bounds.fst
   let cfg : Bounds (fun c : UCfg Q S => c.2) :=
-    (Bounds.snd : Bounds (Prod.snd : UCfg Q S → Q × Tape S))
+    Bounds.snd
   let st : Bounds (fun c : UCfg Q S => c.2.1) :=
-    (Bounds.comp (Bounds.fst : Bounds (Prod.fst : Q × Tape S → Q)) cfg).congr rfl
+    (Bounds.comp Bounds.fst cfg)
   let tp : Bounds (fun c : UCfg Q S => c.2.2) :=
-    (Bounds.comp (Bounds.snd : Bounds (Prod.snd : Q × Tape S → Tape S)) cfg).congr rfl
+    (Bounds.comp Bounds.snd cfg)
   let rd : Bounds (fun c : UCfg Q S => read blank c.2.2) :=
-    (Bounds.comp (readBounds blank) tp).congr rfl
+    (Bounds.comp (readBounds blank) tp)
   let look : Bounds (fun c : UCfg Q S => lookupFn (c.1, (c.2.1, read blank c.2.2))) :=
-    (Bounds.comp lookupBounds (Bounds.pair tbl (Bounds.pair st rd))).congr rfl
+    Bounds.comp' _ lookupBounds (Bounds.pair tbl (Bounds.pair st rd))
   let instr : Bounds (fun c : UCfg Q S =>
       (lookupFn (c.1, (c.2.1, read blank c.2.2))).getD dflt) :=
-    (Bounds.comp (Bounds.optionGetD dflt) look).congr rfl
-  (Bounds.pair tbl (Bounds.comp (applyInstrBounds blank) (Bounds.pair instr cfg))).congr rfl
+    (Bounds.comp (Bounds.optionGetD dflt) look)
+  (Bounds.pair tbl (Bounds.comp (applyInstrBounds blank) (Bounds.pair instr cfg)))
 
 /-! ### How fast a configuration can grow -/
 
@@ -161,7 +161,7 @@ def uRunBounds [Fintype Q] [Fintype S] (blank : S) (dflt : Instr Q S) (halting :
     (N : ℕ → ℕ) (hN_mono : Monotone N)
     (hN : ∀ c, steps c ≤ N (DataEncode.encode c).size) :
     Bounds out :=
-  Bounds.while (Bounds.id : Bounds (id : UCfg Q S → UCfg Q S))
+  Bounds.while Bounds.id
     (uHaltBounds halting) (uStepBounds blank dflt) steps
     h_out h_halt h_first
     N (fun n => n + N n * stepGrowth (Q := Q) blank) hN_mono
@@ -240,12 +240,12 @@ def uRunBudgetBounds [Fintype Q] [Fintype S] (blank : S) (dflt : Instr Q S)
     (halting : Q → Bool) :
     Bounds (foldFun budgetList budgetInit (budgetFoldStep blank dflt halting)) :=
   Bounds.fold
-    ((Bounds.fst : Bounds (Prod.fst : List Unit × UCfg Q S → List Unit)).congr rfl)
-    ((Bounds.snd : Bounds (Prod.snd : List Unit × UCfg Q S → UCfg Q S)).congr rfl)
+    (Bounds.fst)
+    (Bounds.snd)
     ((Bounds.comp
-      (Bounds.ite (uHaltBounds halting) (Bounds.id : Bounds (id : UCfg Q S → UCfg Q S))
+      (Bounds.ite (uHaltBounds halting) Bounds.id
         (uStepBounds blank dflt))
-      (Bounds.fst : Bounds (Prod.fst : UCfg Q S × Unit → UCfg Q S))).congr rfl)
+      Bounds.fst))
     (fun n => n + n * stepGrowth (Q := Q) blank)
     (fun _ _ h => Nat.add_le_add h (Nat.mul_le_mul h (le_refl _)))
     (fun p j => by
@@ -316,19 +316,19 @@ def countStepBounds [Fintype Q] [Fintype S] (blank : S) (dflt : Instr Q S) :
     Bounds (countStep blank dflt) :=
   (Bounds.pair
     (Bounds.cons (Bounds.const (() : Unit))
-      (Bounds.fst : Bounds (Prod.fst : CCfg Q S → List Unit)))
+      Bounds.fst)
     (Bounds.comp (uStepBounds blank dflt)
-      (Bounds.snd : Bounds (Prod.snd : CCfg Q S → UCfg Q S)))).congr rfl
+      Bounds.snd))
 
 /-- A certificate for the counting loop's halting test. -/
 def countHaltBounds [Fintype Q] (halting : Q → Bool) : Bounds (countHalt (S := S) halting) :=
   (Bounds.comp (uHaltBounds halting)
-    (Bounds.snd : Bounds (Prod.snd : CCfg Q S → UCfg Q S))).congr rfl
+    Bounds.snd)
 
 /-- A certificate for the counting loop's initial accumulator. -/
 def countInitBounds : Bounds (countInit : UCfg Q S → CCfg Q S) :=
   (Bounds.pair (Bounds.const ([] : List Unit))
-    (Bounds.id : Bounds (id : UCfg Q S → UCfg Q S))).congr rfl
+    Bounds.id)
 
 /-- **A certificate for a run that reports its own step count.** The output is the pair of the
 step count, in unary, and the halting configuration. -/

@@ -260,8 +260,8 @@ theorem listUpdate_polyTimeLinSpace [DataEncode α]
 /-- Taking the list component is two projections. -/
 def listBounds [DataEncode α] : Bounds (updateList (α := α)) :=
   Bounds.congr
-    (Bounds.comp (Bounds.snd : Bounds (Prod.snd : α × List α → List α))
-      (Bounds.snd : Bounds (Prod.snd : ℕ × α × List α → α × List α))) rfl
+    (Bounds.comp Bounds.snd
+      Bounds.snd) rfl
 
 /-- Projecting the output list out of the accumulator is the same two projections. -/
 def outBounds [DataEncode α] : Bounds (updateOut (α := α)) :=

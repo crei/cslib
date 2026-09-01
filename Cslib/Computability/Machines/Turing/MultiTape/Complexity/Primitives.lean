@@ -269,6 +269,22 @@ def ite {c : α → Bool} {f g : α → β} (hc : Bounds c) (hf : Bounds f) (hg 
     · simp only [Bool.cond_false]; omega
     · simp only [Bool.cond_true]; omega
 
+/-- **Retargeted composition.** Like `Bounds.comp`, but with the composite named up front.
+
+`Bounds.comp` produces `Bounds (g ∘ f)`, and matching that against a caller's expected type runs
+higher-order unification, which at *nested* compositions picks the trivial split (`g := everything`,
+`f := id`) and then rejects the arguments. Naming the target makes `fg` a first-order unification
+against the expected type; `f` and `g` come from the arguments; and the `autoParam` checks the
+split only once everything is determined. Pass `h` explicitly for a retarget that is not `rfl`. -/
+def comp' (fg : α → γ) {f : α → β} {g : β → γ} (hg : Bounds g) (hf : Bounds f)
+    (h : g ∘ f = fg := by rfl) : Bounds fg :=
+  (comp hg hf).congr h
+
+/-- **Retargeted fan-out**, for the same reason as `Bounds.comp'`. -/
+def pair' (fg : α → β × γ) {f : α → β} {g : α → γ} (hf : Bounds f) (hg : Bounds g)
+    (h : (fun a => (f a, g a)) = fg := by rfl) : Bounds fg :=
+  (pair hf hg).congr h
+
 /-- The unary cons, derived: pair up the two projections and cons them. -/
 def consUncurried : Bounds (fun p : β × List β => p.1 :: p.2) :=
   cons fst snd

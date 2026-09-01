@@ -96,13 +96,13 @@ def moveCursor {α : Type} (blank : α) (m : SignType) (c : Cursor α) : Cursor 
   | .neg => cursorL blank c
   | .pos => cursorR blank c
 
-@[simp] lemma moveCursor_zero {α : Type} (blank : α) (c : Cursor α) :
+lemma moveCursor_zero {α : Type} (blank : α) (c : Cursor α) :
     moveCursor blank SignType.zero c = c := rfl
 
-@[simp] lemma moveCursor_neg {α : Type} (blank : α) (c : Cursor α) :
+lemma moveCursor_neg {α : Type} (blank : α) (c : Cursor α) :
     moveCursor blank SignType.neg c = cursorL blank c := rfl
 
-@[simp] lemma moveCursor_pos {α : Type} (blank : α) (c : Cursor α) :
+lemma moveCursor_pos {α : Type} (blank : α) (c : Cursor α) :
     moveCursor blank SignType.pos c = cursorR blank c := rfl
 
 /-- **Moving the cursor implements `moveInputPos`**, clamping included. -/
