@@ -63,6 +63,27 @@ def id : Bounds (_root_.id : α → α) where
   computes := sorry
   out_le _ := le_refl _
 
+/-- **Re-tagging along an encoding-preserving map.** If `f` leaves the encoding untouched then the
+identity machine already computes it, so this is *derived* from `Bounds.id` rather than assumed —
+note the absence of a `sorry`.
+
+This is what makes `structure`s usable: define `DataEncode` for a structure via
+`DataEncode.ofInjection toProd`, and `toProd` (and its inverse) satisfy the hypothesis by `rfl`,
+so field accessors become ordinary `Bounds.fst`/`Bounds.snd` chains. -/
+def recode {f : α → β} (h : ∀ a, DataEncode.encode (f a) = DataEncode.encode a) : Bounds f where
+  time n := n + 2
+  space _ := 0
+  outSize n := n
+  time_mono := fun _ _ hn => Nat.add_le_add_right hn 2
+  space_mono := monotone_const
+  outSize_mono := monotone_id
+  computes := by
+    obtain ⟨k, sym, state, emb, tm, hm⟩ := (id (α := α)).computes
+    refine ⟨k, sym, state, emb, tm, fun a => ?_⟩
+    obtain ⟨t', ht', s', hs', hc⟩ := hm a
+    exact ⟨t', ht', s', hs', by rw [h a]; exact hc⟩
+  out_le a := le_of_eq (congrArg Data.size (h a))
+
 /-- **Constants.** Emit a fixed value; its size is a constant of the machine. -/
 def const (b : β) : Bounds (fun _ : α => b) where
   time _ := (DataEncode.encode b).size + 2

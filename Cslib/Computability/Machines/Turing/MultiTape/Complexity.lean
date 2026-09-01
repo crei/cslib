@@ -15,7 +15,9 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.BoundsAtt
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.BoundsTactic
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Fold
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.While
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.DepthRec
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.Cnf
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.Reach
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListIndex
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListMap
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListUpdate
@@ -79,6 +81,7 @@ every example's fold, all of the size bookkeeping, and the whole simulation stac
 | `Complexity/Primitives.lean` | the elementary building blocks (machines assumed) |
 | `Complexity/Fold.lean` | `foldl_computableUpTo` and `Bounds.fold` |
 | `Complexity/While.lean` | `Bounds.while`, unbounded iteration |
+| `Complexity/DepthRec.lean` | `Bounds.depthRec`, recursion whose depth depends on the input |
 | `Complexity/BoundsAttr.lean`, `BoundsTactic.lean` | `@[bounds]` and the `bounds` tactic |
 
 Worked examples of the fold theorem:

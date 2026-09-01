@@ -53,6 +53,19 @@ class DataEncode (α : Type) where
   /-- Encodings really are that shallow. -/
   h_depth : ∀ a, (encode a).depth ≤ depth
 
+/-- **Encode along an injection.** The workhorse for `structure`s: give an injective map to a type
+that is already encodable, and the encoding, its injectivity and its depth bound all follow.
+
+Because `encode a` is *definitionally* `encode (f a)`, the map `f` is a no-op on encodings, and
+`Bounds.recode` gives it a certificate for free. -/
+@[instance_reducible]
+def DataEncode.ofInjection {α β : Type} [DataEncode β] (f : α → β)
+    (hf : Function.Injective f) : DataEncode α where
+  encode a := DataEncode.encode (f a)
+  h_inj := DataEncode.h_inj.comp hf
+  depth := DataEncode.depth β
+  h_depth a := DataEncode.h_depth (f a)
+
 instance : DataEncode Bool where
   encode b := if b then Data.l [Data.l []] else Data.l []
   h_inj := by intro a b h; cases a <;> cases b <;> simp_all
