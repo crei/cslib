@@ -366,6 +366,127 @@ def enterBounds (E : V → V → Bool) (verts : List V)
       (Bounds.const false) (Bounds.const false))).congr
     (by funext q; simp [enter, scanning, Function.uncurry])
 
+/-! ## The resource obligations -/
+
+/-- Reachability as a function of the whole question — the shape `depthRec` certifies. -/
+def reachOf (E : V → V → Bool) (verts : List V) (q : Question V) : Bool :=
+  reach E verts q.1 q.2.1 q.2.2
+
+omit [DataEncode V] in
+/-- `heval`, packaged for `depthRec`. -/
+lemma heval' (E : V → V → Bool) (verts : List V) (q : Question V) :
+    Eval (schema E verts) q (reachOf E verts q) := heval E verts q.1 q.2.1 q.2.2
+
+/-- **`D`: the opening level is bounded by the input size.** -/
+lemma level_enter_le (E : V → V → Bool) (verts : List V) (q : Question V) :
+    (schema E verts).level ((schema E verts).enter q) ≤ (DataEncode.encode q).size := by
+  have h2 : (DataEncode.encode q).size
+      = (DataEncode.encode q.1).size + (DataEncode.encode q.2).size + 2 :=
+    DataEncode.size_pair _ _
+  simp only [schema, enter]
+  cases hc : q.1.isEmpty with
+  | true => simp
+  | false =>
+    simp only [Bool.cond_false, scanning]
+    have := DataEncode.length_le_size q.1
+    omega
+
+/-- **The frame invariant.** The level only ever shrinks, the midpoint list is always a suffix of
+`verts`, and the two endpoints are drawn from the original question or from `verts`. -/
+def FrameOK (verts : List V) (q : Question V) (s : Activation V) : Prop :=
+  s.level.length ≤ q.1.length ∧ (∃ n, s.remaining = verts.drop n) ∧
+    s.source ∈ q.2.1 :: q.2.2 :: default :: verts ∧
+    s.target ∈ q.2.1 :: q.2.2 :: default :: verts
+
+omit [DataEncode V] [DecidableEq V] in
+/-- The head of a suffix of `verts` is one of the listed vertices. -/
+lemma head_mem {verts r : List V} (h : ∃ n, r = verts.drop n) (q : Question V) :
+    r.head?.getD default ∈ q.2.1 :: q.2.2 :: default :: verts := by
+  obtain ⟨n, rfl⟩ := h
+  cases hd : (verts.drop n).head? with
+  | none => simp
+  | some v =>
+    have hv : v ∈ verts := List.mem_of_mem_drop (List.mem_of_head? hd)
+    simp [hv]
+
+omit [DataEncode V] in
+/-- Both endpoints of a sub-question stay within the allowed set. -/
+lemma ask_endpoints_mem (E : V → V → Bool) (verts : List V) (q : Question V) (s : Activation V)
+    (hs : FrameOK verts q s) :
+    ((schema E verts).ask s).2.1 ∈ q.2.1 :: q.2.2 :: default :: verts ∧
+      ((schema E verts).ask s).2.2 ∈ q.2.1 :: q.2.2 :: default :: verts := by
+  obtain ⟨-, hrem, hsrc, htgt⟩ := hs
+  have hhead := head_mem hrem q
+  simp only [schema, ask]
+  cases hw : s.awaitingRight
+  · exact ⟨by simpa using hsrc, by simpa using hhead⟩
+  · exact ⟨by simpa using hhead, by simpa using htgt⟩
+
+omit [DataEncode V] [Inhabited V] in
+/-- The level of a freshly entered activation. -/
+lemma enter_level (E : V → V → Bool) (verts : List V) (p : Question V) :
+    (enter E verts p).level = cond p.1.isEmpty [] p.1 := by
+  cases hc : p.1.isEmpty <;> simp [enter, scanning, hc]
+
+omit [DataEncode V] [Inhabited V] in
+/-- Its midpoint list. -/
+lemma enter_remaining (E : V → V → Bool) (verts : List V) (p : Question V) :
+    (enter E verts p).remaining = cond p.1.isEmpty [] verts := by
+  cases hc : p.1.isEmpty <;> simp [enter, scanning, hc]
+
+omit [DataEncode V] [Inhabited V] in
+/-- Its endpoints, which are the question's. -/
+lemma enter_endpoints (E : V → V → Bool) (verts : List V) (p : Question V) :
+    (enter E verts p).source = p.2.1 ∧ (enter E verts p).target = p.2.2 := by
+  cases hc : p.1.isEmpty <;>
+    exact ⟨by simp [enter, scanning, hc], by simp [enter, scanning, hc]⟩
+
+omit [DataEncode V] in
+/-- The invariant holds at the opening activation. -/
+lemma frameOK_enter (E : V → V → Bool) (verts : List V) (q : Question V) :
+    FrameOK verts q ((schema E verts).enter q) := by
+  obtain ⟨he1, he2⟩ := enter_endpoints E verts q
+  simp only [schema]
+  refine ⟨?_, ?_, by simp [he1], by simp [he2]⟩
+  · rw [enter_level]; cases q.1.isEmpty <;> simp
+  · rw [enter_remaining]; cases q.1.isEmpty
+    · exact ⟨0, by simp⟩
+    · exact ⟨verts.length, by simp⟩
+
+omit [DataEncode V] in
+/-- The invariant survives entering a sub-question. -/
+lemma frameOK_ask (E : V → V → Bool) (verts : List V) (q : Question V) (s : Activation V)
+    (hs : FrameOK verts q s) :
+    FrameOK verts q ((schema E verts).enter ((schema E verts).ask s)) := by
+  obtain ⟨hsrc', htgt'⟩ := ask_endpoints_mem E verts q s hs
+  obtain ⟨hlen, -, -, -⟩ := hs
+  obtain ⟨he1, he2⟩ := enter_endpoints E verts ((schema E verts).ask s)
+  simp only [schema] at hsrc' htgt' he1 he2 ⊢
+  have hlen' : (ask s).1.length ≤ q.1.length := by
+    have : (ask s).1 = s.level.tail := rfl
+    rw [this]
+    calc s.level.tail.length ≤ s.level.length := by simp
+      _ ≤ q.1.length := hlen
+  refine ⟨?_, ?_, by rw [he1]; exact hsrc', by rw [he2]; exact htgt'⟩
+  · rw [enter_level]; cases (ask s).1.isEmpty <;> simp [hlen']
+  · rw [enter_remaining]; cases (ask s).1.isEmpty
+    · exact ⟨0, by simp⟩
+    · exact ⟨verts.length, by simp⟩
+
+omit [DataEncode V] in
+/-- The invariant survives resumption. -/
+lemma frameOK_resume (E : V → V → Bool) (verts : List V) (q : Question V) (s : Activation V)
+    (ans : Bool) (hs : FrameOK verts q s) :
+    FrameOK verts q ((schema E verts).resume s ans) := by
+  obtain ⟨hlen, ⟨n, hn⟩, hsrc, htgt⟩ := hs
+  cases ans <;> cases hw : s.awaitingRight <;>
+    refine ⟨by simpa [schema, resume, hw] using hlen, ?_,
+      by simpa [schema, resume, hw] using hsrc, by simpa [schema, resume, hw] using htgt⟩
+  · exact ⟨n + 1, by simp [schema, resume, hw, hn, List.tail_drop]⟩
+  · exact ⟨n + 1, by simp [schema, resume, hw, hn, List.tail_drop]⟩
+  · exact ⟨n, by simp [schema, resume, hw, hn]⟩
+  · exact ⟨n, by simp [schema, resume, hw, hn]⟩
+
 end Reach
 
 end MultiTapeTM
