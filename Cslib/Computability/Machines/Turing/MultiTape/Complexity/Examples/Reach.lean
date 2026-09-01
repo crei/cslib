@@ -7,6 +7,7 @@ Authors: Christian Reitwiessner
 module
 
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.DepthRec
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.BoundsTactic
 
 /-!
 # Reachability by double recursion
@@ -236,6 +237,134 @@ lemma heval (E : V → V → Bool) (verts : List V) (k : Level) (a b : V) :
     change EvalFrom (schema E verts) ((schema E verts).enter ((u :: ks : Level), a, b)) _
     rw [he]
     simpa [reach] using scan E verts ks u (fun x y => ih x y) a b verts
+
+/-! ## Certificates for the schema's fields
+
+Each field is a first-order function, which is the point of the `RecSchema` shape: they can be
+certified separately with the ordinary combinators. The structure's fields are reached through
+`Activation.toProd`, which `Bounds.recode` certifies for free. -/
+
+/-- Viewing an activation as its underlying tuple: a no-op on encodings. -/
+def toProdBounds : Bounds (Activation.toProd (V := V)) := Bounds.recode (fun _ => rfl)
+
+/-- Building an activation from its components: also a no-op on encodings. -/
+def ofProdBounds : Bounds (Activation.ofProd (V := V)) := Bounds.recode (fun _ => rfl)
+
+/-- `level` -/
+def levelBounds : Bounds (fun s : Activation V => s.level) :=
+  Bounds.comp' _ Bounds.fst toProdBounds
+
+/-- `source` -/
+def sourceBounds : Bounds (fun s : Activation V => s.source) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst Bounds.snd) toProdBounds
+
+/-- `target` -/
+def targetBounds : Bounds (fun s : Activation V => s.target) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst (Bounds.comp' _ Bounds.snd Bounds.snd)) toProdBounds
+
+/-- `remaining` -/
+def remainingBounds : Bounds (fun s : Activation V => s.remaining) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst
+    (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd Bounds.snd))) toProdBounds
+
+/-- `finished` -/
+def finishedBounds : Bounds (fun s : Activation V => s.finished) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst (Bounds.comp' _ Bounds.snd
+    (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd Bounds.snd)))) toProdBounds
+
+/-- `result` -/
+def resultBounds : Bounds (fun s : Activation V => s.result) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd
+    (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd Bounds.snd))))) toProdBounds
+
+/-- `awaitingRight` -/
+def awaitingRightBounds : Bounds (fun s : Activation V => s.awaitingRight) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd
+    (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd Bounds.snd))))) toProdBounds
+
+attribute [bounds] levelBounds sourceBounds targetBounds remainingBounds finishedBounds
+  resultBounds awaitingRightBounds ofProdBounds
+
+/-- Boolean disjunction, on the finite type `Bool × Bool`. -/
+def orBounds : Bounds (Function.uncurry (· || · : Bool → Bool → Bool)) := Bounds.ofFintype _
+
+attribute [bounds] orBounds
+
+/-- `answer` is a single field access. -/
+def answerBounds : Bounds (answer (V := V)) := by bounds
+
+/-- `isDone` is two `isEmpty` tests and two disjunctions. -/
+def isDoneBounds : Bounds (isDone (V := V)) :=
+  Bounds.comp' _ orBounds
+    (Bounds.pair finishedBounds
+      (Bounds.comp' _ orBounds
+        (Bounds.pair (Bounds.comp' _ Bounds.isEmpty remainingBounds)
+          (Bounds.comp' _ Bounds.isEmpty levelBounds))))
+    (by funext s; simp [isDone, Bool.or_assoc])
+
+/-- **Assembling an activation** from certificates for its seven components. `Activation.ofProd`
+is a no-op on encodings, so this costs no more than the fan-out that builds the tuple. -/
+def mkActivation {α : Type} [DataEncode α] {fLevel : α → Level} {fSource fTarget : α → V}
+    {fRemaining : α → List V} {fFinished fResult fAwait : α → Bool}
+    (hLevel : Bounds fLevel) (hSource : Bounds fSource) (hTarget : Bounds fTarget)
+    (hRemaining : Bounds fRemaining) (hFinished : Bounds fFinished) (hResult : Bounds fResult)
+    (hAwait : Bounds fAwait) :
+    Bounds (fun a => ({
+      level := fLevel a, source := fSource a, target := fTarget a,
+      remaining := fRemaining a, finished := fFinished a, result := fResult a,
+      awaitingRight := fAwait a } : Activation V)) :=
+  Bounds.comp' _ ofProdBounds
+    (Bounds.pair hLevel (Bounds.pair hSource (Bounds.pair hTarget (Bounds.pair hRemaining
+      (Bounds.pair hFinished (Bounds.pair hResult hAwait))))))
+
+/-- `ask`: drop one level, and pick the half determined by `awaitingRight`. -/
+def askBounds : Bounds (ask (V := V)) :=
+  Bounds.pair' _ (Bounds.comp' _ Bounds.tail levelBounds)
+    (Bounds.pair' _
+      (Bounds.ite awaitingRightBounds
+        (Bounds.comp' _ (Bounds.headD default) remainingBounds) sourceBounds)
+      (Bounds.ite awaitingRightBounds targetBounds
+        (Bounds.comp' _ (Bounds.headD default) remainingBounds)))
+
+/-- `resume`, as a function of the pair `(activation, sub-answer)`. -/
+def resumeBounds : Bounds (Function.uncurry (resume (V := V))) :=
+  Bounds.ite Bounds.snd
+    (Bounds.ite (Bounds.comp' _ awaitingRightBounds Bounds.fst)
+      (mkActivation (Bounds.comp' _ levelBounds Bounds.fst)
+        (Bounds.comp' _ sourceBounds Bounds.fst) (Bounds.comp' _ targetBounds Bounds.fst)
+        (Bounds.comp' _ remainingBounds Bounds.fst) (Bounds.const true) (Bounds.const true)
+        (Bounds.const false))
+      (mkActivation (Bounds.comp' _ levelBounds Bounds.fst)
+        (Bounds.comp' _ sourceBounds Bounds.fst) (Bounds.comp' _ targetBounds Bounds.fst)
+        (Bounds.comp' _ remainingBounds Bounds.fst)
+        (Bounds.comp' _ finishedBounds Bounds.fst) (Bounds.comp' _ resultBounds Bounds.fst)
+        (Bounds.const true)))
+    (mkActivation (Bounds.comp' _ levelBounds Bounds.fst)
+      (Bounds.comp' _ sourceBounds Bounds.fst) (Bounds.comp' _ targetBounds Bounds.fst)
+      (Bounds.comp' _ Bounds.tail (Bounds.comp' _ remainingBounds Bounds.fst))
+      (Bounds.const false) (Bounds.const false) (Bounds.const false))
+
+/-- The two endpoints of a question. -/
+def endpointsBounds : Bounds (fun q : Question V => (q.2.1, q.2.2)) :=
+  Bounds.pair (Bounds.comp' _ Bounds.fst Bounds.snd) (Bounds.comp' _ Bounds.snd Bounds.snd)
+
+/-- `enter`. The level-zero branch is the only place the graph is consulted, so the certificates
+for vertex equality and for the edge relation are this example's only hypotheses — they depend on
+how the graph is represented, which `reach` deliberately does not fix. -/
+def enterBounds (E : V → V → Bool) (verts : List V)
+    (hEq : Bounds (Function.uncurry (· == · : V → V → Bool)))
+    (hE : Bounds (Function.uncurry E)) :
+    Bounds (enter E verts) :=
+  (Bounds.ite (Bounds.comp' _ Bounds.isEmpty Bounds.fst)
+    (mkActivation (Bounds.const ([] : Level)) (Bounds.comp' _ Bounds.fst Bounds.snd)
+      (Bounds.comp' _ Bounds.snd Bounds.snd) (Bounds.const ([] : List V)) (Bounds.const true)
+      (Bounds.comp' _ orBounds
+        (Bounds.pair (Bounds.comp' _ hEq endpointsBounds) (Bounds.comp' _ hE endpointsBounds)))
+      (Bounds.const false))
+    (mkActivation Bounds.fst (Bounds.comp' _ Bounds.fst Bounds.snd)
+      (Bounds.comp' _ Bounds.snd Bounds.snd) (Bounds.const verts) (Bounds.const false)
+      (Bounds.const false) (Bounds.const false))).congr
+    (by funext q; simp [enter, scanning, Function.uncurry])
 
 end Reach
 
