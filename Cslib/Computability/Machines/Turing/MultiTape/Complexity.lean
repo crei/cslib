@@ -11,8 +11,11 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Encoding
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Defs
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Bounds
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Primitives
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.BoundsAttr
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.BoundsTactic
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Fold
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.While
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.Cnf
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListIndex
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListMap
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.ListUpdate
@@ -21,6 +24,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.LookupTable
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.MachineDesc
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.Tape
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.Synthesis
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.TapeView
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.TapeStep
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Examples.SimConfig
@@ -56,6 +60,13 @@ every example's fold, all of the size bookkeeping, and the whole simulation stac
   is not encodable: its `workTapes` field is a family of functions `ℤ → Option Symbol`.
 * `Simulation.zipper_length_le_spaceUsed` — that simulation's storage is bounded by the simulated
   machine's `spaceUsedByTape`, *not* by its running time.
+* `Cnf.formulaSat_polyTimeLinSpace` — **verifying a CNF assignment is polynomial time and linear
+  space**, the `SAT ∈ NP` verifier. It takes no hypotheses: the certificate chain behind it rests
+  only on the assumed primitives above. Seven of its ten certificates are synthesised by the
+  `bounds` tactic; the three that are not are exactly the folds, whose accumulator bounds a tactic
+  cannot invent.
+* The `bounds` tactic (`Complexity/BoundsTactic.lean`) — synthesises a `Bounds` certificate for a
+  Lean function by recursing on its definition, using `@[bounds]`-tagged certificates as leaves.
 
 ## Layout
 
@@ -68,6 +79,7 @@ every example's fold, all of the size bookkeeping, and the whole simulation stac
 | `Complexity/Primitives.lean` | the elementary building blocks (machines assumed) |
 | `Complexity/Fold.lean` | `foldl_computableUpTo` and `Bounds.fold` |
 | `Complexity/While.lean` | `Bounds.while`, unbounded iteration |
+| `Complexity/BoundsAttr.lean`, `BoundsTactic.lean` | `@[bounds]` and the `bounds` tactic |
 
 Worked examples of the fold theorem:
 
