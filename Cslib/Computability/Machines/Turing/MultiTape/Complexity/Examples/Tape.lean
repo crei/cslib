@@ -30,13 +30,13 @@ get their certificates by composing `Bounds.fst`, `Bounds.snd`, `Bounds.cons`, `
 is introduced.** One step of a simulated single-tape machine costs no more than the primitives it
 is built from, and the bound is computed rather than asserted.
 
-## What is still missing for a universal machine
+## Where this leads
 
-`simStep` takes its transition function `tr` as a *fixed* function on finite types, so
-`Bounds.ofFintype` applies. A genuinely universal machine reads the transition table off its input
-instead, which means looking a key up in an encoded association list — that is a fold with an
-`Option` accumulator, structurally the same argument as `ListIndex`. That, plus iterating `simStep`
-under a step counter, is what remains.
+`simStep` takes its transition function as a *fixed* function on finite types, so
+`Bounds.ofFintype` covers it. A genuinely universal machine reads its transition table off the
+input instead; that search is `Examples/Lookup.lean`, and the machine built on it is
+`Examples/Universal.lean`. What remains missing is only the machines themselves — see the status
+note in `Complexity.lean`.
 -/
 
 @[expose] public section

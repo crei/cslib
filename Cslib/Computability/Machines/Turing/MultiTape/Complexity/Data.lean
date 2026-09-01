@@ -41,10 +41,6 @@ inductive Data where
   | l : List Data → Data
   deriving Repr
 
-/-- The children of a node. -/
-def Data.asList : Data → List Data
-  | Data.l xs => xs
-
 /-- The empty rose tree. -/
 abbrev Data.empty : Data := Data.l []
 

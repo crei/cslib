@@ -118,10 +118,11 @@ The exact new extent depends on the action — a no-op widens nothing, a write c
 the head, a move covers the cell it steps onto — so the statement is existential in `lo'` and `hi'`
 with the widening bounded. That bound is what keeps a simulation's space proportional to the
 simulated machine's space rather than to its running time. -/
-lemma Extent.applyAction (blank : S) (a : Option S × SignType) {t : Tape S} {lo p hi : ℤ}
+lemma Extent.of_applyAction (blank : S) (a : Option S × SignType) {t : Tape S} {lo p hi : ℤ}
     (h : Extent t lo p hi) :
-    ∃ lo' hi', Extent (Simulation.applyAction blank a t) lo' (p + (a.2 : ℤ)) hi'
-      ∧ min lo (p - 1) ≤ lo' ∧ lo' ≤ lo ∧ hi ≤ hi' ∧ hi' ≤ max hi (p + 1) := by
+    ∃ lo' hi', Extent (applyAction blank a t) lo' (p + (a.2 : ℤ)) hi'
+      ∧ min lo (p - 1) ≤ lo' ∧ lo' ≤ lo ∧ hi ≤ hi' ∧ hi' ≤ max hi (p + 1)
+      ∧ (lo' = lo ∨ lo' = p + (a.2 : ℤ)) ∧ (hi' = hi ∨ hi' = p + 1) := by
   obtain ⟨h1, h2, _, _⟩ := id h
   obtain ⟨w, m⟩ := a
   have hz : p + ((SignType.zero : SignType) : ℤ) = p := by rw [signCast_zero]; ring
@@ -135,38 +136,36 @@ lemma Extent.applyAction (blank : S) (a : Option S × SignType) {t : Tape S} {lo
       rw [hz, applyAction_none_zero]
       exact h
     | neg =>
-      refine ⟨min lo (p - 1), hi, ?_, by omega, by omega, by omega, by omega⟩
+      refine ⟨min lo (p - 1), hi, ?_, by omega, by omega, by omega, by omega,
+        by rw [signCast_neg]; omega, Or.inl rfl⟩
       rw [hn, applyAction_none_neg]
-      exact Extent.moveL blank h
+      exact Extent.of_moveL blank h
     | pos =>
-      refine ⟨lo, max hi (p + 1), ?_, by omega, by omega, by omega, by omega⟩
+      refine ⟨lo, max hi (p + 1), ?_, by omega, by omega, by omega, by omega,
+        Or.inl rfl, by omega⟩
       rw [hp, applyAction_none_pos]
-      exact Extent.moveR blank h
+      exact Extent.of_moveR blank h
   | some s =>
-    have hw : Extent (Simulation.write (t, s)) lo p (max hi (p + 1)) := Extent.write s h
+    have hw : Extent (write (t, s)) lo p (max hi (p + 1)) := Extent.of_write s h
     cases m with
     | zero =>
-      refine ⟨lo, max hi (p + 1), ?_, by omega, by omega, by omega, by omega⟩
+      refine ⟨lo, max hi (p + 1), ?_, by omega, by omega, by omega, by omega,
+        Or.inl rfl, by omega⟩
       rw [hz, applyAction_some_zero]
       exact hw
     | neg =>
-      refine ⟨min lo (p - 1), max hi (p + 1), ?_, by omega, by omega, by omega, by omega⟩
+      refine ⟨min lo (p - 1), max hi (p + 1), ?_, by omega, by omega, by omega, by omega,
+        by rw [signCast_neg]; omega, by omega⟩
       rw [hn, applyAction_some_neg]
-      exact Extent.moveL blank hw
+      exact Extent.of_moveL blank hw
     | pos =>
-      refine ⟨lo, max hi (p + 1), ?_, by omega, by omega, by omega, by omega⟩
-      have hm := Extent.moveR blank hw
+      refine ⟨lo, max hi (p + 1), ?_, by omega, by omega, by omega, by omega,
+        Or.inl rfl, by omega⟩
+      have hm := Extent.of_moveR blank hw
       have hmax : max (max hi (p + 1)) (p + 1) = max hi (p + 1) := by omega
       rw [hmax] at hm
       rw [hp, applyAction_some_pos]
       exact hm
-
-/-- The stored span grows by at most two cells per action. -/
-lemma Extent.applyAction_span {lo p hi lo' hi' : ℤ}
-    (h1 : min lo (p - 1) ≤ lo') (h2 : lo' ≤ lo) (h3 : hi ≤ hi') (h4 : hi' ≤ max hi (p + 1))
-    (hlo : lo ≤ p) (hhi : p ≤ hi) :
-    (hi' - lo').toNat ≤ (hi - lo).toNat + 2 := by
-  omega
 
 end Simulation
 

@@ -227,6 +227,24 @@ lemma Represents.step {sym state : ℕ} {inp : List (Fin sym)}
       simp only []
       rw [hout]
 
+/-- How `cfgStep` acts on a single work zipper, given the transition it uses. -/
+lemma workZipper_cfgStep {sym state : ℕ} (tm : MultiTapeTM k (Fin sym) (Fin state))
+    (sc : SimCfg sym state) (q : Fin state) (hq : sc.1 = some q)
+    (o : TransitionOut k (Fin sym) (Fin state))
+    (ho : tm.tr q (cursorRead none sc.2.1)
+      (fun j : Fin k => read none (workZipper sc j.val)) = o) (i : Fin k) :
+    workZipper (cfgStep tm sc) i.val
+      = applyAction none (o.workActions i) (workZipper sc i.val) := by
+  have hsim : cfgStep tm sc =
+      (o.q', moveCursor none o.inputMove sc.2.1,
+       List.ofFn (fun j : Fin k => applyAction none (o.workActions j) (workZipper sc j.val)),
+       sc.2.2.2 ++ o.outS.toList) := by
+    simp only [cfgStep, hq, ho]
+  rw [hsim]
+  unfold workZipper
+  rw [List.getElem?_ofFn, dite_eq_left i.isLt]
+  simp
+
 /-! ### Assembly: a finite computation reproduces the whole run -/
 
 /-- The finite stand-in for the initial configuration: the start state, the cursor just past the

@@ -156,7 +156,7 @@ lemma natOfBits_cons (b : Bool) (bs : List Bool) :
     natOfBits (b :: bs) = Nat.bit b (natOfBits bs) := rfl
 
 /-- `Nat.bit` in arithmetic form. -/
-lemma Nat.bit_eq_two_mul_add (b : Bool) (n : ℕ) :
+lemma natBit_eq_two_mul_add (b : Bool) (n : ℕ) :
     Nat.bit b n = 2 * n + cond b 1 0 := by
   cases b <;> simp [Nat.bit]
 
@@ -169,7 +169,7 @@ lemma natOfBits_append_replicate_false (bs : List Bool) (k : ℕ) :
     simp only [List.nil_append]
     induction k with
     | zero => simp
-    | succ k ih => simp [List.replicate_succ, ih, Nat.bit_eq_two_mul_add]
+    | succ k ih => simp [List.replicate_succ, ih, natBit_eq_two_mul_add]
   | cons b bs ih => simp [ih]
 
 /-- A bit list of length `k` denotes a number below `2 ^ k`. -/
@@ -177,16 +177,16 @@ lemma natOfBits_lt (bs : List Bool) : natOfBits bs < 2 ^ bs.length := by
   induction bs with
   | nil => simp
   | cons b bs ih =>
-    simp only [natOfBits_cons, Nat.bit_eq_two_mul_add, List.length_cons, pow_succ]
+    simp only [natOfBits_cons, natBit_eq_two_mul_add, List.length_cons, pow_succ]
     cases b <;> simp <;> omega
 
 /-- Multiplying adds at most the two bit lengths. -/
-lemma Nat.size_mul_le (a b : ℕ) : (a * b).size ≤ a.size + b.size := by
+lemma natSize_mul_le (a b : ℕ) : (a * b).size ≤ a.size + b.size := by
   rw [Nat.size_le, pow_add]
   exact Nat.mul_lt_mul_of_lt_of_lt (Nat.lt_size_self a) (Nat.lt_size_self b)
 
 /-- A power of two has bit length one more than its exponent. -/
-lemma Nat.size_two_pow_le (j : ℕ) : (2 ^ j).size ≤ j + 1 := by
+lemma natSize_two_pow_le (j : ℕ) : (2 ^ j).size ≤ j + 1 := by
   rw [Nat.size_le]
   exact Nat.pow_lt_pow_right (by omega) (by omega)
 
@@ -270,6 +270,12 @@ lemma DataEncode.size_cons {α : Type} [DataEncode α] (x : α) (xs : List α) :
   rw [DataEncode.size_list, DataEncode.size_list]
   simp only [List.map_cons, List.sum_cons]
   omega
+
+@[simp]
+lemma DataEncode.size_nil {α : Type} [DataEncode α] :
+    (DataEncode.encode ([] : List α)).size = 2 := by
+  change (Data.l []).size = 2
+  simp [Data.size]
 
 @[simp]
 lemma DataEncode.size_none {α : Type} [DataEncode α] :

@@ -28,18 +28,12 @@ configuration reachable from a finite starting tape is denoted by some zipper.
 
 ## What this does *not* do
 
-It does not build a universal `MultiTapeTM`. Two things are still missing, and they are of very
-different kinds:
-
-1. **Configuration-level simulation.** Lifting these lemmas from one tape to a whole
-   `MultiTapeTM.Cfg` — `k` work tapes (a `Fin k`-indexed family, so its finite stand-in is a
-   vector), the input head's `Fin (n + 2)` position, and the output list — and proving the finite
-   step commutes with `MultiTapeTM.step`. This is ordinary work: provable, just long.
-2. **Existence of the machine.** A statement of the form "there is a `MultiTapeTM` that simulates
-   every `MultiTapeTM`" cannot be proved from anything in this development, because *no* concrete
-   multi-tape machine is constructed anywhere in it. It reduces to the same assumed primitives as
-   every other example — see the status note in `Complexity.lean`. Building one is the real
-   remaining task, and nothing here shortens it.
+It does not build a universal `MultiTapeTM`. The configuration-level simulation this file supports
+is carried out in `Examples/SimConfig.lean` (`Represents`, `simulates`) and costed in
+`Examples/SimSpace.lean`. What is still missing is only the existence of the machines: no concrete
+multi-tape machine is constructed anywhere in this development, so a statement of the form "there
+is a `MultiTapeTM` that simulates every `MultiTapeTM`" reduces to the assumed primitives listed in
+`Complexity.lean` and is not shortened by anything here.
 -/
 
 @[expose] public section
@@ -141,108 +135,65 @@ lemma Extent.length_eq {t : Tape S} {lo p hi : ℤ} (h : Extent t lo p hi) :
   omega
 
 /-- Moving right extends the span only if the head was already at its right edge. -/
-lemma Extent.moveR (blank : S) {t : Tape S} {lo p hi : ℤ} (h : Extent t lo p hi) :
-    Extent (Simulation.moveR blank t) lo (p + 1) (max hi (p + 1)) := by
+lemma Extent.of_moveR (blank : S) {t : Tape S} {lo p hi : ℤ} (h : Extent t lo p hi) :
+    Extent (moveR blank t) lo (p + 1) (max hi (p + 1)) := by
   obtain ⟨h1, h2, h3, h4⟩ := h
   refine ⟨by omega, by omega, ?_, ?_⟩
-  · have e : (Simulation.moveR blank t).1.length = t.1.length + 1 := by simp [Simulation.moveR]
+  · have e : (moveR blank t).1.length = t.1.length + 1 := by simp [moveR]
     omega
   · cases hr : t.2 with
     | nil =>
-      have e : (Simulation.moveR blank t).2.length = 0 := by simp [Simulation.moveR, hr]
+      have e : (moveR blank t).2.length = 0 := by simp [moveR, hr]
       rw [hr] at h4
       simp only [List.length_nil] at h4
       omega
     | cons x rest =>
-      have e : (Simulation.moveR blank t).2.length = rest.length := by simp [Simulation.moveR, hr]
+      have e : (moveR blank t).2.length = rest.length := by simp [moveR, hr]
       rw [hr] at h4
       simp only [List.length_cons] at h4
       omega
 
 /-- Moving left extends the span only if the head was already at its left edge. -/
-lemma Extent.moveL (blank : S) {t : Tape S} {lo p hi : ℤ} (h : Extent t lo p hi) :
-    Extent (Simulation.moveL blank t) (min lo (p - 1)) (p - 1) hi := by
+lemma Extent.of_moveL (blank : S) {t : Tape S} {lo p hi : ℤ} (h : Extent t lo p hi) :
+    Extent (moveL blank t) (min lo (p - 1)) (p - 1) hi := by
   obtain ⟨h1, h2, h3, h4⟩ := h
   refine ⟨by omega, by omega, ?_, ?_⟩
   · cases hl : t.1 with
     | nil =>
-      have e : (Simulation.moveL blank t).1.length = 0 := by simp [Simulation.moveL, hl]
+      have e : (moveL blank t).1.length = 0 := by simp [moveL, hl]
       rw [hl] at h3
       simp only [List.length_nil] at h3
       omega
     | cons x l' =>
-      have e : (Simulation.moveL blank t).1.length = l'.length := by simp [Simulation.moveL, hl]
+      have e : (moveL blank t).1.length = l'.length := by simp [moveL, hl]
       rw [hl] at h3
       simp only [List.length_cons] at h3
       omega
-  · have e : (Simulation.moveL blank t).2.length = t.2.length + 1 := by simp [Simulation.moveL]
+  · have e : (moveL blank t).2.length = t.2.length + 1 := by simp [moveL]
     omega
 
 /-- Writing materialises the cell under the head, so it extends the span by at most that one
 cell — and never by more, however long the machine runs. -/
-lemma Extent.write {t : Tape S} {lo p hi : ℤ} (s : S) (h : Extent t lo p hi) :
-    Extent (Simulation.write (t, s)) lo p (max hi (p + 1)) := by
+lemma Extent.of_write {t : Tape S} {lo p hi : ℤ} (s : S) (h : Extent t lo p hi) :
+    Extent (write (t, s)) lo p (max hi (p + 1)) := by
   obtain ⟨h1, h2, h3, h4⟩ := h
   refine ⟨by omega, by omega, ?_, ?_⟩
-  · have e : (Simulation.write ((t, s) : Tape S × S)).1.length
-        = t.1.length := by simp [Simulation.write]
+  · have e : (write ((t, s) : Tape S × S)).1.length
+        = t.1.length := by simp [write]
     omega
   · cases hr : t.2 with
     | nil =>
-      have e : (Simulation.write ((t, s) : Tape S × S)).2.length = 1 := by
-        simp [Simulation.write, hr]
+      have e : (write ((t, s) : Tape S × S)).2.length = 1 := by
+        simp [write, hr]
       rw [hr] at h4
       simp only [List.length_nil] at h4
       omega
     | cons x rest =>
-      have e : (Simulation.write ((t, s) : Tape S × S)).2.length
-          = rest.length + 1 := by simp [Simulation.write, hr]
+      have e : (write ((t, s) : Tape S × S)).2.length
+          = rest.length + 1 := by simp [write, hr]
       rw [hr] at h4
       simp only [List.length_cons] at h4
       omega
-
-/-! ### The shape `MultiTapeTM.Cfg` expects -/
-
-/-- A finite stand-in for one work tape of `Turing.MultiTapeTM.Cfg`: a zipper together with the
-head position. `workTapeFun` turns it into exactly the `ℤ → Option Symbol` that
-`Cfg.workTapes i` is. -/
-abbrev WorkTape (Symbol : Type) := Tape (Option Symbol) × ℤ
-
-/-- The bi-infinite work tape denoted by a finite stand-in. -/
-def workTapeFun {Symbol : Type} (w : WorkTape Symbol) : ℤ → Option Symbol :=
-  tapeFun none w.1 w.2
-
-/-- **A real `MultiTapeTM.Cfg` built entirely from finite data.**
-
-Every field of `Cfg` except `workTapes` is already a finite value — an `Option State`, a
-`Fin (n + 2)`, a `List Symbol`. Only the work tapes are functions, and `workTapeFun` supplies
-them from zippers. So a configuration of a genuine multi-tape machine *is* encodable, and this
-definition is the witness. -/
-def toCfg {k : ℕ} {Symbol State : Type} {input : List Symbol}
-    (state : Option State) (inputPos : Fin (input.length + 2))
-    (ws : Fin k → WorkTape Symbol) (output : List Symbol) :
-    Cfg k Symbol State input where
-  state := state
-  inputPos := inputPos
-  workTapes i := workTapeFun (ws i)
-  workTapePos i := (ws i).2
-  output := output
-
-@[simp]
-lemma toCfg_workTapes {k : ℕ} {Symbol State : Type} {input : List Symbol}
-    (state : Option State) (inputPos : Fin (input.length + 2))
-    (ws : Fin k → WorkTape Symbol) (output : List Symbol) (i : Fin k) :
-    (toCfg (State := State) (input := input) state inputPos ws output).workTapes i
-      = tapeFun none (ws i).1 (ws i).2 := rfl
-
-/-- Under the denotation, reading a work tape of the built configuration is reading the zipper —
-`Cfg.workTapeSymbols` agrees with `Simulation.read`. -/
-lemma toCfg_workTapeSymbols {k : ℕ} {Symbol State : Type} {input : List Symbol}
-    (state : Option State) (inputPos : Fin (input.length + 2))
-    (ws : Fin k → WorkTape Symbol) (output : List Symbol) (i : Fin k) :
-    (toCfg (State := State) (input := input) state inputPos ws output).workTapeSymbols i
-      = read none (ws i).1 := by
-  simp [Cfg.workTapeSymbols, toCfg, workTapeFun]
 
 end Simulation
 

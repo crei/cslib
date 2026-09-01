@@ -74,10 +74,10 @@ lemma natOfBits_incSpec (c : Bool) (bs : List Bool) :
     natOfBits ((incSpec c bs).2 ++ cond (incSpec c bs).1 [true] [])
       = natOfBits bs + cond c 1 0 := by
   induction bs generalizing c with
-  | nil => cases c <;> simp [incSpec, Nat.bit_eq_two_mul_add]
+  | nil => cases c <;> simp [incSpec, natBit_eq_two_mul_add]
   | cons b bs ih =>
     have h := ih (c && b)
-    simp only [incSpec, List.cons_append, natOfBits_cons, Nat.bit_eq_two_mul_add]
+    simp only [incSpec, List.cons_append, natOfBits_cons, natBit_eq_two_mul_add]
     rw [h]
     cases c <;> cases b
     all_goals simp
@@ -124,9 +124,8 @@ lemma succAccSize (n j : ℕ) :
 
 lemma succFoldOutSize (n : ℕ) :
     (DataEncode.encode (foldFun succList succInit succStep n)).size
-      ≤ 4 * (DataEncode.encode n).size + 8 := by
-  rw [← foldAcc_length succList succInit succStep n]
-  exact succAccSize n _
+      ≤ 4 * (DataEncode.encode n).size + 8 :=
+  foldFun_size_le (fun n => 4 * n + 8) succAccSize n
 
 /-- **`Nat.succ` runs in polynomial time and linear space.** -/
 theorem succ_polyTimeLinSpace
@@ -145,9 +144,7 @@ theorem succ_polyTimeLinSpace
     funext flushCarry_foldFun
   rw [h_eq] at h_comp
   refine h_comp.absorb 6 2 34 (fun n => ?_) (fun n => ?_)
-  · have hexp : (n + n + 2) ^ 2 = 4 * n * n + 8 * n + 4 := by ring
-    rw [hexp]
-    nlinarith
+  · nlinarith [sq_nonneg n]
   · omega
 
 end NatSucc
@@ -218,12 +215,12 @@ lemma natOfBits_addSpec (c : Bool) (ps : List (Bool × Bool)) :
     natOfBits ((addSpec c ps).2 ++ cond (addSpec c ps).1 [true] [])
       = natOfBits (ps.map Prod.fst) + natOfBits (ps.map Prod.snd) + cond c 1 0 := by
   induction ps generalizing c with
-  | nil => cases c <;> simp [addSpec, Nat.bit_eq_two_mul_add]
+  | nil => cases c <;> simp [addSpec, natBit_eq_two_mul_add]
   | cons xy ps ih =>
     obtain ⟨x, y⟩ := xy
     have h := ih (carryOut c x y)
     simp only [addSpec, List.cons_append, List.map_cons, natOfBits_cons,
-      Nat.bit_eq_two_mul_add]
+      natBit_eq_two_mul_add]
     rw [h]
     cases c <;> cases x <;> cases y <;> simp [sumBit, carryOut] <;> omega
 
@@ -300,9 +297,8 @@ lemma addAccSize (p : ℕ × ℕ) (j : ℕ) :
 
 lemma addFoldOutSize (p : ℕ × ℕ) :
     (DataEncode.encode (foldFun addList addInit addStep p)).size
-      ≤ 4 * (DataEncode.encode p).size + 8 := by
-  rw [← foldAcc_length addList addInit addStep p]
-  exact addAccSize p _
+      ≤ 4 * (DataEncode.encode p).size + 8 :=
+  foldFun_size_le (fun n => 4 * n + 8) addAccSize p
 
 /-- **`Nat.add` runs in polynomial time and linear space.** -/
 theorem add_polyTimeLinSpace
@@ -321,9 +317,7 @@ theorem add_polyTimeLinSpace
     funext flushCarry_foldFun
   rw [h_eq] at h_comp
   refine h_comp.absorb 40 2 38 (fun n => ?_) (fun n => ?_)
-  · have hexp : (n + n + 2) ^ 2 = 4 * n * n + 8 * n + 4 := by ring
-    rw [hexp]
-    nlinarith
+  · nlinarith [sq_nonneg n]
   · omega
 
 end NatAdd

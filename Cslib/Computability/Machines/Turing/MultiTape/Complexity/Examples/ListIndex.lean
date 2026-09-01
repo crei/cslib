@@ -105,18 +105,6 @@ lemma foldFun_snd (p : ℕ × List α) :
 
 /-! ### Size bookkeeping -/
 
-private lemma mem_of_mem_take {l : List α} {j : ℕ} {x : α} (h : x ∈ l.take j) : x ∈ l := by
-  induction l generalizing j with
-  | nil => simp at h
-  | cons y ys ih =>
-    cases j with
-    | zero => simp at h
-    | succ k =>
-      rw [List.take_succ_cons] at h
-      rcases List.mem_cons.mp h with h | h
-      · simp [h]
-      · exact List.mem_cons_of_mem _ (ih h)
-
 /-- The counter never exceeds its initial value. -/
 lemma foldl_fst_le (l : List α) (m : ℕ) (r : Option α) :
     (l.foldl stepFn (m, r)).1 ≤ m := by
@@ -171,7 +159,7 @@ lemma accSize [DataEncode α] (p : ℕ × List α) (j : ℕ) :
     · rw [h, DataEncode.size_none]
       omega
     · rw [hx2, DataEncode.size_some]
-      have := DataEncode.size_mem_le (mem_of_mem_take hx)
+      have := DataEncode.size_mem_le (List.mem_of_mem_take hx)
       omega
   -- split the encoded pair (uses eta for structures)
   have hsplit : (DataEncode.encode ((l.take j).foldl stepFn (i + 1, none))).size
@@ -184,9 +172,8 @@ lemma accSize [DataEncode α] (p : ℕ × List α) (j : ℕ) :
 /-- The output of the fold is an accumulator, so it obeys the same bound: `S_f n = n + 8`. -/
 lemma foldOutSize [DataEncode α] (p : ℕ × List α) :
     (DataEncode.encode (foldFun listFn initFn stepFn p)).size
-      ≤ (DataEncode.encode p).size + 8 := by
-  rw [← foldAcc_length listFn initFn stepFn p]
-  exact accSize p _
+      ≤ (DataEncode.encode p).size + 8 :=
+  foldFun_size_le (fun n => n + 8) accSize p
 
 /-! ### The complexity statement -/
 

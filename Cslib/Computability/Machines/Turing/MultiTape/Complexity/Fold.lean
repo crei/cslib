@@ -42,6 +42,17 @@ lemma foldAcc_length (list : α → List β) (init : α → γ) (step : γ → �
     foldAcc list init step a (list a).length = foldFun list init step a := by
   simp [foldAcc, foldFun]
 
+omit [DataEncode β] in
+/-- An accumulator bound is automatically a bound on the fold's *output*, since the output is the
+accumulator after the last element. Every example needs this, and so does `Bounds.fold`. -/
+lemma foldFun_size_le {list : α → List β} {init : α → γ} {step : γ → β → γ} (A : ℕ → ℕ)
+    (hA : ∀ (a : α) (j : ℕ),
+      (DataEncode.encode (foldAcc list init step a j)).size ≤ A (DataEncode.encode a).size)
+    (a : α) :
+    (DataEncode.encode (foldFun list init step a)).size ≤ A (DataEncode.encode a).size := by
+  rw [← foldAcc_length list init step a]
+  exact hA a _
+
 /--
 **Complexity of `foldl` on multi-tape Turing machines.**
 
@@ -115,9 +126,7 @@ def Bounds.fold {list : α → List β} {init : α → γ} {step : γ → β →
       (hl.outSize_mono h)
   outSize_mono := hA_mono
   computes := sorry
-  out_le a := by
-    rw [← foldAcc_length list init step a]
-    exact hA a _
+  out_le := foldFun_size_le A hA
 
 /-- A `foldl` whose step ignores the element is iteration: the list only supplies a trip count.
 This is how a step *budget* on the input turns into a bounded run. -/

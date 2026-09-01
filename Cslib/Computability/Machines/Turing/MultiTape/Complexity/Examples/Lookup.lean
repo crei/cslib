@@ -101,15 +101,6 @@ lemma lookupAccSize [Fintype K] [Fintype V] (p : Table K V × K) (j : ℕ) :
   Finset.le_sup (f := fun a : K × Option V => (DataEncode.encode a).size) (Finset.mem_univ _)
 
 omit [BEq K] in
-lemma lookupListSize (p : Table K V × K) :
-    (DataEncode.encode (lookupList p)).size ≤ (DataEncode.encode p).size := by
-  obtain ⟨tbl, k⟩ := p
-  have h : (DataEncode.encode ((tbl, k) : Table K V × K)).size
-      = (DataEncode.encode tbl).size + (DataEncode.encode k).size + 2 :=
-    DataEncode.size_pair _ _
-  change (DataEncode.encode tbl).size ≤ _
-  omega
-
 /-! ### The certificate -/
 
 /-- **A resource certificate for lookup**, from `Bounds.fold`. The step is a function between

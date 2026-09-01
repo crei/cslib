@@ -217,9 +217,8 @@ lemma accSize [DataEncode α] (p : ℕ × α × List α) (j : ℕ) :
 /-- The output of the fold is an accumulator, so it obeys the same bound: `S_f n = 2 * n + 6`. -/
 lemma foldOutSize [DataEncode α] (p : ℕ × α × List α) :
     (DataEncode.encode (foldFun updateList updateInit updateStep p)).size
-      ≤ 2 * (DataEncode.encode p).size + 6 := by
-  rw [← foldAcc_length updateList updateInit updateStep p]
-  exact accSize p _
+      ≤ 2 * (DataEncode.encode p).size + 6 :=
+  foldFun_size_le (fun n => 2 * n + 6) accSize p
 
 /-! ### The complexity statement -/
 
@@ -266,9 +265,7 @@ def listBounds [DataEncode α] : Bounds (updateList (α := α)) :=
 
 /-- Projecting the output list out of the accumulator is the same two projections. -/
 def outBounds [DataEncode α] : Bounds (updateOut (α := α)) :=
-  Bounds.congr
-    (Bounds.comp (Bounds.snd : Bounds (Prod.snd : α × List α → List α))
-      (Bounds.snd : Bounds (Prod.snd : ℕ × α × List α → α × List α))) rfl
+  listBounds
 
 /-- **List update in the `Bounds` algebra.**
 

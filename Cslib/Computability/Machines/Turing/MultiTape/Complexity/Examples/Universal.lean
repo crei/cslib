@@ -311,6 +311,7 @@ lemma countStep_size_le [Fintype Q] [Fintype S] (blank : S) (dflt : Instr Q S) (
   unfold countGrowth
   omega
 
+/-- A certificate for the counting step: tick the counter and take one universal step. -/
 def countStepBounds [Fintype Q] [Fintype S] (blank : S) (dflt : Instr Q S) :
     Bounds (countStep blank dflt) :=
   (Bounds.pair
@@ -319,10 +320,12 @@ def countStepBounds [Fintype Q] [Fintype S] (blank : S) (dflt : Instr Q S) :
     (Bounds.comp (uStepBounds blank dflt)
       (Bounds.snd : Bounds (Prod.snd : CCfg Q S → UCfg Q S)))).congr rfl
 
+/-- A certificate for the counting loop's halting test. -/
 def countHaltBounds [Fintype Q] (halting : Q → Bool) : Bounds (countHalt (S := S) halting) :=
   (Bounds.comp (uHaltBounds halting)
     (Bounds.snd : Bounds (Prod.snd : CCfg Q S → UCfg Q S))).congr rfl
 
+/-- A certificate for the counting loop's initial accumulator. -/
 def countInitBounds : Bounds (countInit : UCfg Q S → CCfg Q S) :=
   (Bounds.pair (Bounds.const ([] : List Unit))
     (Bounds.id : Bounds (id : UCfg Q S → UCfg Q S))).congr rfl

@@ -57,7 +57,7 @@ lemma foldl_mulStep (bs : List Bool) (acc sh : ℕ) :
     change (bs.foldl mulStep (acc + cond b sh 0, sh + sh)) = _
     rw [ih]
     cases b <;>
-      simp only [natOfBits_cons, Nat.bit_eq_two_mul_add, List.length_cons, pow_succ,
+      simp only [natOfBits_cons, natBit_eq_two_mul_add, List.length_cons, pow_succ,
         Bool.cond_true, Bool.cond_false, Prod.mk.injEq] <;>
       constructor <;> ring
 
@@ -98,10 +98,10 @@ lemma mulAccSize (p : ℕ × ℕ) (j : ℕ) :
     rw [List.length_take, Nat.size_eq_bits_len]
     omega
   have h1 : (natOfBits (b.bits.take j) * a).size ≤ b.size + a.size :=
-    le_trans (Nat.size_mul_le _ _) (Nat.add_le_add_right (size_natOfBits_take b j) _)
+    le_trans (natSize_mul_le _ _) (Nat.add_le_add_right (size_natOfBits_take b j) _)
   have h2 : (a * 2 ^ (b.bits.take j).length).size ≤ a.size + b.size + 1 := by
-    have := Nat.size_mul_le a (2 ^ (b.bits.take j).length)
-    have := Nat.size_two_pow_le (b.bits.take j).length
+    have := natSize_mul_le a (2 ^ (b.bits.take j).length)
+    have := natSize_two_pow_le (b.bits.take j).length
     omega
   rw [foldAcc_mul, DataEncode.size_pair, DataEncode.size_pair,
     DataEncode.size_nat, DataEncode.size_nat, DataEncode.size_nat, DataEncode.size_nat]
@@ -119,9 +119,8 @@ lemma mulListSize (p : ℕ × ℕ) :
 
 lemma mulFoldOutSize (p : ℕ × ℕ) :
     (DataEncode.encode (foldFun mulList mulInit mulStep p)).size
-      ≤ 2 * (DataEncode.encode p).size := by
-  rw [← foldAcc_length mulList mulInit mulStep p]
-  exact mulAccSize p _
+      ≤ 2 * (DataEncode.encode p).size :=
+  foldFun_size_le (fun n => 2 * n) mulAccSize p
 
 /-- **`Nat.mul` runs in polynomial time and linear space.** -/
 theorem mul_polyTimeLinSpace
@@ -140,9 +139,7 @@ theorem mul_polyTimeLinSpace
     funext foldFun_mul
   rw [h_eq] at h_comp
   refine h_comp.absorb 1 2 12 (fun n => ?_) (fun n => ?_)
-  · have hexp : (n + n + 2) ^ 2 = 4 * n * n + 8 * n + 4 := by ring
-    rw [hexp]
-    nlinarith
+  · nlinarith [sq_nonneg n]
   · omega
 
 end NatMul

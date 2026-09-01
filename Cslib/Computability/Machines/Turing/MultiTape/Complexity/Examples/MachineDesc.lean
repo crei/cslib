@@ -20,7 +20,7 @@ This file therefore replaces every one of those types by `ℕ`. A state is its i
 is `Option ℕ` (with `none` the blank), and the work-head tuple `Fin k → Option Symbol` becomes a
 plain `List`. The resulting types `UKey` and `UOut` are built solely from `ℕ`, `Option`, `List`,
 `Prod` and `SignType`, so they inherit `DataEncode` from `Encoding` with no new instance, and —
-this is the point of being untyped — a *single* value of type `UTable` can describe a machine for
+this is the point of being untyped — one `UntypedTable` value can describe a machine for
 any `k`, any alphabet size and any state count. One universal machine can interpret them all.
 
 The description itself, `desc`, is the transition function tabulated over its (finite) domain:
@@ -56,7 +56,7 @@ symbol to output and the successor state (`none` to halt). -/
 abbrev UOut := SignType × List UAction × USym × Option ℕ
 
 /-- An untyped machine description: the transition function as an association list. -/
-abbrev UTable := Lookup.Table UKey UOut
+abbrev UntypedTable := Lookup.Table UKey UOut
 
 /-! ### Erasing the types -/
 
@@ -74,7 +74,8 @@ def outOf {k sym state : ℕ} (o : TransitionOut k (Fin sym) (Fin state)) : UOut
 
 /-- **The description of a machine**: its transition function tabulated over the whole (finite)
 domain, keyed by `keyOf`. -/
-noncomputable def desc {k sym state : ℕ} (tm : MultiTapeTM k (Fin sym) (Fin state)) : UTable :=
+noncomputable def desc {k sym state : ℕ}
+    (tm : MultiTapeTM k (Fin sym) (Fin state)) : UntypedTable :=
   Finset.univ.toList.map fun x : Fin state × Option (Fin sym) × (Fin k → Option (Fin sym)) =>
     (keyOf x.1 x.2.1 x.2.2, outOf (tm.tr x.1 x.2.1 x.2.2))
 

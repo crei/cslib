@@ -82,7 +82,8 @@ lemma exists_eq_between {f : ℕ → ℤ} (hstep : ∀ j, |f (j + 1) - f j| ≤ 
 
 /-- **The span between any two visited positions is bounded by the number of positions visited.**
 This is the abstract form of "a zipper is no bigger than the space used". -/
-lemma card_image_ge {f : ℕ → ℤ} (hstep : ∀ j, |f (j + 1) - f j| ≤ 1) (n : ℕ) {a b : ℕ}
+lemma natAbs_sub_add_one_le_card_image {f : ℕ → ℤ}
+    (hstep : ∀ j, |f (j + 1) - f j| ≤ 1) (n : ℕ) {a b : ℕ}
     (ha : a ≤ n) (hb : b ≤ n) :
     (f b - f a).natAbs + 1 ≤ ((Finset.range (n + 1)).image f).card := by
   have hsub : Finset.Icc (min (f a) (f b)) (max (f a) (f b))
@@ -117,7 +118,8 @@ lemma span_le_spaceUsedByTape {k : ℕ} {Symbol State : Type*}
     rw [MultiTapeTM.runFrom_succ_eq_step']
     exact MultiTapeTM.workTapePos_step_le _ i
   unfold MultiTapeTM.spaceUsedByTape MultiTapeTM.visitedByTapeHead
-  exact card_image_ge (f := fun j => (tm.runFrom cfg j).workTapePos i) hstep t ha hb
+  exact natAbs_sub_add_one_le_card_image
+    (f := fun j => (tm.runFrom cfg j).workTapePos i) hstep t ha hb
 
 end Simulation
 

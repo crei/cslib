@@ -102,9 +102,7 @@ theorem map_polyTimeLinSpace (f : α → β) (c : ℕ)
     funext (foldFun_map f)
   rw [h_eq] at h_fold
   refine h_fold.absorb (c + 8) 2 (2 * c + 6) (fun n => ?_) (fun n => ?_)
-  · have hexp : (n + n + 2) ^ 2 = 4 * n * n + 8 * n + 4 := by ring
-    rw [hexp]
-    nlinarith
+  · nlinarith [sq_nonneg n]
   · nlinarith
 
 /-- **`List.map` in the `Bounds` algebra.**
