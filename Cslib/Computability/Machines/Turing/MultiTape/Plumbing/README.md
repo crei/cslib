@@ -99,6 +99,41 @@ scanning for the first blank.
 
 All of these are linear in the length of the contents and touch only the tapes they are given.
 
+### `Words.lean`
+
+The interface the combinators actually use. `TapesHold ws cfg` says that every work tape holds a
+word, and `TransformsTapes tm P Q t s` is `TransformsCfg` restricted to such configurations, with
+the input head normalised to position `1` and the output left unchanged. Restricting to
+word-holding configurations removes all of the bookkeeping from the combinators: the tapes a
+machine did not touch are described by the postcondition (`ws' l = ws l`) rather than by a set of
+tape indices, so `Cfg.AgreesOutside` never appears, and the configuration is determined by the
+words, so machines compose by reasoning about words only.
+
+Since the bounds are numbers, a specification whose bounds depend on the data is a *family*
+`∀ j, TransformsTapes tm (P j) (Q j) (t j) (s j)` over one fixed machine; `branch` and `repeat` are
+therefore stated over an arbitrary index type, because their machine is built once and specified
+once per index.
+
+Scratch tapes are not exposed. A result of the shape `∃ m c, ∀ k i o keep, …` says that `m` scratch
+tapes suffice, so the caller may use any machine with enough tapes, designating an input tape `i`,
+an output tape `o` and a set `keep` of tapes that have to survive the call; every tape outside
+`keep` is blank before and after.
+
+* `transformsTapes_seq`, `exists_transformsTapes_branch`, `exists_transformsTapes_nop`,
+  `exists_transformsTapes_clear`: composition, branching and the two trivial machines,
+* `exists_transformsTapes_repeat`: running a machine over and over until the first symbol of a tape
+  says the loop is over. This is the loop-back that `seq` cannot express — `seq` sends the halting
+  state of one machine to the initial state of the *next* one, this one sends it back to the
+  initial state of the *same* one — and it is the only reason the loop combinator needs the machine
+  level at all. Its space bound is `2 * k * s + k` rather than `s`, because a round starts with all
+  heads at `0` and heads move by at most one cell per step, so the cells visited by all rounds lie
+  within distance `s` of `0` on each tape,
+* `exists_transformsTapes_ofComputable`, `exists_transformsTapes_ofComputableInput`: evaluating a
+  computable function on work tapes, reading its argument from a work tape resp. from the real
+  input tape. These fold together the clean normal form, `onTape` and `liftTapes`,
+* `computableInTimeAndSpace_of_transformsTapes`: emitting a work tape as the output, which turns a
+  tape transformation back into a computation.
+
 ### `OnTape.lean`
 
 The bridge between the machine level and the function level.
@@ -131,6 +166,7 @@ Deterministic, TapeLemmas
         ├── Clean
         └── TapeContents
               └── OnTape   (also needs Clean)
+                    └── Words   (also needs Sequential, LiftTapes)
 ```
 
-The combinators use only `Sequential`, `LiftTapes`, `Clean`, `TapeContents` and `OnTape`.
+The combinators use only `Words`; everything below it is what `Words` is to be proved from.

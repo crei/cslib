@@ -28,14 +28,21 @@ functions is the identity.
 * `Turing.MultiTapeTM.computableInTimeAndSpace_comp`: the complexity of a composition.
 -/
 
--- `proof_wanted` emits a private declaration, so this module contains no public ones yet.
-set_option linter.privateModule false
-
 @[expose] public section
 
 namespace Turing.MultiTapeTM
 
 variable {α β γ : Type*}
+
+/-- **Complexity of the identity.** A machine can copy its input to its output one symbol at a
+time, so the identity is computable in linear time and zero space, relative to any encoding.
+
+Together with `computableInTimeAndSpace_comp` this is what recodes a value from one encoding to
+another, and what copies the input of a machine onto a work tape. -/
+public theorem computableInTimeAndSpace_id {enc : α ↪ List Bool} :
+    ∃ c, ComputableInTimeAndSpace (id : α → α) enc enc
+      (fun a => c * ((enc a).length + 1)) (fun _ => 0) :=
+  sorry
 
 /-- **Complexity of a composition.** The bounds are those of the two machines, plus the length of
 the encoded intermediate result, which has to be written to and read from a work tape. -/

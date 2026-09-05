@@ -70,10 +70,12 @@ public structure IsOptionEncoding (enc : α ↪ List Bool) (encOpt : Option α �
 
 /-- Testing an encoded value for `none` is computable in constant time and zero space, for every
 encoding of `Option α`, since the function is constant except at the single argument `none`. -/
-proof_wanted computableInTimeAndSpace_isNone {encOpt : Option α ↪ List Bool}
+public theorem computableInTimeAndSpace_isNone {encOpt : Option α ↪ List Bool}
     {encBool : Bool ↪ List Bool} :
     ∃ c, ComputableInTimeAndSpace (fun o : Option α => o.isNone) encOpt encBool
-      (fun _ => c) (fun _ => 0)
+      (fun _ => c) (fun _ => 0) :=
+  computableInTimeAndSpace_of_exists_finite_ne ⟨false,
+    Set.Finite.subset (Set.finite_singleton none) (by rintro (_ | a) ha <;> simp_all)⟩
 
 /-- The canonical encoding of `Option α`: a tag bit, followed by the encoding of the value. -/
 public def encOption (enc : α ↪ List Bool) : Option α ↪ List Bool where

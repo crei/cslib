@@ -467,6 +467,32 @@ theorem ComputableInTimeAndSpace.congr {α β γ : Type*}
   rw [hin a, hout a]
   exact htm a
 
+/-- The output grows by at most one symbol per step. -/
+theorem length_output_runFrom_le (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) (t : ℕ) :
+    (tm.runFrom cfg t).output.length ≤ cfg.output.length + t := by
+  induction t with
+  | zero => simp
+  | succ t ih =>
+    rw [runFrom_succ_eq_step', step_output, List.length_append]
+    have : (tm.outputSymbol (tm.runFrom cfg t)).toList.length ≤ 1 := by
+      cases tm.outputSymbol (tm.runFrom cfg t) <;> simp
+    omega
+
+/-- A machine emits at most one symbol per step, so the encoded result of a computation is no
+longer than its time bound. This is the only bound available on the length of an intermediate
+result: a machine can produce an output much longer than the space it uses. -/
+theorem ComputableInTimeAndSpace.length_encOut_le {α β : Type*}
+    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {f : α → β} {t s : α → ℕ}
+    (h : ComputableInTimeAndSpace f encIn encOut t s) (a : α) :
+    (encOut (f a)).length ≤ t a := by
+  obtain ⟨k, State, _, tm, htm⟩ := h
+  obtain ⟨t', ht', s', _, _, hout, _⟩ := htm a
+  have hlen := length_output_runFrom_le tm (tm.initCfg (encIn a)) t'
+  rw [hout] at hlen
+  simp only [initCfg, List.length_nil, Nat.zero_add] at hlen
+  omega
+
 open Classical in
 /-- The indicator function of a language. -/
 noncomputable def indicator {α : Type*} (L : Set α) : α → Bool

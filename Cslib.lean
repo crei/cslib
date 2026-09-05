@@ -59,6 +59,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.LiftTapes
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.OnTape
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Sequential
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TapeContents
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Words
 public import Cslib.Computability.Machines.Turing.MultiTape.TapeLemmas
 public import Cslib.Computability.Machines.Turing.SingleTape.Defs
 public import Cslib.Computability.Machines.Turing.SingleTape.Deterministic
