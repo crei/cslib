@@ -22,15 +22,15 @@ This result also holds for functions whose domain is already finite.
 
 ## Main Results
 
-* `encodedComputableInTimeAndSpace_of_finite`: Every function on a finite type is computable in
+* `computableInTimeAndSpace_of_finite`: Every function on a finite type is computable in
     constant time and zero space, relative to any encoding.
-* `encodedComputableInTimeAndSpace_of_exists_finite_ne`: Every function that is constant except
+* `computableInTimeAndSpace_of_exists_finite_ne`: Every function that is constant except
     for a finite number of arguments is computable in constant time and zero space, relative to any
     encoding.
-* `encodedComputableInTimeAndSpace_of_const`: Every constant function is computable in constant
+* `computableInTimeAndSpace_of_const`: Every constant function is computable in constant
     time and zero space, relative to any encoding.
-* `encodedComputableInTimeAndSpace_almostConstTime` and
-    `encodedComputableInTimeAndSpace_finiteFunTime`: The same with explicit time bounds.
+* `computableInTimeAndSpace_almostConstTime` and
+    `computableInTimeAndSpace_finiteFunTime`: The same with explicit time bounds.
 
 -/
 
@@ -316,8 +316,8 @@ lemma reaches_write (h : ∀ a ∉ S, encOut (f a) = out) (a : α) :
     exact (h a ha).symm
 
 /-- The machine `almostConstTM` computes `f` in at most `almostConstTime` steps and no space. -/
-lemma computesEncodedFunInTimeAndSpace_almostConstTM (h : ∀ a ∉ S, encOut (f a) = out) :
-    ComputesEncodedFunInTimeAndSpace (almostConstTM encIn encOut f S out) encIn encOut f
+lemma computesFunInTimeAndSpace_almostConstTM (h : ∀ a ∉ S, encOut (f a) = out) :
+    ComputesFunInTimeAndSpace (almostConstTM encIn encOut f S out) encIn encOut f
       (fun _ => almostConstTime encIn encOut f S out) (fun _ => 0) := by
   intro a
   obtain ⟨j, hjle, hj, hrun⟩ := reaches_write h a
@@ -341,29 +341,29 @@ variable {α β : Type*} {encIn : α ↪ List Bool} {encOut : β ↪ List Bool}
 
 /-- Every function whose encoded output is constant outside of a finite set is computable in time
 `almostConstTime` and zero space. -/
-public theorem encodedComputableInTimeAndSpace_almostConstTime
+public theorem computableInTimeAndSpace_almostConstTime
     (f : α → β) (S : Finset α) (out : List Bool) (h : ∀ a ∉ S, encOut (f a) = out) :
-    EncodedComputableInTimeAndSpace f encIn encOut
+    ComputableInTimeAndSpace f encIn encOut
       (fun _ => almostConstTime encIn encOut f S out) (fun _ => 0) :=
   ⟨0, AlmostConstState encIn encOut f S out, inferInstance, almostConstTM encIn encOut f S out,
-    computesEncodedFunInTimeAndSpace_almostConstTM h⟩
+    computesFunInTimeAndSpace_almostConstTM h⟩
 
 /-- Every almost constant function is computable in constant time and zero space. -/
-public theorem encodedComputableInTimeAndSpace_of_exists_finite_ne
+public theorem computableInTimeAndSpace_of_exists_finite_ne
     {f : α → β} (h : ∃ b : β, {a : α | f a ≠ b}.Finite) :
-    ∃ c, EncodedComputableInTimeAndSpace f encIn encOut (fun _ => c) (fun _ => 0) := by
+    ∃ c, ComputableInTimeAndSpace f encIn encOut (fun _ => c) (fun _ => 0) := by
   obtain ⟨b, hb⟩ := h
-  refine ⟨_, encodedComputableInTimeAndSpace_almostConstTime f hb.toFinset (encOut b) ?_⟩
+  refine ⟨_, computableInTimeAndSpace_almostConstTime f hb.toFinset (encOut b) ?_⟩
   intro a ha
   simp only [Set.Finite.mem_toFinset, Set.mem_ofPred_eq, not_not] at ha
   rw [ha]
 
 /-- Every constant function is computable in constant time and zero space. -/
-public theorem encodedComputableInTimeAndSpace_of_const {α β : Type*}
+public theorem computableInTimeAndSpace_of_const {α β : Type*}
     {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} (b : β) :
-    ∃ c, EncodedComputableInTimeAndSpace (Function.const α b) encIn encOut
+    ∃ c, ComputableInTimeAndSpace (Function.const α b) encIn encOut
       (fun _ => c) (fun _ => 0) :=
-  encodedComputableInTimeAndSpace_of_exists_finite_ne ⟨b, by simp⟩
+  computableInTimeAndSpace_of_exists_finite_ne ⟨b, by simp⟩
 
 /-- A constant time bound for functions on a finite type. -/
 public noncomputable def finiteFunTime {α β : Type*} [Finite α] (encIn : α ↪ List Bool)
@@ -372,19 +372,19 @@ public noncomputable def finiteFunTime {α β : Type*} [Finite α] (encIn : α �
   almostConstTime encIn encOut f Finset.univ []
 
 /-- Every function on a finite type is computable in time `finiteFunTime` and zero space. -/
-public theorem encodedComputableInTimeAndSpace_finiteFunTime {α β : Type*} [Finite α]
+public theorem computableInTimeAndSpace_finiteFunTime {α β : Type*} [Finite α]
     {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} (f : α → β) :
-    EncodedComputableInTimeAndSpace f encIn encOut
+    ComputableInTimeAndSpace f encIn encOut
       (fun _ => finiteFunTime encIn encOut f) (fun _ => 0) :=
-  encodedComputableInTimeAndSpace_almostConstTime f (@Finset.univ α (Fintype.ofFinite α)) []
+  computableInTimeAndSpace_almostConstTime f (@Finset.univ α (Fintype.ofFinite α)) []
     fun a ha => absurd (@Finset.mem_univ α (Fintype.ofFinite α) a) ha
 
 /-- Every function on a finite type is computable in constant time and zero space. -/
-public theorem encodedComputableInTimeAndSpace_of_finite {α β : Type*} [Finite α]
+public theorem computableInTimeAndSpace_of_finite {α β : Type*} [Finite α]
     {encIn : α ↪ List Bool} {encOut : β ↪ List Bool}
     (f : α → β) :
-    ∃ c, EncodedComputableInTimeAndSpace f encIn encOut (fun _ => c) (fun _ => 0) :=
-  ⟨_, encodedComputableInTimeAndSpace_finiteFunTime f⟩
+    ∃ c, ComputableInTimeAndSpace f encIn encOut (fun _ => c) (fun _ => 0) :=
+  ⟨_, computableInTimeAndSpace_finiteFunTime f⟩
 
 end Results
 
