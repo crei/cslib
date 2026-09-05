@@ -12,7 +12,7 @@ public import Mathlib.Algebra.Order.Group.Abs
 public import Mathlib.Algebra.Order.Group.Int
 public import Mathlib.Algebra.Order.BigOperators.Group.Finset
 public import Mathlib.Computability.Language
-public import Mathlib.Data.Sign.Defs
+public import Mathlib.Basic.Sign.Defs
 public import Cslib.Foundations.Data.RelatesInSteps
 
 /-!
@@ -163,6 +163,14 @@ structure Cfg (k : ℕ) (Symbol State : Type*) (input : List Symbol) where
   /-- the contents of the write-only output tape -/
   output : List Symbol
 deriving Inhabited
+
+/-- Two configurations of a machine without work tapes are equal if their states, input head
+positions and outputs are equal. -/
+lemma Cfg.ext_zero_tapes {Symbol State : Type*} {input : List Symbol}
+    {cfg₁ cfg₂ : Cfg 0 Symbol State input} (state : cfg₁.state = cfg₂.state)
+    (inputPos : cfg₁.inputPos = cfg₂.inputPos) (output : cfg₁.output = cfg₂.output) :
+    cfg₁ = cfg₂ :=
+  Cfg.ext state inputPos (funext fun i => i.elim0) (funext fun i => i.elim0) output
 
 /-- Attempt to move the input tape head.
 The machine can only read one empty cell outside of the input,
@@ -384,43 +392,120 @@ def ComputesInTimeAndSpace
   (tm.runFrom (tm.initCfg input) t).output = output ∧
   tm.spaceUsed (tm.initCfg input) t = s
 
-/-- A proof that the Turing machine `tm` computes the function `f` such that on all inputs of
-length `n` it uses at most `t n` steps and `s n` space. It assumes an embedding function
-from the input/output alphabet into the machine alphabet.
+/-- A Turing machine `tm` computes the function `f`, relative to encodings of its input and output
+type into strings over the tape alphabet, using at most `t a` steps and `s a` space on input `a`.
+
 Note that this does not require the alphabet or state set to be finite. -/
 def ComputesFunInTimeAndSpace
+    {α β : Type*}
     (tm : MultiTapeTM k Symbol State)
-    {IOSymbol : Type*}
-    (f : List IOSymbol → List IOSymbol)
-    (toMachineSymbol : IOSymbol ↪ Symbol)
-    (t s : ℕ → ℕ) : Prop :=
-  ∀ input, ∃ t' ≤ t input.length, ∃ s' ≤ s input.length,
-  ComputesInTimeAndSpace tm (input.map toMachineSymbol) ((f input).map toMachineSymbol) t' s'
+    (encIn : α ↪ List Symbol)
+    (encOut : β ↪ List Symbol)
+    (f : α → β)
+    (t s : α → ℕ) : Prop :=
+  ∀ a, ∃ t' ≤ t a, ∃ s' ≤ s a,
+  ComputesInTimeAndSpace tm (encIn a) (encOut (f a)) t' s'
 
 /-- The main definition of complexity of multi-tape Turing machines:
-A proof that the function `f` is computable by some multi-tape Turing machine `tm` (with finite
-work alphabet and finite state set) via an alphabet embedding function `toMachineSymbol`,
-such that on all inputs of length `n`, `tm` uses at most `t n` steps and at most `s n` space. -/
-def ComputableInTimeAndSpace
-    {IOSymbol : Type*}
-    (f : List IOSymbol → List IOSymbol)
+the function `f` is computable by some multi-tape Turing machine with binary tape alphabet and
+finite state set, relative to the encodings `encIn` and `encOut` of its input and output type,
+using at most `t a` steps and at most `s a` space on input `a`. -/
+def ComputableInTimeAndSpace {α β : Type*}
+    (f : α → β)
+    (encIn : α ↪ List Bool)
+    (encOut : β ↪ List Bool)
+    (t s : α → ℕ) : Prop :=
+  ∃ (k : ℕ) (State : Type) (_ : Finite State) (tm : MultiTapeTM k Bool State),
+  ComputesFunInTimeAndSpace tm encIn encOut f t s
+
+/-- The variant of `ComputableInTimeAndSpace` in which the bounds depend only on the length of the
+encoded input. This is the notion used to define complexity classes, since those are defined by
+the asymptotics of the bounds in the input length. -/
+abbrev ComputableInTimeAndSpaceOfLength {α β : Type*}
+    (f : α → β)
+    (encIn : α ↪ List Bool)
+    (encOut : β ↪ List Bool)
     (t s : ℕ → ℕ) : Prop :=
-  ∃ (k sym state : ℕ) (toMachineSymbol : _) (tm : MultiTapeTM k (Fin sym) (Fin state)),
-  ComputesFunInTimeAndSpace tm f toMachineSymbol t s
+  ComputableInTimeAndSpace f encIn encOut
+    (fun a => t (encIn a).length) (fun a => s (encIn a).length)
+
+/-- Weakening of the resource bounds of `ComputesFunInTimeAndSpace`. -/
+theorem ComputesFunInTimeAndSpace.mono {α β : Type*}
+    {tm : MultiTapeTM k Symbol State} {encIn : α ↪ List Symbol} {encOut : β ↪ List Symbol}
+    {f : α → β} {t s t' s' : α → ℕ}
+    (h : ComputesFunInTimeAndSpace tm encIn encOut f t s)
+    (ht : ∀ a, t a ≤ t' a) (hs : ∀ a, s a ≤ s' a) :
+    ComputesFunInTimeAndSpace tm encIn encOut f t' s' := fun a => by
+  obtain ⟨t₀, ht₀, s₀, hs₀, hcomp⟩ := h a
+  exact ⟨t₀, ht₀.trans (ht a), s₀, hs₀.trans (hs a), hcomp⟩
+
+/-- Weakening of the resource bounds of `ComputableInTimeAndSpace`. In particular, bounds that are
+dominated by bounds on the encoded input length give `ComputableInTimeAndSpaceOfLength`. -/
+theorem ComputableInTimeAndSpace.mono {α β : Type*}
+    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {f : α → β} {t s t' s' : α → ℕ}
+    (h : ComputableInTimeAndSpace f encIn encOut t s)
+    (ht : ∀ a, t a ≤ t' a) (hs : ∀ a, s a ≤ s' a) :
+    ComputableInTimeAndSpace f encIn encOut t' s' := by
+  obtain ⟨k, State, _, tm, htm⟩ := h
+  exact ⟨k, State, ‹_›, tm, htm.mono ht hs⟩
+
+/-- Computability only depends on the two bit strings `encIn a` and `encOut (f a)`, so a
+computation can be read as a computation of a different function at different encodings, as long
+as those strings are the same.
+
+This is what makes destructors composable: a machine computing `body : α → Option α` at an
+encoding of `Option α` is, on inputs where the result is `some x`, literally a machine computing
+`x` at the encoding of `α` induced by `some`. -/
+theorem ComputableInTimeAndSpace.congr {α β γ : Type*}
+    {encIn encIn' : α ↪ List Bool} {encOut : β ↪ List Bool} {encOut' : γ ↪ List Bool}
+    {f : α → β} {g : α → γ} {t s : α → ℕ}
+    (h : ComputableInTimeAndSpace f encIn encOut t s)
+    (hin : ∀ a, encIn' a = encIn a) (hout : ∀ a, encOut' (g a) = encOut (f a)) :
+    ComputableInTimeAndSpace g encIn' encOut' t s := by
+  obtain ⟨k, State, _, tm, htm⟩ := h
+  refine ⟨k, State, ‹_›, tm, fun a => ?_⟩
+  rw [hin a, hout a]
+  exact htm a
+
+/-- The output grows by at most one symbol per step. -/
+theorem length_output_runFrom_le (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) (t : ℕ) :
+    (tm.runFrom cfg t).output.length ≤ cfg.output.length + t := by
+  induction t with
+  | zero => simp
+  | succ t ih =>
+    rw [runFrom_succ_eq_step', step_output, List.length_append]
+    have : (tm.outputSymbol (tm.runFrom cfg t)).toList.length ≤ 1 := by
+      cases tm.outputSymbol (tm.runFrom cfg t) <;> simp
+    omega
+
+/-- A machine emits at most one symbol per step, so the encoded result of a computation is no
+longer than its time bound. This is the only bound available on the length of an intermediate
+result: a machine can produce an output much longer than the space it uses. -/
+theorem ComputableInTimeAndSpace.length_encOut_le {α β : Type*}
+    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {f : α → β} {t s : α → ℕ}
+    (h : ComputableInTimeAndSpace f encIn encOut t s) (a : α) :
+    (encOut (f a)).length ≤ t a := by
+  obtain ⟨k, State, _, tm, htm⟩ := h
+  obtain ⟨t', ht', s', _, _, hout, _⟩ := htm a
+  have hlen := length_output_runFrom_le tm (tm.initCfg (encIn a)) t'
+  rw [hout] at hlen
+  simp only [initCfg, List.length_nil, Nat.zero_add] at hlen
+  omega
 
 open Classical in
 /-- The indicator function of a language. -/
-noncomputable def indicator {Symbol : Type*} [Inhabited Symbol] (L : Language Symbol) :
-    List Symbol → List Symbol
-  | x => if x ∈ L then [default] else []
+noncomputable def indicator {α : Type*} (L : Set α) : α → Bool
+  | x => if x ∈ L then true else false
 
 /-- A language is decidable in time `t` and space `s` if and only if its indicator function
 is computable in time `t` and space `s`. -/
 def DecidableInTimeAndSpace
-    {IOSymbol : Type} [Inhabited IOSymbol]
-    (L : Language IOSymbol)
+    {α : Type}
+    (L : Set α)
+    (enc : α ↪ List Bool)
     (t s : ℕ → ℕ) : Prop :=
-  ComputableInTimeAndSpace (indicator L) t s
+  ComputableInTimeAndSpaceOfLength (indicator L) enc ⟨([·]), by aesop⟩ t s
 
 /-- This lemma translates between the relational notion and the iterated step notion. The latter
 can be more convenient especially for deterministic machines as we have here. -/
