@@ -471,14 +471,15 @@ example {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encS 
           omega
       _ = c₃ * (c₁ + c₂ + 2) * (sc a + sf a + sg a + 1) := by ring
 
-/-- Total projections, available because *both* alternatives carry two naturals. This is what makes
-a destructuring `match` on `Span` expressible without any junk: a branch may read the fields of the
-alternative it is not in, since it is never run there — but here it does not even have to. -/
+/-- Which alternative a span is. -/
 def Span.tag : Span → Bool
   | .ofLength .. => false
   | .ofBounds .. => true
 
-/-- The first field of either alternative. -/
+/-- The first field of either alternative. Total, because *both* alternatives carry two naturals,
+which is what makes a destructuring `match` on `Span` expressible without any junk: a branch may
+read the fields of the alternative it is not in, since it is never run there — but here it does
+not even have to. -/
 def Span.fst : Span → ℕ
   | .ofLength u _ => u
   | .ofBounds u _ => u
@@ -497,21 +498,26 @@ function reading both fields, so `hagree` is the whole content of the destructur
 `rfl` once the scrutinee is case split — the projections agree with the pattern variables by
 definition of the projections.
 
-`hbr` is where the remaining work is. It asks that a branch, as a function of the *input* rather
-than of the payload, be computable, and that is what a computable destructor per field plus
-pairing would supply: extract the two fields, pair them with the input, and compose with the
-branch. Those are requirements on the encoding, not further combinators. -/
-example {α β : Type} {encIn : α ↪ List Bool} {encB : Bool ↪ List Bool} {encOut : β ↪ List Bool}
-    {sel : α → Span} {onLength onBounds : α → ℕ → ℕ → β} {t s : α → ℕ}
-    (htag : ComputableInTimeAndSpace (fun a => (sel a).tag) encIn encB t s)
+The scrutinee is the input itself, so this is `Span`'s eliminator and nothing more; matching on a
+scrutinee *computed* from some other input is the same theorem with `sel` in front, as in the
+`Shape` examples.
+
+The two hypotheses are the whole of what a type has to supply. `htag` says the alternative can be
+read off, which is a requirement on `encS` and the one thing no combinator can provide. `hbr` says
+a branch is computable as a function of the value being matched rather than of its payload, and
+that is a computable destructor per field composed with the branch — pairing the two fields, since
+the branch is binary. Both are requirements on the encoding, not further combinators. -/
+example {β : Type} {encS : Span ↪ List Bool} {encB : Bool ↪ List Bool} {encOut : β ↪ List Bool}
+    {onLength onBounds : ℕ → ℕ → β} {t s : Span → ℕ}
+    (htag : ComputableInTimeAndSpace Span.tag encS encB t s)
     (hbr : ∀ b : Bool, ComputableInTimeAndSpace
-      (fun a => (bif b then onBounds else onLength) a (sel a).fst (sel a).snd) encIn encOut t s) :
+      (fun x => (bif b then onBounds else onLength) x.fst x.snd) encS encOut t s) :
     ∃ c, ComputableInTimeAndSpace
-      (fun a => match sel a with
-        | .ofLength u v => onLength a u v
-        | .ofBounds u v => onBounds a u v)
-      encIn encOut
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
-  computableInTimeAndSpace_match (fun a => by cases sel a <;> rfl) htag hbr
+      (fun x => match x with
+        | .ofLength u v => onLength u v
+        | .ofBounds u v => onBounds u v)
+      encS encOut
+      (fun x => c * (t x + 1)) (fun x => c * (s x + 1)) :=
+  computableInTimeAndSpace_match (fun x => by cases x <;> rfl) htag hbr
 
 end CslibTests
