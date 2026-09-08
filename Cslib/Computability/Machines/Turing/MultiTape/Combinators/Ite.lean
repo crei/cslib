@@ -1,0 +1,213 @@
+/-
+Copyright (c) 2026 Christian Reitwiessner. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Christian Reitwiessner
+-/
+
+module
+
+public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
+
+/-!
+# Complexity of a case analysis
+
+A case analysis runs a machine that says which case holds and then continues with the machine for
+that case. This file has one primitive, `computableInTimeAndSpace_match`, which does exactly that
+for a scrutinee in an arbitrary finite type; `cond`, `ite` and `dite` are the instances at `Bool`.
+
+## Why the finite case is the primitive and not the binary one
+
+Lean's `ite` is not primitive: `ite c t e` is `Decidable.casesOn`, the recursor of the two
+constructor inductive `Decidable c`, whose constructors carry only proofs. Since `Prop` is erased,
+the computational content of `ite` is exactly the recursor of `Bool`, and a `match` on a finite
+inductive type is that recursor nested once per constructor. So `Bool.rec` is the primitive of the
+*elaborator*.
+
+It is not the right primitive here, because a machine does not nest. Deciding among `n` cases is
+one machine reading a scrutinee of constant length and dispatching from its finite control, which
+is no harder than deciding among two; the nesting is a fiction that the machine never performs.
+Building the finite case analysis out of the binary one therefore does not decompose it into
+anything simpler — it only replays `n - 1` copies of the same argument, and each replay multiplies
+the constants, so the bounds have to be renormalised into a fixed shape at every step to make the
+induction go through. Taking the finite case as the primitive deletes all of that: what remains of
+the arithmetic is three weakenings.
+
+The two are equivalent up to constant factors in both directions, so there is no loss. Tests for
+individual cases, which is what the binary form consumes, and the tag itself, which is what this
+one consumes, are interderivable at constant cost: the tag gives every test by one composition
+with a function on a finite type, and the tests give the tag by running all `n` of them. There is
+consequently no reason to state both.
+
+## Why this has to be a combinator
+
+`cond` is a perfectly ordinary computable *function*: as a map `Bool × β × β → β` it reads a tag
+and streams out the component it selects, in linear time and no space. But that function does not
+give the case analysis, because
+
+```
+fun a => if c a then f a else g a  =  cond ∘ (fun a => (c a, f a, g a))
+```
+
+computes *both* `f a` and `g a`. That costs `tf + tg` instead of `max tf tg`, it stores both
+encoded results on work tapes, and — the real problem — nesting `n` conditionals evaluates `2 ^ n`
+branches instead of `n`. The content of a case analysis is that the branch not taken is never run,
+and that laziness is not expressible by composing total functions: the machine has to choose before
+it runs, which is why this is a combinator with a machine-level branch behind it and not a
+consequence of `computableInTimeAndSpace_comp`.
+
+## Main results
+
+* `Turing.MultiTapeTM.computableInTimeAndSpace_match`: the primitive, a case analysis on a
+  scrutinee in a finite type. See `CslibTests.Complexity.Combinators` for worked examples.
+* `Turing.MultiTapeTM.computableInTimeAndSpace_cond`: the recursor of `Bool`.
+* `Turing.MultiTapeTM.computableInTimeAndSpace_ite`: Lean's `ite`, for a decidable predicate.
+* `Turing.MultiTapeTM.computableInTimeAndSpace_dite`: Lean's `dite`, whose branches are defined
+  only under a hypothesis and so are supplied through total extensions.
+-/
+
+@[expose] public section
+
+namespace Turing.MultiTapeTM
+
+variable {α β : Type*}
+
+/-- **Complexity of a case analysis on a finite type.** If the scrutinee and every branch are
+computable, then so is the case analysis. The machine runs the machine for `sel`, redirecting its
+output onto a work tape; since the scrutinee's type is finite there are only finitely many possible
+contents, all of constant length, so the finite control can tell them apart in constant time and
+continue with the machine for the branch that is taken, on the original input.
+
+What is asked of the scrutinee's type is not that it be finite but that only finitely many of its
+values be reachable, which is what the machine needs: finitely many possible contents of the work
+tape, of bounded length, for the control to tell apart. For a finite type that is `Set.toFinite _`.
+It is worth the slight extra generality because it admits the selector Lean already generates for
+every inductive type, `ctorIdx`, which lands in `ℕ` and so is barred by a finite-type hypothesis.
+Branches outside the range are for the same reason not asked to be computable — with an `ℕ`-indexed
+family, all but finitely many of them are junk.
+
+A single pair of bounds covers the scrutinee and every branch. Nothing is lost by that: given
+separate bounds, weakening each of them to their supremum and applying this gives back exactly the
+statement with the supremum in it, so the two forms are interderivable. The number of cases is a
+constant of the type and is absorbed into the constant factor, as is the cost of rewinding the
+input, which is bounded by the time already spent.
+
+For the same reason a supremum over the branches would not have expressed that only the branch
+taken is executed: the index type is finite with a cardinality fixed by the type, so a supremum and
+a sum over it differ by a constant factor and an implementation running *every* branch would meet
+either bound. What does express it is that no time bound appears in the space bound. A machine
+computing all the branches has to park their encoded outputs on work tapes, and an output's length
+is bounded only by the time that produced it, so its space would be `s a + t a`.
+
+A branch only has to *agree* with the function being computed where it is taken; what it does
+elsewhere is irrelevant, since it is never run there. That is what `hagree` says. It is what a
+`match` that destructures data needs — the machine extracting a constructor's payload is only
+meaningful on encodings of that constructor, so the branch built from it has to be extended by junk
+to become a total function, and the junk must not have to be accounted for — and it is what `dite`
+needs, where a branch is not even defined outside its case. The same weakening lets a computable
+function be patched at finitely many points, by taking the scrutinee to be membership in the finite
+set of exceptions.
+
+`f` carries no information — it is `fun a => br (sel a) a` up to `funext`, and stating the
+conclusion for that function directly would do just as well. It is kept because it is what a
+caller has: their goal is a `match`, not an application of the branch family, and putting the
+conversion in this hypothesis saves them from doing it themselves with `ComputableInTimeAndSpace`
+`.congr` at every use. It is inferred from the goal, so apply this with `exact` or `refine` rather
+than with `obtain`; with no expected type there is nothing to infer `f` from and `hagree` will fix
+it to the wrong function.
+
+This is a case analysis, not a recursor: a `match` on a *recursive* inductive type is a fold, whose
+combinator is the loop of `Cslib.Computability.Machines.Turing.MultiTape.Combinators.Loop` with an
+iteration bound.
+
+The branches may perfectly well have different result types: take the output type to be `Σ i, β i`
+and the branches to be `fun i a => ⟨i, br i a⟩`. Making the statement dependent would gain nothing,
+because computability depends only on the two encoded strings and not on the types they encode —
+that is `ComputableInTimeAndSpace.congr` — so a `motive` has no computational content. The
+genuinely dependent conclusion, about a function `(a : α) → β (sel a)`, cannot even be stated: it
+has no single output encoding. The tag that the sigma carries is not overhead either, since without
+it the result would in general not be decodable. -/
+public theorem computableInTimeAndSpace_match {ι : Type}
+    {sel : α → ι} {f : α → β} {br : ι → α → β}
+    {encIn : α ↪ List Bool} {encι : ι ↪ List Bool} {encOut : β ↪ List Bool}
+    {t s : α → ℕ}
+    (hfin : (Set.range sel).Finite)
+    (hagree : ∀ a, br (sel a) a = f a)
+    (hsel : ComputableInTimeAndSpace sel encIn encι t s)
+    (hbr : ∀ i ∈ Set.range sel, ComputableInTimeAndSpace (br i) encIn encOut t s) :
+    ∃ c, ComputableInTimeAndSpace f encIn encOut
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
+  sorry
+
+/-- **Complexity of a two-way case analysis**, the recursor of `Bool`. This is
+`computableInTimeAndSpace_match` at `ι = Bool`, with the common bound taken to be the test plus the
+larger of the two branches. -/
+public theorem computableInTimeAndSpace_cond {sel : α → Bool} {_if _else : α → β}
+    {encIn : α ↪ List Bool} {encCond : Bool ↪ List Bool} {encOut : β ↪ List Bool}
+    {tc sc tif sif telse selse : α → ℕ}
+    (hsel : ComputableInTimeAndSpace sel encIn encCond tc sc)
+    (hif : ComputableInTimeAndSpace _if encIn encOut tif sif)
+    (helse : ComputableInTimeAndSpace _else encIn encOut telse selse) :
+    ∃ c, ComputableInTimeAndSpace (fun a => if sel a then _if a else _else a) encIn encOut
+      (fun a => c * (tc a + max (tif a) (telse a) + 1))
+      (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
+  refine computableInTimeAndSpace_match (encι := encCond)
+    (br := fun b a => bif b then _if a else _else a) (Set.toFinite _)
+    (fun a => by cases sel a <;> simp)
+    (hsel.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _))
+    (fun b _ => by
+      cases b
+      · exact helse.mono (fun a => by have := le_max_right (tif a) (telse a); omega)
+          (fun a => by have := le_max_right (sif a) (selse a); omega)
+      · exact hif.mono (fun a => by have := le_max_left (tif a) (telse a); omega)
+          (fun a => by have := le_max_left (sif a) (selse a); omega))
+
+/-- **Complexity of Lean's `ite`.** A conditional on a decidable predicate, given a machine that
+decides it. This is `computableInTimeAndSpace_cond` read through `decide`: the `Decidable` instance
+of `ite` carries no computational content, so all that is needed of the predicate is that its
+Boolean test is computable — which for a language is exactly `DecidableInTimeAndSpace`. -/
+public theorem computableInTimeAndSpace_ite {p : α → Prop} [DecidablePred p] {_if _else : α → β}
+    {encIn : α ↪ List Bool} {encCond : Bool ↪ List Bool} {encOut : β ↪ List Bool}
+    {tc sc tif sif telse selse : α → ℕ}
+    (hp : ComputableInTimeAndSpace (fun a => decide (p a)) encIn encCond tc sc)
+    (hif : ComputableInTimeAndSpace _if encIn encOut tif sif)
+    (helse : ComputableInTimeAndSpace _else encIn encOut telse selse) :
+    ∃ c, ComputableInTimeAndSpace (fun a => if p a then _if a else _else a) encIn encOut
+      (fun a => c * (tc a + max (tif a) (telse a) + 1))
+      (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_cond hp hif helse
+  refine ⟨c, ?_⟩
+  have hfun : (fun a => if decide (p a) = true then _if a else _else a) =
+      fun a => if p a then _if a else _else a := by
+    funext a
+    simp
+  rwa [hfun] at hc
+
+/-- **Complexity of Lean's `dite`.** The branches of a `dite` are not functions of the input alone:
+each is defined only under the hypothesis that its case holds, so neither can be asked to be
+computable as it stands. What is asked instead is a computable *total* function agreeing with the
+branch where that branch is taken, which is `computableInTimeAndSpace_match`'s `hagree` in the
+concrete case `ι = Bool`. Outside its case a branch may be anything at all, which is exactly the
+freedom needed to extend it to a total function. -/
+public theorem computableInTimeAndSpace_dite {p : α → Prop} [DecidablePred p]
+    {_if : (a : α) → p a → β} {_else : (a : α) → ¬ p a → β} {If Else : α → β}
+    {encIn : α ↪ List Bool} {encCond : Bool ↪ List Bool} {encOut : β ↪ List Bool}
+    {tc sc tif sif telse selse : α → ℕ}
+    (hIf : ∀ a (h : p a), If a = _if a h)
+    (hElse : ∀ a (h : ¬ p a), Else a = _else a h)
+    (hp : ComputableInTimeAndSpace (fun a => decide (p a)) encIn encCond tc sc)
+    (hif : ComputableInTimeAndSpace If encIn encOut tif sif)
+    (helse : ComputableInTimeAndSpace Else encIn encOut telse selse) :
+    ∃ c, ComputableInTimeAndSpace (fun a => dite (p a) (_if a) (_else a)) encIn encOut
+      (fun a => c * (tc a + max (tif a) (telse a) + 1))
+      (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_ite (p := p) hp hif helse
+  refine ⟨c, ?_⟩
+  have hfun : (fun a => if p a then If a else Else a) =
+      fun a => dite (p a) (_if a) (_else a) := by
+    funext a
+    by_cases h : p a
+    · simp [h, hIf a h]
+    · simp [h, hElse a h]
+  rwa [hfun] at hc
+
+end Turing.MultiTapeTM
