@@ -67,11 +67,11 @@ example {α β : Type} {encIn : α ↪ List Bool} {encBool : Bool ↪ List Bool}
   computableInTimeAndSpace_ite hp hf hg
 
 /-- A `match` on a finite inductive type is computable as soon as the scrutinee and every branch
-are — here on `Ordering`, the result of a `compare`. Only the branch that is taken runs, so the
-branches contribute their maximum rather than their sum, and nothing about the type is needed
-beyond `Fintype`. Testing which constructor the scrutinee
-is costs no space beyond the scrutinee's own, since a finite type has only finitely many encodings
-and so the encoded scrutinee is of constant length. -/
+are — here on `Ordering`, the result of a `compare`. Nothing about the type is needed beyond
+`Finite`. The scrutinee and the branches share one pair of bounds, which costs nothing: separate
+bounds are weakened to a common one, as here where the scrutinee's and the branches' are added.
+Testing which constructor the scrutinee is costs no space beyond the scrutinee's own, since a
+finite type has only finitely many encodings and so the encoded scrutinee is of constant length. -/
 example {α β : Type} {encIn : α ↪ List Bool} {encO : Ordering ↪ List Bool}
     {encOut : β ↪ List Bool}
     {sel : α → Ordering} {onLt onEq onGt : α → β} {tsel ssel t s : α → ℕ}
@@ -87,33 +87,30 @@ example {α β : Type} {encIn : α ↪ List Bool} {encO : Ordering ↪ List Bool
       encIn encOut
       (fun a => c * (tsel a + t a + 1))
       (fun a => c * (ssel a + s a + 1)) := by
+  have hweak : ∀ g : α → β, ComputableInTimeAndSpace g encIn encOut t s →
+      ComputableInTimeAndSpace g encIn encOut (fun a => tsel a + t a) (fun a => ssel a + s a) :=
+    fun _ h => h.mono (fun a => Nat.le_add_left _ _) (fun a => Nat.le_add_left _ _)
   have hbr : ∀ i : Ordering, ComputableInTimeAndSpace
       (fun a => match i with | .lt => onLt a | .eq => onEq a | .gt => onGt a)
-      encIn encOut t s := by
+      encIn encOut (fun a => tsel a + t a) (fun a => ssel a + s a) := by
     intro i
-    cases i <;> assumption
-  obtain ⟨c, hc⟩ := computableInTimeAndSpace_match (fun _ => rfl) hsel hbr
-  have hsupt : ∀ a, Finset.univ.sup (fun _ : Ordering => t a) ≤ t a :=
-    fun a => Finset.sup_le fun _ _ => le_rfl
-  have hsups : ∀ a, Finset.univ.sup (fun _ : Ordering => s a) ≤ s a :=
-    fun a => Finset.sup_le fun _ _ => le_rfl
-  refine ⟨c, hc.mono (fun a => Nat.mul_le_mul_left _ (by have := hsupt a; omega))
-    (fun a => Nat.mul_le_mul_left _ (by have := hsups a; omega))⟩
+    cases i
+    exacts [hweak _ hlt, hweak _ heq, hweak _ hgt]
+  exact computableInTimeAndSpace_match (fun _ => rfl)
+    (hsel.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _)) hbr
 
 /-- Branches of *different* result types need no dependent version of the combinator: the output
 type is the sigma, and the case analysis is the same theorem instantiated at it. What makes this
 work is that computability depends only on the encoded strings, not on the types they encode, so
 the eliminator's `motive` has no computational content. -/
-example {α ι : Type} [Fintype ι] {β : ι → Type}
+example {α ι : Type} [Finite ι] {β : ι → Type}
     {sel : α → ι} {br : (i : ι) → α → β i}
     {encIn : α ↪ List Bool} {encι : ι ↪ List Bool} {encS : (Σ i, β i) ↪ List Bool}
-    {tsel ssel : α → ℕ} {t s : ι → α → ℕ}
-    (hsel : ComputableInTimeAndSpace sel encIn encι tsel ssel)
-    (hbr : ∀ i, ComputableInTimeAndSpace (fun a => (⟨i, br i a⟩ : Σ i, β i)) encIn encS
-      (t i) (s i)) :
+    {t s : α → ℕ}
+    (hsel : ComputableInTimeAndSpace sel encIn encι t s)
+    (hbr : ∀ i, ComputableInTimeAndSpace (fun a => (⟨i, br i a⟩ : Σ i, β i)) encIn encS t s) :
     ∃ c, ComputableInTimeAndSpace (fun a => (⟨sel a, br (sel a) a⟩ : Σ i, β i)) encIn encS
-      (fun a => c * (tsel a + Finset.univ.sup (fun i => t i a) + 1))
-      (fun a => c * (ssel a + Finset.univ.sup (fun i => s i a) + 1)) :=
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
   computableInTimeAndSpace_match (br := fun i a => (⟨i, br i a⟩ : Σ i, β i))
     (fun _ => rfl) hsel hbr
 
@@ -138,11 +135,13 @@ example {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encI 
     ∃ c, ComputableInTimeAndSpace (fun a => (⟨lo a, hi a⟩ : Interval)) encIn encI
       (fun a => c * (tl a + th a + (encIn a).length + 1))
       (fun a => c * (sl a + sh a + 1)) := by
-  obtain ⟨c, hc⟩ := computableInTimeAndSpace_ctor (A := fun _ : Fin 2 => ℕ) (fs := ![lo, hi])
-    (encIn := encIn) (encA := fun _ => encN) (t := ![tl, th]) (s := ![sl, sh])
+  exact computableInTimeAndSpace_ctor (A := fun _ : Fin 2 => ℕ) (fs := ![lo, hi])
+    (encIn := encIn) (encA := fun _ => encN)
+    (t := fun a => tl a + th a) (s := fun a => sl a + sh a)
     (fun a => by simpa [List.ofFn_succ] using henc a)
-    (Fin.forall_fin_two.mpr ⟨by simpa using hlo, by simpa using hhi⟩)
-  exact ⟨c, hc.mono (fun a => by simp [Fin.sum_univ_two]) (fun a => by simp [Fin.sum_univ_two])⟩
+    (Fin.forall_fin_two.mpr
+      ⟨by simpa using hlo.mono (fun a => by omega) (fun a => by omega),
+        by simpa using hhi.mono (fun a => by omega) (fun a => by omega)⟩)
 
 /-- `Option.some`, at the canonical encoding of `Encodings.Option`. A tagged constructor is built
 by treating the tag as a field computed by a constant function, so nothing beyond
@@ -187,15 +186,14 @@ example {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encB 
       (fun a => c * (s₁ a + s₂ a + s₃ a + 1)) := by
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_flatten (encIn := encIn)
     (fs := ![fun a => encN (f a), fun a => encB (g a), fun a => encN (h a)])
-    (t := ![t₁, t₂, t₃]) (s := ![s₁, s₂, s₃])
+    (t := fun a => t₁ a + t₂ a + t₃ a) (s := fun a => s₁ a + s₂ a + s₃ a)
     (by
       intro j
       fin_cases j
-      · exact hf.congr (fun _ => rfl) fun _ => rfl
-      · exact hg.congr (fun _ => rfl) fun _ => rfl
-      · exact hh.congr (fun _ => rfl) fun _ => rfl)
-  refine ⟨c, (hc.congr (fun _ => rfl) (fun a => by simpa [List.ofFn_succ] using henc a)).mono
-    (fun a => by simp [Fin.sum_univ_three]) (fun a => by simp [Fin.sum_univ_three])⟩
+      · exact (hf.congr (fun _ => rfl) fun _ => rfl).mono (fun a => by omega) (fun a => by omega)
+      · exact (hg.congr (fun _ => rfl) fun _ => rfl).mono (fun a => by omega) (fun a => by omega)
+      · exact (hh.congr (fun _ => rfl) fun _ => rfl).mono (fun a => by omega) (fun a => by omega))
+  exact ⟨c, hc.congr (fun _ => rfl) (fun a => by simpa [List.ofFn_succ] using henc a)⟩
 
 /-! ## A proper inductive type
 
@@ -261,18 +259,17 @@ example {f g : α → ℕ} {tf sf tg sg : α → ℕ}
     (encOut := Function.Embedding.refl (List Bool)) ([true, false] : List Bool)
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_flatten (encIn := encIn)
     (fs := ![fun _ => [true, false], fun a => encN (f a), fun a => encN (g a)])
-    (t := ![fun _ => c₀, tf, tg]) (s := ![fun _ => 0, sf, sg])
+    (t := fun a => c₀ + tf a + tg a) (s := fun a => sf a + sg a)
     (by
       intro j
       fin_cases j
-      · exact h₀
-      · exact hf.congr (fun _ => rfl) fun _ => rfl
-      · exact hg.congr (fun _ => rfl) fun _ => rfl)
+      · exact h₀.mono (fun a => by omega) (fun a => by omega)
+      · exact (hf.congr (fun _ => rfl) fun _ => rfl).mono (fun a => by omega) (fun a => by omega)
+      · exact (hg.congr (fun _ => rfl) fun _ => rfl).mono (fun a => by omega) (fun a => by omega))
   refine ⟨c * (c₀ + 1), ((hc.congr (fun _ => rfl)
     (fun a => by simpa [List.ofFn_succ] using henc (f a) (g a))).mono (fun a => ?_)
       (fun a => ?_))⟩
-  · simp only [Fin.sum_univ_three, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val_two]
-    calc c * (c₀ + tf a + tg a + (encIn a).length + 1)
+  · calc c * (c₀ + tf a + tg a + (encIn a).length + 1)
         ≤ c * ((c₀ + 1) * (tf a + tg a + (encIn a).length + 1)) := by
           refine Nat.mul_le_mul_left _ ?_
           have h1 : c₀ ≤ c₀ * (tf a + tg a + (encIn a).length + 1) :=
@@ -282,10 +279,7 @@ example {f g : α → ℕ} {tf sf tg sg : α → ℕ}
                 + (tf a + tg a + (encIn a).length + 1) := by ring
           omega
       _ = c * (c₀ + 1) * (tf a + tg a + (encIn a).length + 1) := by ring
-  · simp only [Fin.sum_univ_three, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val_two]
-    calc c * (0 + sf a + sg a + 1) = c * (sf a + sg a + 1) := by ring
-      _ ≤ c * (c₀ + 1) * (sf a + sg a + 1) :=
-          Nat.mul_le_mul_right _ (Nat.le_mul_of_pos_right _ (by omega))
+  · exact Nat.mul_le_mul_right _ (Nat.le_mul_of_pos_right _ (by omega))
 
 /-- Matching on a type with several alternatives, as far as the tag. Given that the alternative can
 be read off — which is a requirement on the encoding, not something derivable, and the one piece
@@ -308,25 +302,23 @@ example {β : Type} {encF : Fin 3 ↪ List Bool} {encOut : β ↪ List Bool}
         | .rect _ _ => onRect a)
       encIn encOut
       (fun a => c * (tsel a + t a + 1)) (fun a => c * (ssel a + s a + 1)) := by
+  have hweak : ∀ g : α → β, ComputableInTimeAndSpace g encIn encOut t s →
+      ComputableInTimeAndSpace g encIn encOut (fun a => tsel a + t a) (fun a => ssel a + s a) :=
+    fun _ h => h.mono (fun a => Nat.le_add_left _ _) (fun a => Nat.le_add_left _ _)
   have hbr : ∀ i : Fin 3, ComputableInTimeAndSpace (![onPoint, onCircle, onRect] i)
-      encIn encOut t s := by
+      encIn encOut (fun a => tsel a + t a) (fun a => ssel a + s a) := by
     intro i
     fin_cases i
-    · exact hp
-    · exact hc
-    · exact hr
-  obtain ⟨c, hc'⟩ := computableInTimeAndSpace_match
+    · exact hweak _ hp
+    · exact hweak _ hc
+    · exact hweak _ hr
+  exact computableInTimeAndSpace_match
     (f := fun a => match sel a with
       | .point => onPoint a
       | .circle _ => onCircle a
       | .rect _ _ => onRect a)
-    (fun a => by cases sel a <;> rfl) htag hbr
-  have hsupt : ∀ a, Finset.univ.sup (fun _ : Fin 3 => t a) ≤ t a :=
-    fun a => Finset.sup_le fun _ _ => le_rfl
-  have hsups : ∀ a, Finset.univ.sup (fun _ : Fin 3 => s a) ≤ s a :=
-    fun a => Finset.sup_le fun _ _ => le_rfl
-  exact ⟨c, hc'.mono (fun a => Nat.mul_le_mul_left _ (by have := hsupt a; omega))
-    (fun a => Nat.mul_le_mul_left _ (by have := hsups a; omega))⟩
+    (fun a => by cases sel a <;> rfl)
+    (htag.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _)) hbr
 
 end Shape
 
@@ -358,18 +350,17 @@ private theorem span_ctor {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪
     (encOut := Function.Embedding.refl (List Bool)) tag
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_flatten (encIn := encIn)
     (fs := ![fun _ => tag, fun a => encN (f a), fun a => encN (g a)])
-    (t := ![fun _ => c₀, tf, tg]) (s := ![fun _ => 0, sf, sg])
+    (t := fun a => c₀ + tf a + tg a) (s := fun a => sf a + sg a)
     (by
       intro j
       fin_cases j
-      · exact h₀
-      · exact hf.congr (fun _ => rfl) fun _ => rfl
-      · exact hg.congr (fun _ => rfl) fun _ => rfl)
+      · exact h₀.mono (fun a => by omega) (fun a => by omega)
+      · exact (hf.congr (fun _ => rfl) fun _ => rfl).mono (fun a => by omega) (fun a => by omega)
+      · exact (hg.congr (fun _ => rfl) fun _ => rfl).mono (fun a => by omega) (fun a => by omega))
   refine ⟨c * (c₀ + 1), ((hc.congr (fun _ => rfl)
     (fun a => by simpa [List.ofFn_succ] using henc (f a) (g a))).mono (fun a => ?_)
       (fun a => ?_))⟩
-  · simp only [Fin.sum_univ_three, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val_two]
-    calc c * (c₀ + tf a + tg a + (encIn a).length + 1)
+  · calc c * (c₀ + tf a + tg a + (encIn a).length + 1)
         ≤ c * ((c₀ + 1) * (tf a + tg a + (encIn a).length + 1)) := by
           refine Nat.mul_le_mul_left _ ?_
           have h1 : c₀ ≤ c₀ * (tf a + tg a + (encIn a).length + 1) :=
@@ -379,10 +370,7 @@ private theorem span_ctor {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪
                 + (tf a + tg a + (encIn a).length + 1) := by ring
           omega
       _ = c * (c₀ + 1) * (tf a + tg a + (encIn a).length + 1) := by ring
-  · simp only [Fin.sum_univ_three, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val_two]
-    calc c * (0 + sf a + sg a + 1) = c * (sf a + sg a + 1) := by ring
-      _ ≤ c * (c₀ + 1) * (sf a + sg a + 1) :=
-          Nat.mul_le_mul_right _ (Nat.le_mul_of_pos_right _ (by omega))
+  · exact Nat.mul_le_mul_right _ (Nat.le_mul_of_pos_right _ (by omega))
 
 /-- A function into a type with two two-field alternatives, choosing between them. The case
 analysis picks the constructor and each branch builds one, so this is `computableInTimeAndSpace_ite`

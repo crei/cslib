@@ -29,8 +29,8 @@ is no harder than deciding among two; the nesting is a fiction that the machine 
 Building the finite case analysis out of the binary one therefore does not decompose it into
 anything simpler — it only replays `n - 1` copies of the same argument, and each replay multiplies
 the constants, so the bounds have to be renormalised into a fixed shape at every step to make the
-induction go through. Taking the finite case as the primitive deletes all of that: what remains is
-`Finset.sup_le` at `Bool`.
+induction go through. Taking the finite case as the primitive deletes all of that: what remains of
+the arithmetic is three weakenings.
 
 The two are equivalent up to constant factors in both directions, so there is no loss. Tests for
 individual cases, which is what the binary form consumes, and the tag itself, which is what this
@@ -77,9 +77,18 @@ output onto a work tape; since the scrutinee's type is finite there are only fin
 contents, all of constant length, so the finite control can tell them apart in constant time and
 continue with the machine for the branch that is taken, on the original input.
 
-Only the branch that is taken is executed, hence the supremum of the branches' bounds rather than
-their sum. The number of cases is a constant of the type and is absorbed into the constant factor,
-as is the cost of rewinding the input, which is bounded by the time already spent.
+A single pair of bounds covers the scrutinee and every branch. Nothing is lost by that: given
+separate bounds, weakening each of them to their supremum and applying this gives back exactly the
+statement with the supremum in it, so the two forms are interderivable. The number of cases is a
+constant of the type and is absorbed into the constant factor, as is the cost of rewinding the
+input, which is bounded by the time already spent.
+
+For the same reason a supremum over the branches would not have expressed that only the branch
+taken is executed: the index type is finite with a cardinality fixed by the type, so a supremum and
+a sum over it differ by a constant factor and an implementation running *every* branch would meet
+either bound. What does express it is that no time bound appears in the space bound. A machine
+computing all the branches has to park their encoded outputs on work tapes, and an output's length
+is bounded only by the time that produced it, so its space would be `s a + t a`.
 
 A branch only has to *agree* with the function being computed where it is taken; what it does
 elsewhere is irrelevant, since it is never run there. That is what `hagree` says. It is what a
@@ -101,21 +110,20 @@ that is `ComputableInTimeAndSpace.congr` — so a `motive` has no computational 
 genuinely dependent conclusion, about a function `(a : α) → β (sel a)`, cannot even be stated: it
 has no single output encoding. The tag that the sigma carries is not overhead either, since without
 it the result would in general not be decodable. -/
-public theorem computableInTimeAndSpace_match {ι : Type} [Fintype ι]
+public theorem computableInTimeAndSpace_match {ι : Type} [Finite ι]
     {sel : α → ι} {f : α → β} {br : ι → α → β}
     {encIn : α ↪ List Bool} {encι : ι ↪ List Bool} {encOut : β ↪ List Bool}
-    {tsel ssel : α → ℕ} {t s : ι → α → ℕ}
+    {t s : α → ℕ}
     (hagree : ∀ a, br (sel a) a = f a)
-    (hsel : ComputableInTimeAndSpace sel encIn encι tsel ssel)
-    (hbr : ∀ i, ComputableInTimeAndSpace (br i) encIn encOut (t i) (s i)) :
+    (hsel : ComputableInTimeAndSpace sel encIn encι t s)
+    (hbr : ∀ i, ComputableInTimeAndSpace (br i) encIn encOut t s) :
     ∃ c, ComputableInTimeAndSpace f encIn encOut
-      (fun a => c * (tsel a + Finset.univ.sup (fun i => t i a) + 1))
-      (fun a => c * (ssel a + Finset.univ.sup (fun i => s i a) + 1)) :=
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
   sorry
 
 /-- **Complexity of a two-way case analysis**, the recursor of `Bool`. This is
-`computableInTimeAndSpace_match` at `ι = Bool`, where the supremum over the two branches is their
-maximum. -/
+`computableInTimeAndSpace_match` at `ι = Bool`, with the common bound taken to be the test plus the
+larger of the two branches. -/
 public theorem computableInTimeAndSpace_cond {sel : α → Bool} {_if _else : α → β}
     {encIn : α ↪ List Bool} {encCond : Bool ↪ List Bool} {encOut : β ↪ List Bool}
     {tc sc tif sif telse selse : α → ℕ}
@@ -125,19 +133,17 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {_if _else : α
     ∃ c, ComputableInTimeAndSpace (fun a => if sel a then _if a else _else a) encIn encOut
       (fun a => c * (tc a + max (tif a) (telse a) + 1))
       (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
-  obtain ⟨c, hc⟩ := computableInTimeAndSpace_match (encι := encCond)
+  refine computableInTimeAndSpace_match (encι := encCond)
     (f := fun a => if sel a then _if a else _else a)
     (br := fun b a => bif b then _if a else _else a)
-    (t := fun b => bif b then tif else telse) (s := fun b => bif b then sif else selse)
     (fun a => by cases sel a <;> simp)
-    hsel (fun b => by cases b; exacts [helse, hif])
-  refine ⟨c, hc.mono (fun a => ?_) (fun a => ?_)⟩
-  · have h : Finset.univ.sup (fun b : Bool => (bif b then tif else telse) a)
-        ≤ max (tif a) (telse a) := Finset.sup_le fun b _ => by cases b <;> simp
-    exact Nat.mul_le_mul_left _ (by omega)
-  · have h : Finset.univ.sup (fun b : Bool => (bif b then sif else selse) a)
-        ≤ max (sif a) (selse a) := Finset.sup_le fun b _ => by cases b <;> simp
-    exact Nat.mul_le_mul_left _ (by omega)
+    (hsel.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _))
+    (fun b => by
+      cases b
+      · exact helse.mono (fun a => by have := le_max_right (tif a) (telse a); omega)
+          (fun a => by have := le_max_right (sif a) (selse a); omega)
+      · exact hif.mono (fun a => by have := le_max_left (tif a) (telse a); omega)
+          (fun a => by have := le_max_left (sif a) (selse a); omega))
 
 /-- **Complexity of Lean's `ite`.** A conditional on a decidable predicate, given a machine that
 decides it. This is `computableInTimeAndSpace_cond` read through `decide`: the `Decidable` instance
