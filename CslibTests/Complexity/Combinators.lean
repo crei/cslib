@@ -6,6 +6,7 @@ Authors: Christian Reitwiessner
 
 import Mathlib.Data.Fin.VecNotation
 import Mathlib.Tactic.FinCases
+import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Comp
 import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Ite
 import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Option
 import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Tuple
@@ -50,10 +51,8 @@ example {α : Type*} [DecidableEq α] : ∀ encIn encOut out, ∃ c, ComputableI
 
 /-! ## Case analysis
 
-Lean's `ite` is `Bool.rec` once the `Decidable` instance is erased, and a `match` on a finite
-inductive type is `Bool.rec` nested once per constructor. So the single primitive
-`computableInTimeAndSpace_cond` covers all of them, and the derived
-`computableInTimeAndSpace_match` needs nothing of the scrutinee's type beyond being finite. -/
+The single primitive `computableInTimeAndSpace_match` covers all of them: it needs nothing of the
+scrutinee's type beyond being finite, and `cond`, `ite` and `dite` are its instances at `Bool`. -/
 
 /-- A conditional on a decidable predicate is computable as soon as the predicate is decided by a
 machine and both branches are computable. Only the branch that is taken runs, hence the `max`. -/
@@ -74,7 +73,7 @@ beyond `Fintype`. Testing which constructor the scrutinee
 is costs no space beyond the scrutinee's own, since a finite type has only finitely many encodings
 and so the encoded scrutinee is of constant length. -/
 example {α β : Type} {encIn : α ↪ List Bool} {encO : Ordering ↪ List Bool}
-    {encBool : Bool ↪ List Bool} {encOut : β ↪ List Bool}
+    {encOut : β ↪ List Bool}
     {sel : α → Ordering} {onLt onEq onGt : α → β} {tsel ssel t s : α → ℕ}
     (hsel : ComputableInTimeAndSpace sel encIn encO tsel ssel)
     (hlt : ComputableInTimeAndSpace onLt encIn encOut t s)
@@ -93,7 +92,7 @@ example {α β : Type} {encIn : α ↪ List Bool} {encO : Ordering ↪ List Bool
       encIn encOut t s := by
     intro i
     cases i <;> assumption
-  obtain ⟨c, hc⟩ := computableInTimeAndSpace_match (encCond := encBool) hsel hbr
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_match (fun _ => rfl) hsel hbr
   have hsupt : ∀ a, Finset.univ.sup (fun _ : Ordering => t a) ≤ t a :=
     fun a => Finset.sup_le fun _ _ => le_rfl
   have hsups : ∀ a, Finset.univ.sup (fun _ : Ordering => s a) ≤ s a :=
@@ -105,20 +104,18 @@ example {α β : Type} {encIn : α ↪ List Bool} {encO : Ordering ↪ List Bool
 type is the sigma, and the case analysis is the same theorem instantiated at it. What makes this
 work is that computability depends only on the encoded strings, not on the types they encode, so
 the eliminator's `motive` has no computational content. -/
-example {α ι : Type} [Fintype ι] [DecidableEq ι] {β : ι → Type}
+example {α ι : Type} [Fintype ι] {β : ι → Type}
     {sel : α → ι} {br : (i : ι) → α → β i}
-    {encIn : α ↪ List Bool} {encBool : Bool ↪ List Bool} {encS : (Σ i, β i) ↪ List Bool}
-    {tc sc t s : ι → α → ℕ}
-    (htest : ∀ i, ComputableInTimeAndSpace (fun a => decide (sel a = i)) encIn encBool
-      (tc i) (sc i))
+    {encIn : α ↪ List Bool} {encι : ι ↪ List Bool} {encS : (Σ i, β i) ↪ List Bool}
+    {tsel ssel : α → ℕ} {t s : ι → α → ℕ}
+    (hsel : ComputableInTimeAndSpace sel encIn encι tsel ssel)
     (hbr : ∀ i, ComputableInTimeAndSpace (fun a => (⟨i, br i a⟩ : Σ i, β i)) encIn encS
       (t i) (s i)) :
     ∃ c, ComputableInTimeAndSpace (fun a => (⟨sel a, br (sel a) a⟩ : Σ i, β i)) encIn encS
-      (fun a => c * (Finset.univ.sup (fun i => tc i a) + Finset.univ.sup (fun i => t i a) + 1))
-      (fun a => c * (Finset.univ.sup (fun i => sc i a)
-        + Finset.univ.sup (fun i => s i a) + 1)) :=
-  computableInTimeAndSpace_casesOn (br := fun i a => (⟨i, br i a⟩ : Σ i, β i))
-    (fun i a h => by rw [h]) htest hbr
+      (fun a => c * (tsel a + Finset.univ.sup (fun i => t i a) + 1))
+      (fun a => c * (ssel a + Finset.univ.sup (fun i => s i a) + 1)) :=
+  computableInTimeAndSpace_match (br := fun i a => (⟨i, br i a⟩ : Σ i, β i))
+    (fun _ => rfl) hsel hbr
 
 /-! ## Constructors
 
@@ -298,7 +295,7 @@ be read off — which is a requirement on the encoding, not something derivable,
 Branches that *use* a constructor's fields need more: a computable destructor per constructor, and
 pairing to hand the branch both the original input and the extracted payload. Those are the two
 things still missing, and they are requirements on the encoding rather than combinators. -/
-example {β : Type} {encF : Fin 3 ↪ List Bool} {encBool : Bool ↪ List Bool} {encOut : β ↪ List Bool}
+example {β : Type} {encF : Fin 3 ↪ List Bool} {encOut : β ↪ List Bool}
     {sel : α → Shape} {onPoint onCircle onRect : α → β} {tsel ssel t s : α → ℕ}
     (htag : ComputableInTimeAndSpace (fun a => (sel a).tag) encIn encF tsel ssel)
     (hp : ComputableInTimeAndSpace onPoint encIn encOut t s)
@@ -318,15 +315,12 @@ example {β : Type} {encF : Fin 3 ↪ List Bool} {encBool : Bool ↪ List Bool} 
     · exact hp
     · exact hc
     · exact hr
-  obtain ⟨c, hc'⟩ := computableInTimeAndSpace_match (encCond := encBool) htag hbr
-  have hfun : (fun a => ![onPoint, onCircle, onRect] (sel a).tag a) =
-      fun a => match sel a with
-        | .point => onPoint a
-        | .circle _ => onCircle a
-        | .rect _ _ => onRect a := by
-    funext a
-    cases sel a <;> rfl
-  rw [hfun] at hc'
+  obtain ⟨c, hc'⟩ := computableInTimeAndSpace_match
+    (f := fun a => match sel a with
+      | .point => onPoint a
+      | .circle _ => onCircle a
+      | .rect _ _ => onRect a)
+    (fun a => by cases sel a <;> rfl) htag hbr
   have hsupt : ∀ a, Finset.univ.sup (fun _ : Fin 3 => t a) ≤ t a :=
     fun a => Finset.sup_le fun _ _ => le_rfl
   have hsups : ∀ a, Finset.univ.sup (fun _ : Fin 3 => s a) ≤ s a :=

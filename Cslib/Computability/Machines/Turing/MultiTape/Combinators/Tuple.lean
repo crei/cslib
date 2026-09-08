@@ -19,12 +19,18 @@ A non-recursive inductive type is a finite sum of finite products,
 rule of a finite product and the elimination rule of a finite coproduct. This file is the first of
 those; `Cslib.Computability.Machines.Turing.MultiTape.Combinators.Ite` is the second.
 
-The two are built the same way, by nesting the binary case once per field resp. per constructor:
+The two are dual, and the difference in how the resources add up is the whole content:
 
-* the eliminator nests `computableInTimeAndSpace_cond`, and the branches contribute their
-  **supremum**, since only the branch that is taken runs;
-* the constructor nests `computableInTimeAndSpace_concat`, and the fields contribute their
-  **sum**, since every field is computed.
+* the eliminator is `computableInTimeAndSpace_match`, one dispatch, and the branches contribute
+  their **supremum**, since only the branch that is taken runs;
+* the constructor nests `computableInTimeAndSpace_concat` once per field, and the fields
+  contribute their **sum**, since every field is computed.
+
+The nesting on this side is a device of the proof and not something the machine does — it runs the
+`k` machines one after the other. It is kept only because a `k`-ary concatenation is what the
+binary one iterated already amounts to once the bounds are summed, whereas on the eliminator side
+the nested form replayed the same argument `k - 1` times and had to renormalise the bounds at each
+step, which is why there the `k`-ary case is the primitive.
 
 The tag of a constructor needs no work: it is a fixed string, and prefixing an encoding with a
 fixed string is again an encoding, so `computableInTimeAndSpace_concat`'s hypothesis absorbs it.
@@ -56,8 +62,8 @@ variable {α δ : Type*}
 /-- **Concatenating finitely many computations.** The bounds are the sums of the fields' bounds,
 plus one rewind of the input tape per field.
 
-Compare `computableInTimeAndSpace_casesOn`, which nests the *other* binary combinator and takes a
-supremum: there only one branch runs, here every field does. -/
+Compare `computableInTimeAndSpace_match`, the eliminator, which takes a supremum: there only one
+branch runs, here every field does. -/
 public theorem computableInTimeAndSpace_flatten {encIn : α ↪ List Bool}
     {k : ℕ} {fs : Fin k → α → List Bool} {t s : Fin k → α → ℕ}
     (hfs : ∀ j, ComputableInTimeAndSpace (fs j) encIn (Function.Embedding.refl (List Bool))
