@@ -173,7 +173,7 @@ example {α β : Type} {p : β → Prop} {encIn : α ↪ List Bool} {encB : β �
     (hp : ∀ a, p (f a)) (henc : ∀ x : {x // p x}, encS x = encB x.val)
     (hf : ComputableInTimeAndSpace f encIn encB t s) :
     ComputableInTimeAndSpace (fun a => (⟨f a, hp a⟩ : {x // p x})) encIn encS t s :=
-  hf.congr (fun _ => rfl) fun a => henc _
+  hf.congr (fun _ => rfl) fun _ => henc _
 
 /-- Three fields of different types, encoded flat rather than as nested pairs. The index family of
 `computableInTimeAndSpace_ctor` is dependent, which is awkward when the fields have different
@@ -335,5 +335,117 @@ example {β : Type} {encF : Fin 3 ↪ List Bool} {encBool : Bool ↪ List Bool} 
     (fun a => Nat.mul_le_mul_left _ (by have := hsups a; omega))⟩
 
 end Shape
+
+/-! ## Several alternatives of the same arity
+
+`Shape` has only one constructor of arity two. `Span` has two, which is the case where the tag is
+doing real work: the two alternatives are indistinguishable by their payload and only the tag tells
+them apart. Each is built the same way — the tag and the two fields are three computations whose
+outputs are concatenated — so the construction is shared and only the tag and the constructor
+differ. -/
+
+/-- Two alternatives, each carrying two fields. -/
+inductive Span
+  | ofLength (start len : ℕ)
+  | ofBounds (lo hi : ℕ)
+deriving DecidableEq
+
+/-- Either alternative of `Span`, built from the tag and the two fields. -/
+private theorem span_ctor {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool}
+    {encS : Span ↪ List Bool} {f g : α → ℕ} {tf sf tg sg : α → ℕ}
+    (tag : List Bool) (mk : ℕ → ℕ → Span)
+    (henc : ∀ u v, encS (mk u v) = tag ++ encN u ++ encN v)
+    (hf : ComputableInTimeAndSpace f encIn encN tf sf)
+    (hg : ComputableInTimeAndSpace g encIn encN tg sg) :
+    ∃ c, ComputableInTimeAndSpace (fun a => mk (f a) (g a)) encIn encS
+      (fun a => c * (tf a + tg a + (encIn a).length + 1))
+      (fun a => c * (sf a + sg a + 1)) := by
+  obtain ⟨c₀, h₀⟩ := computableInTimeAndSpace_of_const (α := α) (encIn := encIn)
+    (encOut := Function.Embedding.refl (List Bool)) tag
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_flatten (encIn := encIn)
+    (fs := ![fun _ => tag, fun a => encN (f a), fun a => encN (g a)])
+    (t := ![fun _ => c₀, tf, tg]) (s := ![fun _ => 0, sf, sg])
+    (by
+      intro j
+      fin_cases j
+      · exact h₀
+      · exact hf.congr (fun _ => rfl) fun _ => rfl
+      · exact hg.congr (fun _ => rfl) fun _ => rfl)
+  refine ⟨c * (c₀ + 1), ((hc.congr (fun _ => rfl)
+    (fun a => by simpa [List.ofFn_succ] using henc (f a) (g a))).mono (fun a => ?_)
+      (fun a => ?_))⟩
+  · simp only [Fin.sum_univ_three, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val_two]
+    calc c * (c₀ + tf a + tg a + (encIn a).length + 1)
+        ≤ c * ((c₀ + 1) * (tf a + tg a + (encIn a).length + 1)) := by
+          refine Nat.mul_le_mul_left _ ?_
+          have h1 : c₀ ≤ c₀ * (tf a + tg a + (encIn a).length + 1) :=
+            Nat.le_mul_of_pos_right _ (by omega)
+          have h2 : (c₀ + 1) * (tf a + tg a + (encIn a).length + 1)
+              = c₀ * (tf a + tg a + (encIn a).length + 1)
+                + (tf a + tg a + (encIn a).length + 1) := by ring
+          omega
+      _ = c * (c₀ + 1) * (tf a + tg a + (encIn a).length + 1) := by ring
+  · simp only [Fin.sum_univ_three, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val_two]
+    calc c * (0 + sf a + sg a + 1) = c * (sf a + sg a + 1) := by ring
+      _ ≤ c * (c₀ + 1) * (sf a + sg a + 1) :=
+          Nat.mul_le_mul_right _ (Nat.le_mul_of_pos_right _ (by omega))
+
+/-- A function into a type with two two-field alternatives, choosing between them. The case
+analysis picks the constructor and each branch builds one, so this is `computableInTimeAndSpace_ite`
+over two instances of the constructor pattern; only the branch that is taken is built, hence the
+single copy of the field bounds. -/
+example {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encS : Span ↪ List Bool}
+    {encBool : Bool ↪ List Bool} {sel : α → Bool} {f g : α → ℕ} {tc sc tf sf tg sg : α → ℕ}
+    (hlen : ∀ u v, encS (.ofLength u v) = [false] ++ encN u ++ encN v)
+    (hbnd : ∀ u v, encS (.ofBounds u v) = [true] ++ encN u ++ encN v)
+    (hsel : ComputableInTimeAndSpace sel encIn encBool tc sc)
+    (hf : ComputableInTimeAndSpace f encIn encN tf sf)
+    (hg : ComputableInTimeAndSpace g encIn encN tg sg) :
+    ∃ c, ComputableInTimeAndSpace
+      (fun a => if sel a then Span.ofLength (f a) (g a) else Span.ofBounds (f a) (g a))
+      encIn encS
+      (fun a => c * (tc a + tf a + tg a + (encIn a).length + 1))
+      (fun a => c * (sc a + sf a + sg a + 1)) := by
+  obtain ⟨c₁, h₁⟩ := span_ctor [false] Span.ofLength hlen hf hg
+  obtain ⟨c₂, h₂⟩ := span_ctor [true] Span.ofBounds hbnd hf hg
+  obtain ⟨c₃, h₃⟩ := computableInTimeAndSpace_cond hsel h₁ h₂
+  refine ⟨c₃ * (c₁ + c₂ + 2), h₃.mono (fun a => ?_) (fun a => ?_)⟩
+  · have hmax : max (c₁ * (tf a + tg a + (encIn a).length + 1))
+          (c₂ * (tf a + tg a + (encIn a).length + 1))
+        ≤ (c₁ + c₂) * (tc a + tf a + tg a + (encIn a).length + 1) := by
+      have e : (c₁ + c₂) * (tc a + tf a + tg a + (encIn a).length + 1)
+          = c₁ * (tc a + tf a + tg a + (encIn a).length + 1)
+            + c₂ * (tc a + tf a + tg a + (encIn a).length + 1) := by ring
+      have e₁ : c₁ * (tf a + tg a + (encIn a).length + 1)
+          ≤ c₁ * (tc a + tf a + tg a + (encIn a).length + 1) := Nat.mul_le_mul_left _ (by omega)
+      have e₂ : c₂ * (tf a + tg a + (encIn a).length + 1)
+          ≤ c₂ * (tc a + tf a + tg a + (encIn a).length + 1) := Nat.mul_le_mul_left _ (by omega)
+      omega
+    calc c₃ * (tc a + max (c₁ * (tf a + tg a + (encIn a).length + 1))
+            (c₂ * (tf a + tg a + (encIn a).length + 1)) + 1)
+        ≤ c₃ * ((c₁ + c₂ + 2) * (tc a + tf a + tg a + (encIn a).length + 1)) := by
+          refine Nat.mul_le_mul_left _ ?_
+          have e : (c₁ + c₂ + 2) * (tc a + tf a + tg a + (encIn a).length + 1)
+              = (c₁ + c₂) * (tc a + tf a + tg a + (encIn a).length + 1)
+                + 2 * (tc a + tf a + tg a + (encIn a).length + 1) := by ring
+          omega
+      _ = c₃ * (c₁ + c₂ + 2) * (tc a + tf a + tg a + (encIn a).length + 1) := by ring
+  · have hmax : max (c₁ * (sf a + sg a + 1)) (c₂ * (sf a + sg a + 1))
+        ≤ (c₁ + c₂) * (sc a + sf a + sg a + 1) := by
+      have e : (c₁ + c₂) * (sc a + sf a + sg a + 1)
+          = c₁ * (sc a + sf a + sg a + 1) + c₂ * (sc a + sf a + sg a + 1) := by ring
+      have e₁ : c₁ * (sf a + sg a + 1) ≤ c₁ * (sc a + sf a + sg a + 1) :=
+        Nat.mul_le_mul_left _ (by omega)
+      have e₂ : c₂ * (sf a + sg a + 1) ≤ c₂ * (sc a + sf a + sg a + 1) :=
+        Nat.mul_le_mul_left _ (by omega)
+      omega
+    calc c₃ * (sc a + max (c₁ * (sf a + sg a + 1)) (c₂ * (sf a + sg a + 1)) + 1)
+        ≤ c₃ * ((c₁ + c₂ + 2) * (sc a + sf a + sg a + 1)) := by
+          refine Nat.mul_le_mul_left _ ?_
+          have e : (c₁ + c₂ + 2) * (sc a + sf a + sg a + 1)
+              = (c₁ + c₂) * (sc a + sf a + sg a + 1)
+                + 2 * (sc a + sf a + sg a + 1) := by ring
+          omega
+      _ = c₃ * (c₁ + c₂ + 2) * (sc a + sf a + sg a + 1) := by ring
 
 end CslibTests
