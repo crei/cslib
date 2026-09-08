@@ -4,7 +4,11 @@ Released under Apache 2.0 license as described in the file LICENSE.
 Authors: Christian Reitwiessner
 -/
 
+import Mathlib.Data.Fin.VecNotation
+import Mathlib.Tactic.FinCases
 import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Ite
+import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Option
+import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Tuple
 
 namespace CslibTests
 
@@ -63,47 +67,36 @@ example {α β : Type} {encIn : α ↪ List Bool} {encBool : Bool ↪ List Bool}
       (fun a => c * (sc a + max (sf a) (sg a) + 1)) :=
   computableInTimeAndSpace_ite hp hf hg
 
-/-- A three-constructor enumeration, of the kind a `match` in Lean compiles to nested
-`Bool.rec`s. -/
-inductive Colour
-  | red
-  | green
-  | blue
-deriving DecidableEq
-
-instance : Fintype Colour where
-  elems := {.red, .green, .blue}
-  complete := by intro c; cases c <;> simp
-
 /-- A `match` on a finite inductive type is computable as soon as the scrutinee and every branch
-are. Only the branch that is taken runs, so the branches contribute their maximum rather than their
-sum, and nothing about `Colour` is needed beyond `Fintype`. Testing which constructor the scrutinee
+are — here on `Ordering`, the result of a `compare`. Only the branch that is taken runs, so the
+branches contribute their maximum rather than their sum, and nothing about the type is needed
+beyond `Fintype`. Testing which constructor the scrutinee
 is costs no space beyond the scrutinee's own, since a finite type has only finitely many encodings
 and so the encoded scrutinee is of constant length. -/
-example {α β : Type} {encIn : α ↪ List Bool} {encC : Colour ↪ List Bool}
+example {α β : Type} {encIn : α ↪ List Bool} {encO : Ordering ↪ List Bool}
     {encBool : Bool ↪ List Bool} {encOut : β ↪ List Bool}
-    {sel : α → Colour} {red green blue : α → β} {tsel ssel t s : α → ℕ}
-    (hsel : ComputableInTimeAndSpace sel encIn encC tsel ssel)
-    (hred : ComputableInTimeAndSpace red encIn encOut t s)
-    (hgreen : ComputableInTimeAndSpace green encIn encOut t s)
-    (hblue : ComputableInTimeAndSpace blue encIn encOut t s) :
+    {sel : α → Ordering} {onLt onEq onGt : α → β} {tsel ssel t s : α → ℕ}
+    (hsel : ComputableInTimeAndSpace sel encIn encO tsel ssel)
+    (hlt : ComputableInTimeAndSpace onLt encIn encOut t s)
+    (heq : ComputableInTimeAndSpace onEq encIn encOut t s)
+    (hgt : ComputableInTimeAndSpace onGt encIn encOut t s) :
     ∃ c, ComputableInTimeAndSpace
       (fun a => match sel a with
-        | .red => red a
-        | .green => green a
-        | .blue => blue a)
+        | .lt => onLt a
+        | .eq => onEq a
+        | .gt => onGt a)
       encIn encOut
       (fun a => c * (tsel a + t a + 1))
       (fun a => c * (ssel a + s a + 1)) := by
-  have hbr : ∀ i : Colour, ComputableInTimeAndSpace
-      (fun a => match i with | .red => red a | .green => green a | .blue => blue a)
+  have hbr : ∀ i : Ordering, ComputableInTimeAndSpace
+      (fun a => match i with | .lt => onLt a | .eq => onEq a | .gt => onGt a)
       encIn encOut t s := by
     intro i
     cases i <;> assumption
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_match (encCond := encBool) hsel hbr
-  have hsupt : ∀ a, Finset.univ.sup (fun _ : Colour => t a) ≤ t a :=
+  have hsupt : ∀ a, Finset.univ.sup (fun _ : Ordering => t a) ≤ t a :=
     fun a => Finset.sup_le fun _ _ => le_rfl
-  have hsups : ∀ a, Finset.univ.sup (fun _ : Colour => s a) ≤ s a :=
+  have hsups : ∀ a, Finset.univ.sup (fun _ : Ordering => s a) ≤ s a :=
     fun a => Finset.sup_le fun _ _ => le_rfl
   refine ⟨c, hc.mono (fun a => Nat.mul_le_mul_left _ (by have := hsupt a; omega))
     (fun a => Nat.mul_le_mul_left _ (by have := hsups a; omega))⟩
@@ -126,5 +119,85 @@ example {α ι : Type} [Fintype ι] [DecidableEq ι] {β : ι → Type}
         + Finset.univ.sup (fun i => s i a) + 1)) :=
   computableInTimeAndSpace_casesOn (br := fun i a => (⟨i, br i a⟩ : Σ i, β i))
     (fun i a h => by rw [h]) htest hbr
+
+/-! ## Constructors
+
+Dually to the eliminator, a constructor of a non-recursive inductive type is the introduction rule
+of a finite product, so it is `computableInTimeAndSpace_concat` nested once per field. Unlike the
+eliminator, every field is computed, so the fields contribute their sum rather than their maximum;
+and unlike the eliminator, nothing is required of the encoding beyond that it be the concatenation
+of the encoded fields. -/
+
+/-- A two-field constructor carrying data from an infinite type. -/
+structure Interval where
+  lo : ℕ
+  hi : ℕ
+
+example {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encI : Interval ↪ List Bool}
+    {lo hi : α → ℕ} {tl sl th sh : α → ℕ}
+    (henc : ∀ a, encI ⟨lo a, hi a⟩ = encN (lo a) ++ encN (hi a))
+    (hlo : ComputableInTimeAndSpace lo encIn encN tl sl)
+    (hhi : ComputableInTimeAndSpace hi encIn encN th sh) :
+    ∃ c, ComputableInTimeAndSpace (fun a => (⟨lo a, hi a⟩ : Interval)) encIn encI
+      (fun a => c * (tl a + th a + (encIn a).length + 1))
+      (fun a => c * (sl a + sh a + 1)) := by
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_ctor (A := fun _ : Fin 2 => ℕ) (fs := ![lo, hi])
+    (encIn := encIn) (encA := fun _ => encN) (t := ![tl, th]) (s := ![sl, sh])
+    (fun a => by simpa [List.ofFn_succ] using henc a)
+    (Fin.forall_fin_two.mpr ⟨by simpa using hlo, by simpa using hhi⟩)
+  exact ⟨c, hc.mono (fun a => by simp [Fin.sum_univ_two]) (fun a => by simp [Fin.sum_univ_two])⟩
+
+/-- `Option.some`, at the canonical encoding of `Encodings.Option`. A tagged constructor is built
+by treating the tag as a field computed by a constant function, so nothing beyond
+`computableInTimeAndSpace_concat` is involved. -/
+example {α : Type} {enc : α ↪ List Bool} :
+    ∃ c, ComputableInTimeAndSpace (fun a => (some a : Option α)) enc (encOption enc)
+      (fun a => c * ((enc a).length + 1)) (fun _ => c) := by
+  obtain ⟨c₁, h₁⟩ := computableInTimeAndSpace_of_const (α := α) (encIn := enc)
+    (encOut := (⟨fun _ => [true], fun a b _ => Subsingleton.elim a b⟩ : Unit ↪ List Bool)) ()
+  obtain ⟨c₂, h₂⟩ := computableInTimeAndSpace_id (α := α) (enc := enc)
+  obtain ⟨c₃, h₃⟩ := computableInTimeAndSpace_concat (h := fun a => (some a : Option α))
+    (encD := encOption enc) (fun _ => rfl) h₁ h₂
+  refine ⟨c₁ + c₂ + c₃ + 3, h₃.mono (fun a => ?_) (fun a => by omega)⟩
+  have hexp : (c₁ + c₂ + c₃ + 3) * ((enc a).length + 1)
+      = c₁ * ((enc a).length + 1) + c₂ * ((enc a).length + 1) + c₃ * ((enc a).length + 1)
+        + 3 * ((enc a).length + 1) := by ring
+  have h1 : c₁ ≤ c₁ * ((enc a).length + 1) := Nat.le_mul_of_pos_right _ (by omega)
+  omega
+
+/-- A subtype constructor costs nothing at all: the proof field is erased, so the encoding of the
+constructed value *is* the encoding of the data field, and the whole constructor is a change of
+coordinates — `ComputableInTimeAndSpace.congr`, with no combinator involved. -/
+example {α β : Type} {p : β → Prop} {encIn : α ↪ List Bool} {encB : β ↪ List Bool}
+    {encS : {x // p x} ↪ List Bool} {f : α → β} {t s : α → ℕ}
+    (hp : ∀ a, p (f a)) (henc : ∀ x : {x // p x}, encS x = encB x.val)
+    (hf : ComputableInTimeAndSpace f encIn encB t s) :
+    ComputableInTimeAndSpace (fun a => (⟨f a, hp a⟩ : {x // p x})) encIn encS t s :=
+  hf.congr (fun _ => rfl) fun a => henc _
+
+/-- Three fields of different types, encoded flat rather than as nested pairs. The index family of
+`computableInTimeAndSpace_ctor` is dependent, which is awkward when the fields have different
+types; the `List Bool`-valued `computableInTimeAndSpace_flatten` avoids it — encode each field,
+concatenate, and read the result back with `ComputableInTimeAndSpace.congr`. -/
+example {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encB : Bool ↪ List Bool}
+    {encT : ℕ × Bool × ℕ ↪ List Bool} {f h : α → ℕ} {g : α → Bool} {t₁ s₁ t₂ s₂ t₃ s₃ : α → ℕ}
+    (henc : ∀ a, encT (f a, g a, h a) = encN (f a) ++ encB (g a) ++ encN (h a))
+    (hf : ComputableInTimeAndSpace f encIn encN t₁ s₁)
+    (hg : ComputableInTimeAndSpace g encIn encB t₂ s₂)
+    (hh : ComputableInTimeAndSpace h encIn encN t₃ s₃) :
+    ∃ c, ComputableInTimeAndSpace (fun a => (f a, g a, h a)) encIn encT
+      (fun a => c * (t₁ a + t₂ a + t₃ a + (encIn a).length + 1))
+      (fun a => c * (s₁ a + s₂ a + s₃ a + 1)) := by
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_flatten (encIn := encIn)
+    (fs := ![fun a => encN (f a), fun a => encB (g a), fun a => encN (h a)])
+    (t := ![t₁, t₂, t₃]) (s := ![s₁, s₂, s₃])
+    (by
+      intro j
+      fin_cases j
+      · exact hf.congr (fun _ => rfl) fun _ => rfl
+      · exact hg.congr (fun _ => rfl) fun _ => rfl
+      · exact hh.congr (fun _ => rfl) fun _ => rfl)
+  refine ⟨c, (hc.congr (fun _ => rfl) (fun a => by simpa [List.ofFn_succ] using henc a)).mono
+    (fun a => by simp [Fin.sum_univ_three]) (fun a => by simp [Fin.sum_univ_three])⟩
 
 end CslibTests
