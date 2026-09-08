@@ -77,6 +77,14 @@ output onto a work tape; since the scrutinee's type is finite there are only fin
 contents, all of constant length, so the finite control can tell them apart in constant time and
 continue with the machine for the branch that is taken, on the original input.
 
+What is asked of the scrutinee's type is not that it be finite but that only finitely many of its
+values be reachable, which is what the machine needs: finitely many possible contents of the work
+tape, of bounded length, for the control to tell apart. For a finite type that is `Set.toFinite _`.
+It is worth the slight extra generality because it admits the selector Lean already generates for
+every inductive type, `ctorIdx`, which lands in `ℕ` and so is barred by a finite-type hypothesis.
+Branches outside the range are for the same reason not asked to be computable — with an `ℕ`-indexed
+family, all but finitely many of them are junk.
+
 A single pair of bounds covers the scrutinee and every branch. Nothing is lost by that: given
 separate bounds, weakening each of them to their supremum and applying this gives back exactly the
 statement with the supremum in it, so the two forms are interderivable. The number of cases is a
@@ -118,13 +126,14 @@ that is `ComputableInTimeAndSpace.congr` — so a `motive` has no computational 
 genuinely dependent conclusion, about a function `(a : α) → β (sel a)`, cannot even be stated: it
 has no single output encoding. The tag that the sigma carries is not overhead either, since without
 it the result would in general not be decodable. -/
-public theorem computableInTimeAndSpace_match {ι : Type} [Finite ι]
+public theorem computableInTimeAndSpace_match {ι : Type}
     {sel : α → ι} {f : α → β} {br : ι → α → β}
     {encIn : α ↪ List Bool} {encι : ι ↪ List Bool} {encOut : β ↪ List Bool}
     {t s : α → ℕ}
+    (hfin : (Set.range sel).Finite)
     (hagree : ∀ a, br (sel a) a = f a)
     (hsel : ComputableInTimeAndSpace sel encIn encι t s)
-    (hbr : ∀ i, ComputableInTimeAndSpace (br i) encIn encOut t s) :
+    (hbr : ∀ i ∈ Set.range sel, ComputableInTimeAndSpace (br i) encIn encOut t s) :
     ∃ c, ComputableInTimeAndSpace f encIn encOut
       (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
   sorry
@@ -142,10 +151,10 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {_if _else : α
       (fun a => c * (tc a + max (tif a) (telse a) + 1))
       (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
   refine computableInTimeAndSpace_match (encι := encCond)
-    (br := fun b a => bif b then _if a else _else a)
+    (br := fun b a => bif b then _if a else _else a) (Set.toFinite _)
     (fun a => by cases sel a <;> simp)
     (hsel.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _))
-    (fun b => by
+    (fun b _ => by
       cases b
       · exact helse.mono (fun a => by have := le_max_right (tif a) (telse a); omega)
           (fun a => by have := le_max_right (sif a) (selse a); omega)

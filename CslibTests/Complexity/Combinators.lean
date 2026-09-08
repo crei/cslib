@@ -96,8 +96,8 @@ example {α β : Type} {encIn : α ↪ List Bool} {encO : Ordering ↪ List Bool
     intro i
     cases i
     exacts [hweak _ hlt, hweak _ heq, hweak _ hgt]
-  exact computableInTimeAndSpace_match (fun _ => rfl)
-    (hsel.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _)) hbr
+  exact computableInTimeAndSpace_match (Set.toFinite _) (fun _ => rfl)
+    (hsel.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _)) fun i _ => hbr i
 
 /-- Branches of *different* result types need no dependent version of the combinator: the output
 type is the sigma, and the case analysis is the same theorem instantiated at it. What makes this
@@ -112,7 +112,7 @@ example {α ι : Type} [Finite ι] {β : ι → Type}
     ∃ c, ComputableInTimeAndSpace (fun a => (⟨sel a, br (sel a) a⟩ : Σ i, β i)) encIn encS
       (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
   computableInTimeAndSpace_match (br := fun i a => (⟨i, br i a⟩ : Σ i, β i))
-    (fun _ => rfl) hsel hbr
+    (Set.toFinite _) (fun _ => rfl) hsel fun i _ => hbr i
 
 /-! ## Constructors
 
@@ -312,8 +312,8 @@ example {β : Type} {encF : Fin 3 ↪ List Bool} {encOut : β ↪ List Bool}
     · exact hweak _ hp
     · exact hweak _ hc
     · exact hweak _ hr
-  exact computableInTimeAndSpace_match (fun a => by cases sel a <;> rfl)
-    (htag.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _)) hbr
+  exact computableInTimeAndSpace_match (Set.toFinite _) (fun a => by cases sel a <;> rfl)
+    (htag.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _)) fun i _ => hbr i
 
 /-- The payload of `circle`, and of anything else by convention. -/
 def Shape.r : Shape → ℕ
@@ -359,7 +359,8 @@ example {β : Type} {encF : Fin 3 ↪ List Bool} {encOut : β ↪ List Bool}
         | .rect w h => onRect a w h)
       encIn encOut
       (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
-  computableInTimeAndSpace_match (fun a => by cases sel a <;> rfl) htag hbr
+  computableInTimeAndSpace_match (Set.toFinite _) (fun a => by cases sel a <;> rfl) htag
+    fun i _ => hbr i
 
 end Shape
 
@@ -518,6 +519,40 @@ example {β : Type} {encS : Span ↪ List Bool} {encB : Bool ↪ List Bool} {enc
         | .ofBounds u v => onBounds u v)
       encS encOut
       (fun x => c * (t x + 1)) (fun x => c * (s x + 1)) :=
-  computableInTimeAndSpace_match (fun x => by cases x <;> rfl) htag hbr
+  computableInTimeAndSpace_match (Set.toFinite _) (fun x => by cases x <;> rfl) htag
+    fun b _ => hbr b
+
+/-- **The selector Lean already provides.** `Span.tag` above was written by hand, but every
+inductive type comes with `ctorIdx`, generated from `casesOn`, which is the same map read into `ℕ`.
+It serves as the scrutinee directly. That is what makes the combinator mechanisable: a tactic
+cannot invent a bespoke tag type for an arbitrary inductive, but `ctorIdx` is always there, and the
+side conditions — that its range is finite, and that the branches agree — are both discharged by
+case analysis on the scrutinee.
+
+The price of landing in `ℕ` is that the branch family is indexed by `ℕ` too, so all but two of its
+members are junk. That is why only the branches in the range of the selector are asked to be
+computable; over all of `ℕ` the hypothesis would be unsatisfiable for any nonconstant bound. -/
+example {β : Type} {encS : Span ↪ List Bool} {encN : ℕ ↪ List Bool} {encOut : β ↪ List Bool}
+    {onLength onBounds : ℕ → ℕ → β} {t s : Span → ℕ}
+    (hidx : ComputableInTimeAndSpace Span.ctorIdx encS encN t s)
+    (h₀ : ComputableInTimeAndSpace (fun x : Span => onLength x.fst x.snd) encS encOut t s)
+    (h₁ : ComputableInTimeAndSpace (fun x : Span => onBounds x.fst x.snd) encS encOut t s) :
+    ∃ c, ComputableInTimeAndSpace
+      (fun x => match x with
+        | .ofLength u v => onLength u v
+        | .ofBounds u v => onBounds u v)
+      encS encOut
+      (fun x => c * (t x + 1)) (fun x => c * (s x + 1)) := by
+  refine computableInTimeAndSpace_match
+    (br := fun i x => bif i == 0 then onLength x.fst x.snd else onBounds x.fst x.snd)
+    (((Set.finite_singleton 1).insert 0).subset ?_) (fun x => by cases x <;> rfl) hidx ?_
+  · rintro _ ⟨x, rfl⟩
+    cases x
+    · exact Set.mem_insert _ _
+    · exact Set.mem_insert_of_mem _ rfl
+  · rintro _ ⟨x, rfl⟩
+    cases x
+    · exact h₀
+    · exact h₁
 
 end CslibTests
