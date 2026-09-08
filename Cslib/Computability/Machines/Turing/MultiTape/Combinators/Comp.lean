@@ -46,13 +46,14 @@ public theorem computableInTimeAndSpace_id {enc : α ↪ List Bool} :
 
 /-- **Complexity of a composition.** The bounds are those of the two machines, plus the length of
 the encoded intermediate result, which has to be written to and read from a work tape. -/
-proof_wanted computableInTimeAndSpace_comp {f : α → β} {g : β → γ}
+public theorem computableInTimeAndSpace_comp {f : α → β} {g : β → γ}
     {encA : α ↪ List Bool} {encB : β ↪ List Bool} {encC : γ ↪ List Bool}
     {tf sf : α → ℕ} {tg sg : β → ℕ}
     (hf : ComputableInTimeAndSpace f encA encB tf sf)
     (hg : ComputableInTimeAndSpace g encB encC tg sg) :
     ∃ c, ComputableInTimeAndSpace (fun a => g (f a)) encA encC
       (fun a => c * (tf a + tg (f a) + (encB (f a)).length + 1))
-      (fun a => c * (sf a + sg (f a) + (encB (f a)).length + 1))
+      (fun a => c * (sf a + sg (f a) + (encB (f a)).length + 1)) :=
+  sorry
 
 end Turing.MultiTapeTM

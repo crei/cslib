@@ -26,7 +26,7 @@ function-level statements and a small number of normal forms.
   space; this is absorbed by the existential constant of `ComputableInTimeAndSpace`.
 * **As few machine-level results as possible.** The plumbing exists only to prove a handful of
   function-level combinators, which are the reusable interface:
-  `computableInTimeAndSpace_ite` (from `exists_branchOnTape`), the composition of functions (from
+  `computableInTimeAndSpace_cond` (from `exists_branchOnTape`), the composition of functions (from
   `seq` and `onTape`), and the loop combinator `computableInTimeAndSpace_loopFunction`. Everything
   else, in particular the whole `while` result, is derived from those without mentioning tapes.
   The loop is the only combinator that genuinely needs a machine-level branch, since it chooses
@@ -94,7 +94,7 @@ scanning for the first blank.
 * `exists_clearTape`: blank a tape and rewind it,
 * `exists_moveTapeTail`: move the contents of a tape, without its first symbol, to a blank tape,
 * `exists_branchOnTape`: behave like one of two machines depending on the symbol under a tape head.
-  Its function-level face is `computableInTimeAndSpace_ite`; it is used directly only by the loop
+  Its function-level face is `computableInTimeAndSpace_cond`; it is used directly only by the loop
   combinator, for the continue flag of a fused loop body.
 
 All of these are linear in the length of the contents and touch only the tapes they are given.

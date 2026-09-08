@@ -128,7 +128,7 @@ public theorem length_enc_iterate_le {enc : α ↪ List Bool} {growth : ℕ}
       _ = (enc a).length + (i + 1) * growth := by rw [Nat.succ_mul]; omega
 
 /-- **Fusing the condition and the body of a loop into a single function.** This is a consequence
-of `computableInTimeAndSpace_ite`, of `IsOptionEncoding.constructor_computable` composed with
+of `computableInTimeAndSpace_cond`, of `IsOptionEncoding.constructor_computable` composed with
 `step` via `computableInTimeAndSpace_comp` (for the `some` branch), and of
 `computableInTimeAndSpace_of_const` (for the constant `none` branch); no reasoning about machines
 is needed. The length of the encoding of the new value enters the bounds because the composition

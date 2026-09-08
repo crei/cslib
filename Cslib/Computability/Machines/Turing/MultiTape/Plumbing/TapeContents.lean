@@ -71,7 +71,7 @@ head of tape `i` reads `x`, and like the second one otherwise. The combined mach
 step to read the symbol.
 
 This is the only place where a branch is taken on the contents of a tape. Its function-level face
-is `computableInTimeAndSpace_ite`, which is what should be used everywhere; the branch itself is
+is `computableInTimeAndSpace_cond`, which is what should be used everywhere; the branch itself is
 needed here only because the loop combinator branches between continuing the loop and leaving it,
 which is not a choice between two functions. -/
 proof_wanted exists_branchOnTape [DecidableEq Symbol] (i : Fin k) (x : Symbol)
