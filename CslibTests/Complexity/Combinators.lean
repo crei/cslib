@@ -315,6 +315,52 @@ example {β : Type} {encF : Fin 3 ↪ List Bool} {encOut : β ↪ List Bool}
   exact computableInTimeAndSpace_match (fun a => by cases sel a <;> rfl)
     (htag.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _)) hbr
 
+/-- The payload of `circle`, and of anything else by convention. -/
+def Shape.r : Shape → ℕ
+  | .circle r => r
+  | _ => 0
+
+/-- The first payload of `rect`, and of anything else by convention. -/
+def Shape.w : Shape → ℕ
+  | .rect w _ => w
+  | _ => 0
+
+/-- The second payload of `rect`, and of anything else by convention. -/
+def Shape.h : Shape → ℕ
+  | .rect _ h => h
+  | _ => 0
+
+/-- **A destructuring `match` whose branches need junk.** `Span`'s alternatives all have arity two,
+so its fields are total functions and nothing is invented. `Shape`'s have arities zero, one and
+two, so `Shape.r` has to return something on a `rect` and `Shape.w` on a `circle`, and the value
+chosen — `0` here — is arbitrary.
+
+That is exactly what `hagree` licenses. The `circle` branch reads `Shape.w`'s junk nowhere, because
+it is only ever run where the scrutinee is a `circle`, and the hypothesis only asks the branches to
+agree with the `match` where they are taken. A version of the combinator demanding the branches
+equal the `match` everywhere could not be applied here at all: off its own alternative each branch
+computes something the `match` never returns.
+
+Note the branch family is written `fun a => ![…] i` and not `![…] i` with the input abstracted
+inside each entry. The two are equal by `funext`, but only in the first does the scrutinee occur
+applied to the outer variable, and `cases` cannot generalise it under a binder — with the other
+spelling `hagree` is no longer `rfl`. -/
+example {β : Type} {encF : Fin 3 ↪ List Bool} {encOut : β ↪ List Bool}
+    {sel : α → Shape} {onPoint : α → β} {onCircle : α → ℕ → β} {onRect : α → ℕ → ℕ → β}
+    {t s : α → ℕ}
+    (htag : ComputableInTimeAndSpace (fun a => (sel a).tag) encIn encF t s)
+    (hbr : ∀ i : Fin 3, ComputableInTimeAndSpace
+      (fun a => ![onPoint a, onCircle a (sel a).r, onRect a (sel a).w (sel a).h] i)
+      encIn encOut t s) :
+    ∃ c, ComputableInTimeAndSpace
+      (fun a => match sel a with
+        | .point => onPoint a
+        | .circle r => onCircle a r
+        | .rect w h => onRect a w h)
+      encIn encOut
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
+  computableInTimeAndSpace_match (fun a => by cases sel a <;> rfl) htag hbr
+
 end Shape
 
 /-! ## Several alternatives of the same arity
@@ -424,5 +470,48 @@ example {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encS 
                 + 2 * (sc a + sf a + sg a + 1) := by ring
           omega
       _ = c₃ * (c₁ + c₂ + 2) * (sc a + sf a + sg a + 1) := by ring
+
+/-- Total projections, available because *both* alternatives carry two naturals. This is what makes
+a destructuring `match` on `Span` expressible without any junk: a branch may read the fields of the
+alternative it is not in, since it is never run there — but here it does not even have to. -/
+def Span.tag : Span → Bool
+  | .ofLength .. => false
+  | .ofBounds .. => true
+
+/-- The first field of either alternative. -/
+def Span.fst : Span → ℕ
+  | .ofLength u _ => u
+  | .ofBounds u _ => u
+
+/-- The second field of either alternative. -/
+def Span.snd : Span → ℕ
+  | .ofLength _ v => v
+  | .ofBounds _ v => v
+
+/-- **The eliminator of a type with two alternatives of arity two, destructuring.** The branches
+here do not ignore the payload as they do for `Shape`: each receives both fields of the alternative
+it matched, which is the case the combinator was supposed to cover and had not been checked on.
+
+It goes through unchanged. The branch family is indexed by the tag and each branch is the total
+function reading both fields, so `hagree` is the whole content of the destructuring, and it is
+`rfl` once the scrutinee is case split — the projections agree with the pattern variables by
+definition of the projections.
+
+`hbr` is where the remaining work is. It asks that a branch, as a function of the *input* rather
+than of the payload, be computable, and that is what a computable destructor per field plus
+pairing would supply: extract the two fields, pair them with the input, and compose with the
+branch. Those are requirements on the encoding, not further combinators. -/
+example {α β : Type} {encIn : α ↪ List Bool} {encB : Bool ↪ List Bool} {encOut : β ↪ List Bool}
+    {sel : α → Span} {onLength onBounds : α → ℕ → ℕ → β} {t s : α → ℕ}
+    (htag : ComputableInTimeAndSpace (fun a => (sel a).tag) encIn encB t s)
+    (hbr : ∀ b : Bool, ComputableInTimeAndSpace
+      (fun a => (bif b then onBounds else onLength) a (sel a).fst (sel a).snd) encIn encOut t s) :
+    ∃ c, ComputableInTimeAndSpace
+      (fun a => match sel a with
+        | .ofLength u v => onLength a u v
+        | .ofBounds u v => onBounds a u v)
+      encIn encOut
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
+  computableInTimeAndSpace_match (fun a => by cases sel a <;> rfl) htag hbr
 
 end CslibTests
