@@ -200,4 +200,140 @@ example {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encB 
   refine ⟨c, (hc.congr (fun _ => rfl) (fun a => by simpa [List.ofFn_succ] using henc a)).mono
     (fun a => by simp [Fin.sum_univ_three]) (fun a => by simp [Fin.sum_univ_three])⟩
 
+/-! ## A proper inductive type
+
+`Shape` has several alternatives of different arities, two of them carrying data from an infinite
+type. Its constructors are covered by the combinators below; its eliminator is covered as far as
+the tag, and no further — see the last example. -/
+
+/-- Three alternatives, of arities zero, one and two. -/
+inductive Shape
+  | point
+  | circle (r : ℕ)
+  | rect (w h : ℕ)
+deriving DecidableEq
+
+/-- Which alternative a shape is. -/
+def Shape.tag : Shape → Fin 3
+  | .point => 0
+  | .circle _ => 1
+  | .rect _ _ => 2
+
+section Shape
+
+variable {α : Type} {encIn : α ↪ List Bool} {encN : ℕ ↪ List Bool} {encS : Shape ↪ List Bool}
+
+/-- A nullary constructor is a constant, so it needs nothing at all of the encoding. -/
+example : ∃ c, ComputableInTimeAndSpace (fun _ : α => Shape.point) encIn encS
+    (fun _ => c) (fun _ => 0) :=
+  computableInTimeAndSpace_of_const _
+
+/-- A constructor with one field. The two-bit tag is a field computed by a constant function, so
+this is one `computableInTimeAndSpace_concat` and nothing else. -/
+example {f : α → ℕ} {t s : α → ℕ}
+    (henc : ∀ r, encS (.circle r) = [false, true] ++ encN r)
+    (hf : ComputableInTimeAndSpace f encIn encN t s) :
+    ∃ c, ComputableInTimeAndSpace (fun a => Shape.circle (f a)) encIn encS
+      (fun a => c * (t a + (encIn a).length + 1)) (fun a => c * (s a + 1)) := by
+  obtain ⟨c₁, h₁⟩ := computableInTimeAndSpace_of_const (α := α) (encIn := encIn)
+    (encOut := (⟨fun _ => [false, true], fun a b _ => Subsingleton.elim a b⟩ : Unit ↪ List Bool)) ()
+  obtain ⟨c₂, h₂⟩ := computableInTimeAndSpace_concat (h := fun a => Shape.circle (f a))
+    (encD := encS) (fun a => henc (f a)) h₁ hf
+  refine ⟨c₁ + c₂ + 3, h₂.mono (fun a => ?_) (fun a => ?_)⟩
+  · have hexp : (c₁ + c₂ + 3) * (t a + (encIn a).length + 1)
+        = c₁ * (t a + (encIn a).length + 1) + c₂ * (t a + (encIn a).length + 1)
+          + 3 * (t a + (encIn a).length + 1) := by ring
+    have h1 : c₁ ≤ c₁ * (t a + (encIn a).length + 1) := Nat.le_mul_of_pos_right _ (by omega)
+    omega
+  · have hexp : (c₁ + c₂ + 3) * (s a + 1)
+        = c₁ * (s a + 1) + c₂ * (s a + 1) + 3 * (s a + 1) := by ring
+    have h2 : c₂ ≤ c₂ * (s a + 1) := Nat.le_mul_of_pos_right _ (by omega)
+    omega
+
+/-- A constructor with two fields: the tag and the two fields are three computations whose outputs
+are concatenated, so `computableInTimeAndSpace_flatten` applies directly and there is no need to
+nest pairs. -/
+example {f g : α → ℕ} {tf sf tg sg : α → ℕ}
+    (henc : ∀ w h, encS (.rect w h) = [true, false] ++ encN w ++ encN h)
+    (hf : ComputableInTimeAndSpace f encIn encN tf sf)
+    (hg : ComputableInTimeAndSpace g encIn encN tg sg) :
+    ∃ c, ComputableInTimeAndSpace (fun a => Shape.rect (f a) (g a)) encIn encS
+      (fun a => c * (tf a + tg a + (encIn a).length + 1))
+      (fun a => c * (sf a + sg a + 1)) := by
+  obtain ⟨c₀, h₀⟩ := computableInTimeAndSpace_of_const (α := α) (encIn := encIn)
+    (encOut := Function.Embedding.refl (List Bool)) ([true, false] : List Bool)
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_flatten (encIn := encIn)
+    (fs := ![fun _ => [true, false], fun a => encN (f a), fun a => encN (g a)])
+    (t := ![fun _ => c₀, tf, tg]) (s := ![fun _ => 0, sf, sg])
+    (by
+      intro j
+      fin_cases j
+      · exact h₀
+      · exact hf.congr (fun _ => rfl) fun _ => rfl
+      · exact hg.congr (fun _ => rfl) fun _ => rfl)
+  refine ⟨c * (c₀ + 1), ((hc.congr (fun _ => rfl)
+    (fun a => by simpa [List.ofFn_succ] using henc (f a) (g a))).mono (fun a => ?_)
+      (fun a => ?_))⟩
+  · simp only [Fin.sum_univ_three, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val_two]
+    calc c * (c₀ + tf a + tg a + (encIn a).length + 1)
+        ≤ c * ((c₀ + 1) * (tf a + tg a + (encIn a).length + 1)) := by
+          refine Nat.mul_le_mul_left _ ?_
+          have h1 : c₀ ≤ c₀ * (tf a + tg a + (encIn a).length + 1) :=
+            Nat.le_mul_of_pos_right _ (by omega)
+          have h2 : (c₀ + 1) * (tf a + tg a + (encIn a).length + 1)
+              = c₀ * (tf a + tg a + (encIn a).length + 1)
+                + (tf a + tg a + (encIn a).length + 1) := by ring
+          omega
+      _ = c * (c₀ + 1) * (tf a + tg a + (encIn a).length + 1) := by ring
+  · simp only [Fin.sum_univ_three, Matrix.cons_val_zero, Matrix.cons_val_one, Matrix.cons_val_two]
+    calc c * (0 + sf a + sg a + 1) = c * (sf a + sg a + 1) := by ring
+      _ ≤ c * (c₀ + 1) * (sf a + sg a + 1) :=
+          Nat.mul_le_mul_right _ (Nat.le_mul_of_pos_right _ (by omega))
+
+/-- Matching on a type with several alternatives, as far as the tag. Given that the alternative can
+be read off — which is a requirement on the encoding, not something derivable, and the one piece
+`Encodings/` would have to supply for a general type — the `match` is
+`computableInTimeAndSpace_match` at the tag.
+
+Branches that *use* a constructor's fields need more: a computable destructor per constructor, and
+pairing to hand the branch both the original input and the extracted payload. Those are the two
+things still missing, and they are requirements on the encoding rather than combinators. -/
+example {β : Type} {encF : Fin 3 ↪ List Bool} {encBool : Bool ↪ List Bool} {encOut : β ↪ List Bool}
+    {sel : α → Shape} {onPoint onCircle onRect : α → β} {tsel ssel t s : α → ℕ}
+    (htag : ComputableInTimeAndSpace (fun a => (sel a).tag) encIn encF tsel ssel)
+    (hp : ComputableInTimeAndSpace onPoint encIn encOut t s)
+    (hc : ComputableInTimeAndSpace onCircle encIn encOut t s)
+    (hr : ComputableInTimeAndSpace onRect encIn encOut t s) :
+    ∃ c, ComputableInTimeAndSpace
+      (fun a => match sel a with
+        | .point => onPoint a
+        | .circle _ => onCircle a
+        | .rect _ _ => onRect a)
+      encIn encOut
+      (fun a => c * (tsel a + t a + 1)) (fun a => c * (ssel a + s a + 1)) := by
+  have hbr : ∀ i : Fin 3, ComputableInTimeAndSpace (![onPoint, onCircle, onRect] i)
+      encIn encOut t s := by
+    intro i
+    fin_cases i
+    · exact hp
+    · exact hc
+    · exact hr
+  obtain ⟨c, hc'⟩ := computableInTimeAndSpace_match (encCond := encBool) htag hbr
+  have hfun : (fun a => ![onPoint, onCircle, onRect] (sel a).tag a) =
+      fun a => match sel a with
+        | .point => onPoint a
+        | .circle _ => onCircle a
+        | .rect _ _ => onRect a := by
+    funext a
+    cases sel a <;> rfl
+  rw [hfun] at hc'
+  have hsupt : ∀ a, Finset.univ.sup (fun _ : Fin 3 => t a) ≤ t a :=
+    fun a => Finset.sup_le fun _ _ => le_rfl
+  have hsups : ∀ a, Finset.univ.sup (fun _ : Fin 3 => s a) ≤ s a :=
+    fun a => Finset.sup_le fun _ _ => le_rfl
+  exact ⟨c, hc'.mono (fun a => Nat.mul_le_mul_left _ (by have := hsupt a; omega))
+    (fun a => Nat.mul_le_mul_left _ (by have := hsups a; omega))⟩
+
+end Shape
+
 end CslibTests

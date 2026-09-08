@@ -55,6 +55,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Tuple
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.While
 public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Option
+public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Pair
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Basic
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Clean
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.LiftTapes
