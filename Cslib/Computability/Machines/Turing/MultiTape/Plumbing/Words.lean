@@ -23,8 +23,10 @@ from some work tapes and write words to others.
 holds a word (`TapesHold`), the input head sits at position `1` and the output is left unchanged.
 The specialisation is what makes the combinators cheap to assemble:
 
-* the tapes a machine did not touch are described by the postcondition (`ws' l = ws l`) instead of
-  by a set of tape indices, so `Cfg.AgreesOutside` disappears;
+* a machine that writes returns the *whole* vector of words: the postcondition of a leaf like
+  `exists_transformsTapes_clear` or `exists_transformsTapes_ofComputable` is a single equality
+  `ws' = Function.update ws o …`, so which tapes survived a step is obtained by rewriting rather
+  than by a case analysis per tape, and `Cfg.AgreesOutside` disappears;
 * the input head and the output are normalised, so sequential composition needs no side
   conditions;
 * the configuration is determined by the words on the tapes, so two machines can be composed by
@@ -132,11 +134,12 @@ theorem exists_transformsTapes_nop (k : ℕ) :
   sorry
 
 /-- **Clearing a tape.** A work tape can be blanked and rewound in time linear in its contents,
-leaving all other tapes untouched. -/
+leaving all other tapes untouched: the result is exactly the old vector of words with tape `i`
+blanked. -/
 theorem exists_transformsTapes_clear {k : ℕ} (i : Fin k) :
     ∃ (c : ℕ) (State : Type) (_ : Finite State) (tm : MultiTapeTM k Bool State), ∀ w : List Bool,
       TransformsTapes tm (fun _ ws => ws i = w)
-        (fun _ ws ws' => ws' i = [] ∧ ∀ l ≠ i, ws' l = ws l)
+        (fun _ ws ws' => ws' = Function.update ws i [])
         (c * (w.length + 1)) (w.length + 1 + k) :=
   sorry
 
@@ -194,6 +197,10 @@ theorem exists_transformsTapes_repeat {J : Type*} {k : ℕ} (i : Fin k) (x : Boo
 `i`, writes its result to tape `o`, and uses `m` further tapes as scratch space. The tapes in
 `keep` are left untouched, all other tapes are blank before and after.
 
+Under the precondition — the argument on tape `i`, everything outside `keep` blank — the machine
+changes exactly one word: tape `i` and the tapes in `keep` are untouched and the scratch tapes are
+blank again, so the postcondition is the single equality `ws' = Function.update ws o …`.
+
 The length of the argument and of the result enter the bounds because they are written to and read
 from work tapes; neither is bounded by `t` or `s`, since the input tape is read-only and the output
 tape is append-only. -/
@@ -205,8 +212,7 @@ theorem exists_transformsTapes_ofComputable {α β : Type*} {enc : α ↪ List B
       ∃ (State : Type) (_ : Finite State) (tm : MultiTapeTM k Bool State), ∀ a : α,
         TransformsTapes tm
           (fun _ ws => ws i = enc a ∧ ∀ l, l ≠ i → l ∉ keep → ws l = [])
-          (fun _ ws ws' => ws' i = enc a ∧ ws' o = encOut (g a) ∧
-            (∀ l ∈ keep, ws' l = ws l) ∧ ∀ l, l ≠ i → l ≠ o → l ∉ keep → ws' l = [])
+          (fun _ ws ws' => ws' = Function.update ws o (encOut (g a)))
           (c * (t a + (enc a).length + (encOut (g a)).length + 1))
           (c * (s a + (enc a).length + (encOut (g a)).length + 1) + k) :=
   sorry
@@ -223,8 +229,7 @@ theorem exists_transformsTapes_ofComputableInput {α β : Type*} {enc : α ↪ L
       ∃ (State : Type) (_ : Finite State) (tm : MultiTapeTM k Bool State), ∀ a : α,
         TransformsTapes tm
           (fun input ws => input = enc a ∧ ∀ l, l ∉ keep → ws l = [])
-          (fun _ ws ws' => ws' o = encOut (g a) ∧
-            (∀ l ∈ keep, ws' l = ws l) ∧ ∀ l, l ≠ o → l ∉ keep → ws' l = [])
+          (fun _ ws ws' => ws' = Function.update ws o (encOut (g a)))
           (c * (t a + (encOut (g a)).length + 1))
           (c * (s a + (encOut (g a)).length + 1) + k) :=
   sorry
