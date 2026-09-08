@@ -109,6 +109,16 @@ public lemma loopIterate_ne_none_of_le {m n : ℕ} {a : α} (h : m ≤ n)
     (hn : loopIterate body n a ≠ none) : loopIterate body m a ≠ none :=
   fun hm => hn (loopIterate_eq_none_of_le h hm)
 
+/-- As long as the loop has not stopped, each iterate is obtained from the previous one by a
+successful call of the body. -/
+public lemma loopIterate_succ_of_lt {m n : ℕ} {a x : α} (hn : n < m)
+    (hm : loopIterate body m a ≠ none) (hx : loopIterate body n a = some x) :
+    ∃ x', body x = some x' ∧ loopIterate body (n + 1) a = some x' := by
+  have heq : loopIterate body (n + 1) a = body x := by rw [loopIterate_succ', hx]; simp
+  have hne : body x ≠ none := heq ▸ loopIterate_ne_none_of_le hn hm
+  obtain ⟨x', hx'⟩ := Option.ne_none_iff_exists'.mp hne
+  exact ⟨x', hx', by rw [heq, hx']⟩
+
 /-- The values reachable by repeatedly applying the loop body are exactly its iterates. -/
 public lemma reaches_iff_loopIterate {a b : α} :
     Relation.ReflTransGen (fun x y => y ∈ body x) a b ↔ ∃ n, loopIterate body n a = some b := by
@@ -173,13 +183,71 @@ private lemma nat_bound_add {c d u X : ℕ} (hu : 1 ≤ u) (hX : X ≤ c * u) : 
   calc X + d ≤ c * u + d * u := by gcongr; exact Nat.le_mul_of_pos_right d (by omega)
     _ = (c + d) * u := by ring
 
-/-- A sum of bounded quantities is bounded by the sum of the bounds. -/
-private lemma nat_bound_sum {c d u X Y : ℕ} (hX : X ≤ c * u) (hY : Y ≤ d * u) :
-    X + Y ≤ (c + d) * u := by
-  calc X + Y ≤ c * u + d * u := by gcongr
-    _ = (c + d) * u := by ring
-
 end Bounds
+
+section TapeWords
+
+/-! ## The vector of words on three named tapes
+
+Every configuration the loop machine passes through is blank outside of three named work tapes;
+`tapeWords` is the vector of words of such a configuration. The machines of
+`Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Words` return whole vectors — their
+postconditions are equalities — so the projection, blankness and `Function.update` equations here
+are all that is needed to glue the steps of the loop. -/
+
+variable {K : ℕ}
+
+/-- The vector of words that holds `w₁`, `w₂` and `w₃` on the tapes `i₁`, `i₂` and `i₃` and is
+blank everywhere else. -/
+private def tapeWords (i₁ i₂ i₃ : Fin K) (w₁ w₂ w₃ : List Bool) : Fin K → List Bool :=
+  fun l => if l = i₁ then w₁ else if l = i₂ then w₂ else if l = i₃ then w₃ else []
+
+variable {i₁ i₂ i₃ : Fin K} {w₁ w₂ w₃ w : List Bool}
+
+private lemma tapeWords_fst : tapeWords i₁ i₂ i₃ w₁ w₂ w₃ i₁ = w₁ := by
+  simp [tapeWords]
+
+private lemma tapeWords_snd (h₁₂ : i₁ ≠ i₂) : tapeWords i₁ i₂ i₃ w₁ w₂ w₃ i₂ = w₂ := by
+  simp [tapeWords, Ne.symm h₁₂]
+
+private lemma tapeWords_thd (h₁₃ : i₁ ≠ i₃) (h₂₃ : i₂ ≠ i₃) :
+    tapeWords i₁ i₂ i₃ w₁ w₂ w₃ i₃ = w₃ := by
+  simp [tapeWords, Ne.symm h₁₃, Ne.symm h₂₃]
+
+private lemma tapeWords_of_ne_fst {l : Fin K} (h₁ : l ≠ i₁) :
+    tapeWords i₁ i₂ i₃ w₁ [] [] l = [] := by
+  simp [tapeWords, h₁]
+
+private lemma tapeWords_of_ne_snd {l : Fin K} (h₂ : l ≠ i₂) :
+    tapeWords i₁ i₂ i₃ [] w₂ [] l = [] := by
+  simp [tapeWords, h₂]
+
+private lemma tapeWords_of_ne_fst_snd {l : Fin K} (h₁ : l ≠ i₁) (h₂ : l ≠ i₂) :
+    tapeWords i₁ i₂ i₃ w₁ w₂ [] l = [] := by
+  simp [tapeWords, h₁, h₂]
+
+private lemma update_tapeWords_fst :
+    Function.update (tapeWords i₁ i₂ i₃ w₁ w₂ w₃) i₁ w = tapeWords i₁ i₂ i₃ w w₂ w₃ := by
+  funext l
+  by_cases h : l = i₁
+  · subst h; rw [Function.update_self, tapeWords_fst]
+  · rw [Function.update_of_ne h]; simp [tapeWords, h]
+
+private lemma update_tapeWords_snd (h₁₂ : i₁ ≠ i₂) :
+    Function.update (tapeWords i₁ i₂ i₃ w₁ w₂ w₃) i₂ w = tapeWords i₁ i₂ i₃ w₁ w w₃ := by
+  funext l
+  by_cases h : l = i₂
+  · subst h; rw [Function.update_self, tapeWords_snd h₁₂]
+  · rw [Function.update_of_ne h]; simp [tapeWords, h]
+
+private lemma update_tapeWords_thd (h₁₃ : i₁ ≠ i₃) (h₂₃ : i₂ ≠ i₃) :
+    Function.update (tapeWords i₁ i₂ i₃ w₁ w₂ w₃) i₃ w = tapeWords i₁ i₂ i₃ w₁ w₂ w := by
+  funext l
+  by_cases h : l = i₃
+  · subst h; rw [Function.update_self, tapeWords_thd h₁₃ h₂₃]
+  · rw [Function.update_of_ne h]; simp [tapeWords, h]
+
+end TapeWords
 
 -- The `Finite` instances of the machines that are combined are produced by `obtain`, so they have
 -- to be registered as instances with `haveI` even though the goal is a proposition.
@@ -249,14 +317,9 @@ public theorem computableInTimeAndSpace_loopFunction
     omega
   -- every round before `N a` produces the value the next one starts at
   have hnext : ∀ a n, n < N a → ∀ x, loopIterate body n a = some x →
-      ∃ x', body x = some x' ∧ loopIterate body (n + 1) a = some x' := by
-    intro a n hn x hx
-    have heq : loopIterate body (n + 1) a = body x := by rw [loopIterate_succ', hx]; simp
-    have hne : body x ≠ none := by
-      rw [← heq]
-      exact loopIterate_ne_none_of_le hn (by rw [hN a]; exact Option.some_ne_none _)
-    obtain ⟨x', hx'⟩ := Option.ne_none_iff_exists'.mp hne
-    exact ⟨x', hx', by rw [heq, hx']⟩
+      ∃ x', body x = some x' ∧ loopIterate body (n + 1) a = some x' :=
+    fun a n hn x hx => loopIterate_succ_of_lt hn
+      (by rw [hN a]; exact Option.some_ne_none _) hx
   -- ### The encoding of the loop flag
   obtain ⟨encBool, hencBoolHead, hencBoolLen⟩ :
       ∃ e : Bool ↪ List Bool, (∀ b, (e b).head? = some b) ∧ ∀ b, (e b).length = 1 :=
@@ -337,61 +400,30 @@ public theorem computableInTimeAndSpace_loopFunction
   have hvu : ∀ (a : α) (c : ℕ), c * (s a + 1) ≤ c * (t a + s a + 1) :=
     fun a c => Nat.mul_le_mul_left _ (by omega)
   -- ### Descriptions of the tape contents at the various points of a round
-  -- Every configuration of the loop has at most the three named tapes non-blank, so a single
-  -- vector family describes them all. The machines return whole vectors — their postconditions
-  -- are equalities — so the steps below are glued by rewriting with the projection and update
-  -- equations of `V`, never by a case analysis per tape. The family is obtained from an
-  -- existential so that its defining equation is applied only where intended.
-  obtain ⟨V, hV⟩ : ∃ V : List Bool → List Bool → List Bool → Fin K → List Bool,
-      ∀ w1 w3 w4 l, V w1 w3 w4 l =
-        if l = T1 then w1 else if l = T3 then w3 else if l = T4 then w4 else [] :=
-    ⟨_, fun _ _ _ _ => rfl⟩
-  have hV1 : ∀ w1 w3 w4, V w1 w3 w4 T1 = w1 := fun w1 w3 w4 => by rw [hV]; simp
-  have hV3 : ∀ w1 w3 w4, V w1 w3 w4 T3 = w3 := fun w1 w3 w4 => by
-    rw [hV]; simp [Ne.symm hT13]
-  have hV4 : ∀ w1 w3 w4, V w1 w3 w4 T4 = w4 := fun w1 w3 w4 => by
-    rw [hV]; simp [Ne.symm hT14, Ne.symm hT34]
-  have hVbl1 : ∀ w1 l, l ≠ T1 → V w1 [] [] l = [] := fun w1 l h1 => by rw [hV]; simp [h1]
-  have hVbl3 : ∀ w3 l, l ≠ T3 → V [] w3 [] l = [] := fun w3 l h3 => by rw [hV]; simp [h3]
-  have hVbl13 : ∀ w1 w3 l, l ≠ T1 → l ≠ T3 → V w1 w3 [] l = [] :=
-    fun w1 w3 l h1 h3 => by rw [hV]; simp [h1, h3]
-  have hupd1 : ∀ w1 w3 w4 w, Function.update (V w1 w3 w4) T1 w = V w w3 w4 := by
-    intro w1 w3 w4 w
-    funext l
-    by_cases h1 : l = T1
-    · subst h1; rw [Function.update_self, hV1]
-    · rw [Function.update_of_ne h1, hV, hV]; simp [h1]
-  have hupd3 : ∀ w1 w3 w4 w, Function.update (V w1 w3 w4) T3 w = V w1 w w4 := by
-    intro w1 w3 w4 w
-    funext l
-    by_cases h3 : l = T3
-    · subst h3; rw [Function.update_self, hV3]
-    · rw [Function.update_of_ne h3, hV, hV]; simp [h3]
-  have hupd4 : ∀ w1 w3 w4 w, Function.update (V w1 w3 w4) T4 w = V w1 w3 w := by
-    intro w1 w3 w4 w
-    funext l
-    by_cases h4 : l = T4
-    · subst h4; rw [Function.update_self, hV4]
-    · rw [Function.update_of_ne h4, hV, hV]; simp [h4]
+  -- Every configuration of the loop is a `tapeWords T1 T3 T4` vector, and the machines return
+  -- whole vectors, so the steps below are glued by rewriting with the equations of `tapeWords`.
+  -- The predicates are obtained from existentials so that they are unfolded only where intended.
   obtain ⟨Pround, hPround⟩ : ∃ P : α → ℕ → (Fin K → List Bool) → Prop, ∀ a n ws, P a n ws ↔
-      (∃ y, loopIterate body n a = some y ∧ ws = V (enc y) (encOpt (body y)) []) :=
-    ⟨_, fun _ _ _ => Iff.rfl⟩
+      (∃ y, loopIterate body n a = some y ∧
+        ws = tapeWords T1 T3 T4 (enc y) (encOpt (body y)) []) := ⟨_, fun _ _ _ => Iff.rfl⟩
   obtain ⟨PMid, hPMid⟩ : ∃ P : α → ℕ → (Fin K → List Bool) → Prop, ∀ a n ws, P a n ws ↔
       (∃ y, loopIterate body n a = some y ∧
-        ws = V (enc y) (encOpt (body y)) (encBool (body y).isNone)) := ⟨_, fun _ _ _ => Iff.rfl⟩
+        ws = tapeWords T1 T3 T4 (enc y) (encOpt (body y)) (encBool (body y).isNone)) :=
+    ⟨_, fun _ _ _ => Iff.rfl⟩
   obtain ⟨PExit, hPExit⟩ : ∃ P : α → ℕ → (Fin K → List Bool) → Prop, ∀ a n ws, P a n ws ↔
       (∃ y, loopIterate body n a = some y ∧ body y = none ∧
-        ws = V (enc y) (encOpt (body y)) (encBool (body y).isNone)) :=
+        ws = tapeWords T1 T3 T4 (enc y) (encOpt (body y)) (encBool (body y).isNone)) :=
     ⟨_, fun _ _ _ => Iff.rfl⟩
   obtain ⟨PCont, hPCont⟩ : ∃ P : α → ℕ → (Fin K → List Bool) → Prop, ∀ a n ws, P a n ws ↔
       (∃ y y', loopIterate body n a = some y ∧ body y = some y' ∧
-        ws = V (enc y) (encOpt (body y)) (encBool (body y).isNone)) :=
+        ws = tapeWords T1 T3 T4 (enc y) (encOpt (body y)) (encBool (body y).isNone)) :=
     ⟨_, fun _ _ _ => Iff.rfl⟩
   obtain ⟨QR, hQR⟩ : ∃ Q : α → ℕ → (Fin K → List Bool) → Prop, ∀ a n ws', Q a n ws' ↔
       ((∀ y, loopIterate body n a = some y → body y = none →
           ws' T1 = enc y ∧ (ws' T4).head? = some true) ∧
        (∀ y y', loopIterate body n a = some y → body y = some y' →
-          ws' = V (enc y') (encOpt (body y')) [] ∧ (ws' T4).head? ≠ some true)) :=
+          ws' = tapeWords T1 T3 T4 (enc y') (encOpt (body y')) [] ∧
+            (ws' T4).head? ≠ some true)) :=
     ⟨_, fun _ _ _ => Iff.rfl⟩
   -- ### Bounds for the individual machines
   -- Every length occurring in the bound of a machine of a round is bounded by `W * (s a + 1)`,
@@ -478,7 +510,8 @@ public theorem computableInTimeAndSpace_loopFunction
       refine (hQR a n ws).mpr ⟨fun z hz _ => ?_, fun z z' hz hbz => ?_⟩
       · rw [hy] at hz
         obtain rfl : z = y := (Option.some.inj hz).symm
-        exact ⟨by rw [hws, hV1], by simp [hws, hV4, hby, hencBoolHead]⟩
+        refine ⟨by rw [hws, tapeWords_fst], ?_⟩
+        simp [hws, tapeWords_thd hT14 hT34, hby, hencBoolHead]
       · rw [hy] at hz
         obtain rfl : z = y := (Option.some.inj hz).symm
         rw [hby] at hbz
@@ -508,7 +541,7 @@ public theorem computableInTimeAndSpace_loopFunction
     have hx' : loopIterate body (n + 1) a = some x' := by
       rw [loopIterate_succ', hit]; simpa using hb
     have hPC : ∀ ws, PCont a n ws →
-        ws = V (enc x) (encOpt (body x)) (encBool (body x).isNone) := by
+        ws = tapeWords T1 T3 T4 (enc x) (encOpt (body x)) (encBool (body x).isNone) := by
       intro ws hP
       obtain ⟨y, y', hy, _, hws⟩ := (hPCont a n ws).mp hP
       rw [hit] at hy
@@ -516,41 +549,47 @@ public theorem computableInTimeAndSpace_loopFunction
       exact hws
     -- clear the flag tape
     have step4 : TransformsTapes MClear4 (fun _ ws => PCont a n ws)
-        (fun _ _ ws' => ws' = V (enc x) (encOpt (some x')) [])
+        (fun _ _ ws' => ws' = tapeWords T1 T3 T4 (enc x) (encOpt (some x')) [])
         (cC4 * ((encBool (body x).isNone).length + 1))
         ((encBool (body x).isNone).length + 1 + K) :=
       (hMClear4 (encBool (body x).isNone)).imp
-        (fun _ ws hP => by rw [hPC ws hP, hV4])
-        (fun _ ws ws' hP hQ => by rw [hQ, hPC ws hP, hupd4, hb]) le_rfl le_rfl
+        (fun _ ws hP => by rw [hPC ws hP, tapeWords_thd hT14 hT34])
+        (fun _ ws ws' hP hQ => by
+          rw [hQ, hPC ws hP, update_tapeWords_thd hT14 hT34, hb]) le_rfl le_rfl
     -- clear the tape holding the current value
-    have step1 : TransformsTapes MClear1 (fun _ ws => ws = V (enc x) (encOpt (some x')) [])
-        (fun _ _ ws' => ws' = V [] (encOpt (some x')) [])
+    have step1 : TransformsTapes MClear1
+        (fun _ ws => ws = tapeWords T1 T3 T4 (enc x) (encOpt (some x')) [])
+        (fun _ _ ws' => ws' = tapeWords T1 T3 T4 [] (encOpt (some x')) [])
         (cC1 * ((enc x).length + 1)) ((enc x).length + 1 + K) :=
-      (hMClear1 (enc x)).imp (fun _ ws hP => by rw [hP, hV1])
-        (fun _ ws ws' hP hQ => by rw [hQ, hP, hupd1]) le_rfl le_rfl
+      (hMClear1 (enc x)).imp (fun _ ws hP => by rw [hP, tapeWords_fst])
+        (fun _ ws ws' hP hQ => by rw [hQ, hP, update_tapeWords_fst]) le_rfl le_rfl
     -- extract the new value from the result of the body
-    have stepD : TransformsTapes MDestr (fun _ ws => ws = V [] (encOpt (some x')) [])
-        (fun _ _ ws' => ws' = V (enc x') (encOpt (some x')) [])
+    have stepD : TransformsTapes MDestr
+        (fun _ ws => ws = tapeWords T1 T3 T4 [] (encOpt (some x')) [])
+        (fun _ _ ws' => ws' = tapeWords T1 T3 T4 (enc x') (encOpt (some x')) [])
         (cD * (cd * ((encOpt (some x')).length + 1) + (encOpt (some x')).length
           + (enc x').length + 1))
         (cD * (0 + (encOpt (some x')).length + (enc x').length + 1) + K) :=
       (hMDestr x').imp
-        (fun _ ws hP => ⟨by rw [hP, hV3]; simp, fun l hl3 _ => by rw [hP]; exact hVbl3 _ l hl3⟩)
-        (fun _ ws ws' hP hQ => by rw [hQ, hP, hupd1]; simp) le_rfl le_rfl
+        (fun _ ws hP => ⟨by rw [hP, tapeWords_snd hT13]; simp,
+          fun l hl3 _ => by rw [hP]; exact tapeWords_of_ne_snd hl3⟩)
+        (fun _ ws ws' hP hQ => by rw [hQ, hP, update_tapeWords_fst]; simp) le_rfl le_rfl
     -- clear the tape holding the result of the body
-    have step3 : TransformsTapes MClear3 (fun _ ws => ws = V (enc x') (encOpt (some x')) [])
-        (fun _ _ ws' => ws' = V (enc x') [] [])
+    have step3 : TransformsTapes MClear3
+        (fun _ ws => ws = tapeWords T1 T3 T4 (enc x') (encOpt (some x')) [])
+        (fun _ _ ws' => ws' = tapeWords T1 T3 T4 (enc x') [] [])
         (cC3 * ((encOpt (some x')).length + 1)) ((encOpt (some x')).length + 1 + K) :=
-      (hMClear3 (encOpt (some x'))).imp (fun _ ws hP => by rw [hP, hV3])
-        (fun _ ws ws' hP hQ => by rw [hQ, hP, hupd3]) le_rfl le_rfl
+      (hMClear3 (encOpt (some x'))).imp (fun _ ws hP => by rw [hP, tapeWords_snd hT13])
+        (fun _ ws ws' hP hQ => by rw [hQ, hP, update_tapeWords_snd hT13]) le_rfl le_rfl
     -- run the body on the new value
-    have stepB : TransformsTapes MBody (fun _ ws => ws = V (enc x') [] [])
-        (fun _ _ ws' => ws' = V (enc x') (encOpt (body x')) [])
+    have stepB : TransformsTapes MBody (fun _ ws => ws = tapeWords T1 T3 T4 (enc x') [] [])
+        (fun _ _ ws' => ws' = tapeWords T1 T3 T4 (enc x') (encOpt (body x')) [])
         (cB * (t x' + (enc x').length + (encOpt (body x')).length + 1))
         (cB * (s x' + (enc x').length + (encOpt (body x')).length + 1) + K) :=
       (hMBody x').imp
-        (fun _ ws hP => ⟨by rw [hP, hV1], fun l hl1 _ => by rw [hP]; exact hVbl1 _ l hl1⟩)
-        (fun _ ws ws' hP hQ => by rw [hQ, hP, hupd3]) le_rfl le_rfl
+        (fun _ ws hP => ⟨by rw [hP, tapeWords_fst],
+          fun l hl1 _ => by rw [hP]; exact tapeWords_of_ne_fst hl1⟩)
+        (fun _ ws ws' hP hQ => by rw [hQ, hP, update_tapeWords_snd hT13]) le_rfl le_rfl
     refine (transformsTapes_seq step4 (transformsTapes_seq step1 (transformsTapes_seq stepD
       (transformsTapes_seq step3 stepB (fun _ _ _ _ h => h)) (fun _ _ _ _ h => h))
       (fun _ _ _ _ h => h)) (fun _ _ _ _ h => h)).imp (fun _ _ h => h)
@@ -565,7 +604,7 @@ public theorem computableInTimeAndSpace_loopFunction
         obtain rfl : z = x := (Option.some.inj hz).symm
         rw [hb] at hbz
         obtain rfl : z' = x' := (Option.some.inj hbz).symm
-        exact ⟨hfin, by rw [hfin, hV4]; simp⟩
+        exact ⟨hfin, by rw [hfin, tapeWords_thd hT14 hT34]; simp⟩
     · have e2 := hA2 a (body x).isNone
       have e3 := hA3 a n x hit
       have e4 := hA4 a (n + 1) x' hx'
@@ -605,7 +644,7 @@ public theorem computableInTimeAndSpace_loopFunction
       obtain ⟨y, hy, _⟩ := (hPround a n ws).mp hP
       rw [hit] at hy
       exact absurd hy (by simp)
-    have hPr : ∀ ws, Pround a n ws → ws = V (enc x) (encOpt (body x)) [] := by
+    have hPr : ∀ ws, Pround a n ws → ws = tapeWords T1 T3 T4 (enc x) (encOpt (body x)) [] := by
       intro ws hP
       obtain ⟨y, hy, hws⟩ := (hPround a n ws).mp hP
       rw [hit] at hy
@@ -616,21 +655,23 @@ public theorem computableInTimeAndSpace_loopFunction
         (cN * (cn + (encOpt (body x)).length + (encBool (body x).isNone).length + 1))
         (cN * (0 + (encOpt (body x)).length + (encBool (body x).isNone).length + 1) + K) :=
       (hMIsNone (body x)).imp
-        (fun _ ws hP => ⟨by rw [hPr ws hP, hV3],
-          fun l hl3 hl1 => by rw [hPr ws hP]; exact hVbl13 _ _ l (by simpa using hl1) hl3⟩)
+        (fun _ ws hP => ⟨by rw [hPr ws hP, tapeWords_snd hT13],
+          fun l hl3 hl1 => by
+            rw [hPr ws hP]; exact tapeWords_of_ne_fst_snd (by simpa using hl1) hl3⟩)
         (fun _ ws ws' hP hQ =>
-          (hPMid a n ws').mpr ⟨x, hit, by rw [hQ, hPr ws hP, hupd4]⟩) le_rfl le_rfl
+          (hPMid a n ws').mpr ⟨x, hit, by
+            rw [hQ, hPr ws hP, update_tapeWords_thd hT14 hT34]⟩) le_rfl le_rfl
     refine (transformsTapes_seq stepN (hMBranch (a, n)) (fun _ ws ws' hP hQ => ?_)).imp
       (fun _ _ h => h) (fun _ ws ws' hP hQ => ?_) ?_ ?_
     · -- the flag decides which branch is taken
       obtain ⟨y, hy, hws⟩ := (hPMid a n ws').mp hQ
       by_cases hflag : (ws' T4).head? = some true
       · rw [ite_eq_left hflag]
-        rw [hws, hV4, hencBoolHead] at hflag
+        rw [hws, tapeWords_thd hT14 hT34, hencBoolHead] at hflag
         exact (hPExit a n ws').mpr ⟨y, hy, by simpa using hflag, hws⟩
       · rw [ite_eq_right hflag]
         rcases hby : body y with _ | y'
-        · exact absurd (by simp [hws, hV4, hby, hencBoolHead]) hflag
+        · exact absurd (by simp [hws, tapeWords_thd hT14 hT34, hby, hencBoolHead]) hflag
         · exact (hPCont a n ws').mpr ⟨y, y', hy, hby, hws⟩
     · obtain ⟨w1, -, h2⟩ := hQ
       exact h2
@@ -677,26 +718,28 @@ public theorem computableInTimeAndSpace_loopFunction
       (fun _ _ ws' => Pround a 0 ws') (A * (t a + s a + 1)) (B * (s a + 1)) := by
     intro a
     have s1 : TransformsTapes MCopy (fun input ws => input = enc a ∧ ∀ l, ws l = [])
-        (fun _ _ ws' => ws' = V (enc a) [] [])
+        (fun _ _ ws' => ws' = tapeWords T1 T3 T4 (enc a) [] [])
         (cI * (ci * ((enc a).length + 1) + (enc a).length + 1))
         (cI * (0 + (enc a).length + 1) + K) := by
       refine (hMCopy a).imp (fun _ ws hP => ⟨hP.1, fun l _ => hP.2 l⟩)
         (fun _ ws ws' hP hQ => ?_) le_rfl le_rfl
-      have hws : ws = V [] [] [] := by
+      have hws : ws = tapeWords T1 T3 T4 [] [] [] := by
         funext l
         rw [hP.2 l]
         by_cases h1 : l = T1
-        · subst h1; rw [hV1]
-        · rw [hVbl1 _ l h1]
-      rw [hQ, hws, hupd1]
+        · subst h1; rw [tapeWords_fst]
+        · rw [tapeWords_of_ne_fst h1]
+      rw [hQ, hws, update_tapeWords_fst]
       simp
-    have s2 : TransformsTapes MBody (fun _ ws => ws = V (enc a) [] [])
+    have s2 : TransformsTapes MBody (fun _ ws => ws = tapeWords T1 T3 T4 (enc a) [] [])
         (fun _ _ ws' => Pround a 0 ws')
         (cB * (t a + (enc a).length + (encOpt (body a)).length + 1))
         (cB * (s a + (enc a).length + (encOpt (body a)).length + 1) + K) :=
       (hMBody a).imp
-        (fun _ ws hP => ⟨by rw [hP, hV1], fun l hl1 _ => by rw [hP]; exact hVbl1 _ l hl1⟩)
-        (fun _ ws ws' hP hQ => (hPround a 0 ws').mpr ⟨a, rfl, by rw [hQ, hP, hupd3]⟩)
+        (fun _ ws hP => ⟨by rw [hP, tapeWords_fst],
+          fun l hl1 _ => by rw [hP]; exact tapeWords_of_ne_fst hl1⟩)
+        (fun _ ws ws' hP hQ => (hPround a 0 ws').mpr
+          ⟨a, rfl, by rw [hQ, hP, update_tapeWords_snd hT13]⟩)
         le_rfl le_rfl
     refine (transformsTapes_seq s1 s2 (fun _ _ _ _ h => h)).imp (fun _ _ h => h)
       (fun _ ws ws' hP hQ => ?_) ?_ ?_
