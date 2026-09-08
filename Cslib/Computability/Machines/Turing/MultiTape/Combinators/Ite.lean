@@ -99,6 +99,14 @@ needs, where a branch is not even defined outside its case. The same weakening l
 function be patched at finitely many points, by taking the scrutinee to be membership in the finite
 set of exceptions.
 
+`f` carries no information — it is `fun a => br (sel a) a` up to `funext`, and stating the
+conclusion for that function directly would do just as well. It is kept because it is what a
+caller has: their goal is a `match`, not an application of the branch family, and putting the
+conversion in this hypothesis saves them from doing it themselves with `ComputableInTimeAndSpace`
+`.congr` at every use. It is inferred from the goal, so apply this with `exact` or `refine` rather
+than with `obtain`; with no expected type there is nothing to infer `f` from and `hagree` will fix
+it to the wrong function.
+
 This is a case analysis, not a recursor: a `match` on a *recursive* inductive type is a fold, whose
 combinator is the loop of `Cslib.Computability.Machines.Turing.MultiTape.Combinators.Loop` with an
 iteration bound.
@@ -134,7 +142,6 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {_if _else : α
       (fun a => c * (tc a + max (tif a) (telse a) + 1))
       (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
   refine computableInTimeAndSpace_match (encι := encCond)
-    (f := fun a => if sel a then _if a else _else a)
     (br := fun b a => bif b then _if a else _else a)
     (fun a => by cases sel a <;> simp)
     (hsel.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _))

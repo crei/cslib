@@ -312,12 +312,7 @@ example {β : Type} {encF : Fin 3 ↪ List Bool} {encOut : β ↪ List Bool}
     · exact hweak _ hp
     · exact hweak _ hc
     · exact hweak _ hr
-  exact computableInTimeAndSpace_match
-    (f := fun a => match sel a with
-      | .point => onPoint a
-      | .circle _ => onCircle a
-      | .rect _ _ => onRect a)
-    (fun a => by cases sel a <;> rfl)
+  exact computableInTimeAndSpace_match (fun a => by cases sel a <;> rfl)
     (htag.mono (fun a => Nat.le_add_right _ _) (fun a => Nat.le_add_right _ _)) hbr
 
 end Shape
