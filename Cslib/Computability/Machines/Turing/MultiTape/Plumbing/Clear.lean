@@ -64,7 +64,7 @@ every other tape `l` holding the word `ws l` with its head at `0`, the input hea
 output `out`. -/
 def cfg (input : List Symbol) (i : Fin k) (q : Option Bool) (T : ℤ → Option Symbol) (p : ℤ)
     (ws : Fin k → List Symbol) (out : List Symbol) : Cfg k Symbol Bool input :=
-  ⟨q, 1, fun l => if l = i then T else listTape (ws l), fun l => if l = i then p else 0, out⟩
+  ⟨q, 1, fun l => if l = i then T else tapeOfList (ws l), fun l => if l = i then p else 0, out⟩
 
 /-- Configurations of the shape `cfg` are equal as soon as the tape-`i` contents and head position
 agree. -/
@@ -84,7 +84,7 @@ lemma cfg_workTapePos_ne {l : Fin k} (h : l ≠ i) (q : Option Bool) :
 
 /-- A word configuration is a `cfg` whose tape `i` holds the word `ws i`. -/
 lemma wordsCfg_eq_cfg (q : Option Bool) (hws : ws i = w) :
-    wordsCfg input q ws out = cfg input i q (listTape w) 0 ws out := by
+    wordsCfg input q ws out = cfg input i q (tapeOfList w) 0 ws out := by
   refine Cfg.ext rfl rfl ?_ ?_ rfl
   · funext l
     rcases eq_or_ne l i with rfl | h
@@ -196,11 +196,11 @@ lemma step_halt (hT : T p = none) :
   · simp
 
 /-- Blanking the cell just past the end of a word shortens the word by one symbol. -/
-lemma update_listTape_eq_listTape_take (w : List Symbol) (p : ℕ) :
-    Function.update (listTape (w.take (p + 1))) (p : ℤ) none = listTape (w.take p) := by
+lemma update_tapeOfList_eq_tapeOfList_take (w : List Symbol) (p : ℕ) :
+    Function.update (tapeOfList (w.take (p + 1))) (p : ℤ) none = tapeOfList (w.take p) := by
   funext z
   rcases eq_or_ne z (p : ℤ) with rfl | hz
-  · rw [Function.update_self, listTape_ofNat]
+  · rw [Function.update_self, tapeOfList_ofNat]
     exact (List.getElem?_eq_none (by simp)).symm
   · rw [Function.update_of_ne hz]
     cases z with
@@ -216,13 +216,13 @@ lemma update_listTape_eq_listTape_take (w : List Symbol) (p : ℕ) :
 /-- After `n ≤ w.length` steps the machine is still scanning: the tape holds `w` untouched and
 the head is at position `n`. -/
 lemma runFrom_scan (w : List Symbol) (n : ℕ) (hn : n ≤ w.length) :
-    (clearTape i).runFrom (cfg input i (some false) (listTape w) 0 ws out) n =
-      cfg input i (some false) (listTape w) n ws out := by
+    (clearTape i).runFrom (cfg input i (some false) (tapeOfList w) 0 ws out) n =
+      cfg input i (some false) (tapeOfList w) n ws out := by
   induction n with
   | zero => simp
   | succ n ih =>
-    have hsym : listTape w (n : ℤ) = some (w[n]'(by omega)) := by
-      rw [listTape_ofNat]
+    have hsym : tapeOfList w (n : ℤ) = some (w[n]'(by omega)) := by
+      rw [tapeOfList_ofNat]
       exact List.getElem?_eq_getElem (by omega)
     rw [runFrom_succ_eq_step', ih (by omega), step_scan hsym]
     exact cfg_congr rfl (by omega)
@@ -230,32 +230,32 @@ lemma runFrom_scan (w : List Symbol) (n : ℕ) (hn : n ≤ w.length) :
 /-- After `w.length + 1 + m` steps, for `m ≤ w.length`, the machine is sweeping: the last `m`
 cells of the word have been blanked and the head is at position `w.length - 1 - m`. -/
 lemma runFrom_sweep (w : List Symbol) (m : ℕ) (hm : m ≤ w.length) :
-    (clearTape i).runFrom (cfg input i (some false) (listTape w) 0 ws out)
+    (clearTape i).runFrom (cfg input i (some false) (tapeOfList w) 0 ws out)
         (w.length + 1 + m) =
-      cfg input i (some true) (listTape (w.take (w.length - m)))
+      cfg input i (some true) (tapeOfList (w.take (w.length - m)))
         ((w.length : ℤ) - 1 - m) ws out := by
   induction m with
   | zero =>
-    have hsym : listTape w ((w.length : ℕ) : ℤ) = none := by simp
+    have hsym : tapeOfList w ((w.length : ℕ) : ℤ) = none := by simp
     rw [Nat.add_zero, runFrom_succ_eq_step', runFrom_scan w w.length le_rfl, step_turn hsym]
     exact cfg_congr (by simp) (by omega)
   | succ m ih =>
     have hidx : (w.length : ℤ) - 1 - m = ((w.length - 1 - m : ℕ) : ℤ) := by omega
-    have hsym : listTape (w.take (w.length - m)) ((w.length - 1 - m : ℕ) : ℤ) =
+    have hsym : tapeOfList (w.take (w.length - m)) ((w.length - 1 - m : ℕ) : ℤ) =
         some (w[w.length - 1 - m]'(by omega)) := by
-      rw [listTape_ofNat, List.getElem?_take_of_lt (by omega)]
+      rw [tapeOfList_ofNat, List.getElem?_take_of_lt (by omega)]
       exact List.getElem?_eq_getElem (by omega)
     rw [show w.length + 1 + (m + 1) = w.length + 1 + m + 1 from rfl, runFrom_succ_eq_step',
       ih (by omega), hidx, step_sweep hsym]
     refine cfg_congr ?_ (by omega)
     rw [show w.length - m = (w.length - 1 - m) + 1 from by omega,
-      update_listTape_eq_listTape_take,
+      update_tapeOfList_eq_tapeOfList_take,
       show w.length - 1 - m = w.length - (m + 1) from by omega]
 
 /-- The complete run: after `2 * w.length + 2` steps the machine has halted with tape `i` blank
 and its head back at `0`. -/
 lemma runFrom_full (w : List Symbol) :
-    (clearTape i).runFrom (cfg input i (some false) (listTape w) 0 ws out)
+    (clearTape i).runFrom (cfg input i (some false) (tapeOfList w) 0 ws out)
         (2 * w.length + 2) =
       cfg input i none (fun _ => none) 0 ws out := by
   rw [show 2 * w.length + 2 = w.length + 1 + w.length + 1 from by omega, runFrom_succ_eq_step',
@@ -266,14 +266,14 @@ lemma runFrom_full (w : List Symbol) :
 between the positions `-1` and `w.length`. -/
 lemma runFrom_shape (w : List Symbol) (t : ℕ) (ht : t ≤ 2 * w.length + 2) :
     ∃ (q : Option Bool) (T : ℤ → Option Symbol) (p : ℤ), -1 ≤ p ∧ p ≤ w.length ∧
-      (clearTape i).runFrom (cfg input i (some false) (listTape w) 0 ws out) t =
+      (clearTape i).runFrom (cfg input i (some false) (tapeOfList w) 0 ws out) t =
         cfg input i q T p ws out := by
   by_cases h : t ≤ w.length
-  · exact ⟨some false, listTape w, t, by omega, by omega, runFrom_scan w t h⟩
+  · exact ⟨some false, tapeOfList w, t, by omega, by omega, runFrom_scan w t h⟩
   by_cases h2 : t ≤ 2 * w.length + 1
   · obtain ⟨m, hm, rfl⟩ : ∃ m, m ≤ w.length ∧ t = w.length + 1 + m :=
       ⟨t - (w.length + 1), by omega, by omega⟩
-    exact ⟨some true, listTape (w.take (w.length - m)), (w.length : ℤ) - 1 - m, by omega,
+    exact ⟨some true, tapeOfList (w.take (w.length - m)), (w.length : ℤ) - 1 - m, by omega,
       by omega, runFrom_sweep w m hm⟩
   rw [show t = 2 * w.length + 2 from by omega]
   exact ⟨none, fun _ => none, 0, by omega, by omega, runFrom_full w⟩
@@ -281,9 +281,9 @@ lemma runFrom_shape (w : List Symbol) (t : ℕ) (ht : t ≤ 2 * w.length + 2) :
 /-- The run visits the cells `-1, …, w.length` of tape `i` and only the cell `0` of every other
 tape, so it uses at most `w.length + 1 + k` cells in total. -/
 lemma spaceUsed_le (w : List Symbol) :
-    (clearTape i).spaceUsed (cfg input i (some false) (listTape w) 0 ws out)
+    (clearTape i).spaceUsed (cfg input i (some false) (tapeOfList w) 0 ws out)
         (2 * w.length + 2) ≤ w.length + 1 + k := by
-  set c₀ := cfg input i (some false) (listTape w) 0 ws out
+  set c₀ := cfg input i (some false) (tapeOfList w) 0 ws out
   set τ := 2 * w.length + 2
   have hi : (clearTape i).spaceUsedByTape c₀ τ i ≤ w.length + 2 := by
     have hsub : (clearTape i).visitedByTapeHead c₀ τ i ⊆
@@ -329,7 +329,7 @@ public theorem exists_transformsTapes_clear {Symbol : Type*} {k : ℕ} (i : Fin 
           (c * (w.length + 1)) (w.length + 1 + k) := by
   refine ⟨3, Bool, inferInstance, clearTape i, fun w input ws out hws => ?_⟩
   have hstart : wordsCfg input (some (clearTape i : MultiTapeTM k Symbol Bool).q₀) ws out =
-      Clear.cfg input i (some false) (listTape w) 0 ws out :=
+      Clear.cfg input i (some false) (tapeOfList w) 0 ws out :=
     Clear.wordsCfg_eq_cfg _ hws
   refine ⟨2 * w.length + 2, by omega, Function.update ws i [], ?_, rfl, ?_⟩
   · rw [hstart, Clear.runFrom_full, Clear.cfg_halt_eq_wordsCfg]

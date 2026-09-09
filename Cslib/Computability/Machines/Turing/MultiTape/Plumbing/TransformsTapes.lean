@@ -17,7 +17,7 @@ about words only — never about individual cells, head positions or the set of 
 touched.
 
 Configurations are described by *equalities*: `wordsCfg input q ws out` is the configuration whose
-work tape `i` holds exactly the word `ws i` — contents `listTape (ws i)`, head at the start — with
+work tape `i` holds exactly the word `ws i` — contents `tapeOfList (ws i)`, head at the start — with
 the input head at the start of the input and output `out`. A specification
 `TransformsTapes tm P Q t s` says: started on word-holding tapes satisfying `P`, the machine halts
 within `t` steps *in a configuration of the same shape* — work tapes again holding words, input
@@ -26,12 +26,12 @@ using at most `s` work-tape cells. Because the postcondition is a single configu
 specifications compose by rewriting: which tapes survived a step is read off the equation instead
 of being proved cell by cell.
 
-The description of a tape's contents as a function, `listTape`, is due to Samuel Schlesinger
-(leanprover/cslib#872).
+The description of a tape's contents as a function, `tapeOfList`, is due to Samuel Schlesinger
+(as `listTape` in leanprover/cslib#872).
 
 ## Main definitions
 
-* `Turing.MultiTapeTM.listTape`: the tape holding exactly a given word.
+* `Turing.MultiTapeTM.tapeOfList`: the tape holding exactly a given word.
 * `Turing.MultiTapeTM.wordsCfg`: the configuration whose tapes hold given words.
 * `Turing.MultiTapeTM.TransformsTapes`: the specification format described above.
 
@@ -48,27 +48,27 @@ namespace Turing.MultiTapeTM
 variable {k : ℕ} {Symbol State : Type*} {input : List Symbol}
 
 /-- A tape containing exactly the symbols of `xs` at positions `0, ..., xs.length - 1`. -/
-@[expose] public def listTape (xs : List Symbol) : ℤ → Option Symbol
+@[expose] public def tapeOfList (xs : List Symbol) : ℤ → Option Symbol
   | .ofNat n => xs[n]?
   | .negSucc _ => none
 
 @[simp]
-public lemma listTape_ofNat (xs : List Symbol) (n : ℕ) : listTape xs n = xs[n]? := rfl
+public lemma tapeOfList_ofNat (xs : List Symbol) (n : ℕ) : tapeOfList xs n = xs[n]? := rfl
 
 @[simp]
-public lemma listTape_negSucc (xs : List Symbol) (n : ℕ) : listTape xs (.negSucc n) = none := rfl
+public lemma tapeOfList_negSucc (xs : List Symbol) (n : ℕ) : tapeOfList xs (.negSucc n) = none := rfl
 
 /-- Appending one symbol writes precisely the cell after the existing word. -/
-public lemma listTape_append_single (xs : List Symbol) (x : Symbol) :
-    listTape (xs ++ [x]) = Function.update (listTape xs) (xs.length : ℤ) (some x) := by
+public lemma tapeOfList_append_single (xs : List Symbol) (x : Symbol) :
+    tapeOfList (xs ++ [x]) = Function.update (tapeOfList xs) (xs.length : ℤ) (some x) := by
   funext z
   cases z with
-  | negSucc n => simp [listTape]
-  | ofNat n => grind [listTape]
+  | negSucc n => simp [tapeOfList]
+  | ofNat n => grind [tapeOfList]
 
 /-- The blank tape holds the empty word. -/
 @[simp]
-public lemma listTape_nil : listTape ([] : List Symbol) = fun _ => none := by
+public lemma tapeOfList_nil : tapeOfList ([] : List Symbol) = fun _ => none := by
   funext z
   cases z <;> simp
 
@@ -77,7 +77,7 @@ start, whose input head is at the start of the input, in state `q` with output `
 @[expose, simps]
 public def wordsCfg (input : List Symbol) (q : Option State)
     (ws : Fin k → List Symbol) (out : List Symbol) : Cfg k Symbol State input :=
-  ⟨q, 1, fun i => listTape (ws i), fun _ => 0, out⟩
+  ⟨q, 1, fun i => tapeOfList (ws i), fun _ => 0, out⟩
 
 /-- The initial configuration is the word configuration with blank tapes and no output. -/
 public lemma initCfg_eq_wordsCfg (tm : MultiTapeTM k Symbol State) (input : List Symbol) :
