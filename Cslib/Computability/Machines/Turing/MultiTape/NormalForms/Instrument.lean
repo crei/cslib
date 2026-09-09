@@ -265,6 +265,70 @@ public theorem exists_markAnchors (k : ℕ) (Symbol : Type*) (mark : Symbol) :
   · simp [step, hq, Action.apply, markAnchors, Fin.addCases_left]
   · simp [step, hq, Action.apply, markAnchors, addCases_addNat]
 
+/-- The one-step machine that writes `mark` on every footprint tape at its head — but only on a
+blank cell, so an anchor under a head survives. Run after an instrumented machine halts, it marks
+the final head positions, which the run itself never wrote: the footprint then covers exactly the
+visited cells. -/
+private def markCurrent (k : ℕ) (Symbol : Type*) (mark : Symbol) :
+    MultiTapeTM (k + k) Symbol Unit where
+  q₀ := ()
+  tr _ _ work :=
+    { inputTape := 0
+      workTapes := Fin.addCases (fun _ => (none, 0))
+        (fun j => (match work (j.natAdd k) with
+          | none => some (some mark)
+          | some _ => none, 0))
+      output := none
+      state := none }
+
+/-- One step of `markCurrent`: the cells under the footprint heads are marked if blank, nothing
+else changes. -/
+public theorem exists_markCurrent (k : ℕ) (Symbol : Type*) (mark : Symbol) :
+    ∃ (State : Type) (_ : Finite State) (tm : MultiTapeTM (k + k) Symbol State),
+      ∀ (input : List Symbol) (c : Cfg (k + k) Symbol State input), c.state = some tm.q₀ →
+        (tm.runFrom c 1).state = none ∧
+        (tm.runFrom c 1).inputPos = c.inputPos ∧
+        (tm.runFrom c 1).output = c.output ∧
+        (tm.runFrom c 1).workTapePos = c.workTapePos ∧
+        (∀ j : Fin k, (tm.runFrom c 1).workTapes (j.castAdd k) = c.workTapes (j.castAdd k)) ∧
+        (∀ j : Fin k, (tm.runFrom c 1).workTapes (j.addNat k) = fun z =>
+          match c.workTapes (j.addNat k) z with
+          | some s => some s
+          | none =>
+            if z = c.workTapePos (j.addNat k) ∧
+                c.workTapes (j.addNat k) (c.workTapePos (j.addNat k)) = none then
+              some mark
+            else none) := by
+  refine ⟨Unit, inferInstance, markCurrent k Symbol mark, fun input c hq => ?_⟩
+  have hstep : (markCurrent k Symbol mark).runFrom c 1 = (markCurrent k Symbol mark).step c := by
+    rw [runFrom_succ_eq_step', runFrom_zero]
+  rw [hstep]
+  refine ⟨?_, ?_, ?_, ?_, fun j => ?_, fun j => ?_⟩
+  · simp [step, hq, Action.apply, markCurrent]
+  · simp [step, hq, Action.apply, markCurrent]
+  · simp [step, hq, Action.apply, markCurrent]
+  · funext l
+    induction l using Fin.addCases with
+    | left j => simp [step, hq, Action.apply, markCurrent, Fin.addCases_left]
+    | right j =>
+      rcases h : c.workTapeSymbols (j.natAdd k) with _ | s <;>
+        simp [step, hq, Action.apply, markCurrent, addCases_addNat]
+  · simp [step, hq, Action.apply, markCurrent, Fin.addCases_left]
+  · funext z
+    simp only [step, hq, Action.apply, markCurrent, addCases_addNat]
+    rw [show c.workTapeSymbols (Fin.natAdd k j) =
+        c.workTapes (j.addNat k) (c.workTapePos (j.addNat k)) from by
+      rw [Fin.natAdd_eq_addNat]; rfl]
+    rcases hcell : c.workTapes (j.addNat k) (c.workTapePos (j.addNat k)) with _ | s
+    · -- blank under the head: write the mark there
+      by_cases hz : z = c.workTapePos (j.addNat k)
+      · subst hz
+        simp [hcell, Function.update_self]
+      · rcases hzc : c.workTapes (j.addNat k) z with _ | t <;>
+          simp [hzc, hz]
+    · -- nonblank under the head: no write
+      rcases hzc : c.workTapes (j.addNat k) z with _ | t <;> simp [hzc]
+
 end MarkAnchors
 
 section Space
