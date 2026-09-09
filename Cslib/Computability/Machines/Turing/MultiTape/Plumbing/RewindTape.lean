@@ -186,6 +186,38 @@ lemma runFrom_full {w : List Symbol} (hw : W i = tapeOfList w) :
     step_scan_none hnone]
   exact cfg_congr (by omega)
 
+/-- Throughout the run, the head of tape `i` stays within `[-1, w.length]`: it walks from the
+frontier down to `-1` and back to `0`, never leaving that interval. -/
+lemma runFrom_pos_range {w : List Symbol} (hw : W i = tapeOfList w) (m : ℕ)
+    (hm : m ≤ w.length + 2) :
+    -1 ≤ ((rewindTape i).runFrom
+        (cfg input i (some .start) ip W WP out (w.length : ℤ)) m).workTapePos i ∧
+      ((rewindTape i).runFrom
+        (cfg input i (some .start) ip W WP out (w.length : ℤ)) m).workTapePos i ≤
+        (w.length : ℤ) := by
+  have hstep1 : (rewindTape i).runFrom
+      (cfg input i (some .start) ip W WP out (w.length : ℤ)) 1 =
+      cfg input i (some .scan) ip W WP out ((w.length : ℤ) - 1) := by
+    rw [runFrom_succ_eq_step', runFrom_zero]; exact step_start
+  rcases Nat.lt_or_ge m 1 with h0 | h1
+  · obtain rfl : m = 0 := by omega
+    rw [runFrom_zero]
+    constructor
+    · simp only [cfg, Function.update_self]; omega
+    · simp only [cfg, Function.update_self]; omega
+  rcases Nat.lt_or_ge m (w.length + 2) with hlt | hge
+  · -- scanning: head at `w.length - m`
+    obtain ⟨d, hd, rfl⟩ : ∃ d, d ≤ w.length ∧ m = 1 + d := ⟨m - 1, by omega, by omega⟩
+    rw [runFrom_add, hstep1, runFrom_scan hw d hd]
+    constructor
+    · simp only [cfg, Function.update_self]; omega
+    · simp only [cfg, Function.update_self]; omega
+  · obtain rfl : m = w.length + 2 := by omega
+    rw [runFrom_full hw]
+    constructor
+    · simp only [cfg, Function.update_self]; omega
+    · simp only [cfg, Function.update_self]; omega
+
 /-- No action of the machine writes to a work tape. -/
 lemma tr_write_none (q : RewindTapeState) (inp : Option Symbol) (work : Fin K → Option Symbol)
     (l : Fin K) : (((rewindTape i).tr q inp work).workTapes l).1 = none := by
@@ -265,7 +297,9 @@ public theorem exists_rewindTape {Symbol : Type*} {K : ℕ} (i : Fin K) :
           ∀ m ≤ u, (tm.runFrom c m).inputPos = c.inputPos ∧ (tm.runFrom c m).output = c.output ∧
             (∀ j, j ≠ i → (tm.runFrom c m).workTapes j = c.workTapes j ∧
               (tm.runFrom c m).workTapePos j = c.workTapePos j) ∧
-            (tm.runFrom c m).workTapes i = c.workTapes i := by
+            (tm.runFrom c m).workTapes i = c.workTapes i ∧
+            -1 ≤ (tm.runFrom c m).workTapePos i ∧
+            (tm.runFrom c m).workTapePos i ≤ (w.length : ℤ) := by
   refine ⟨RewindTapeState, inferInstance, rewindTape i, fun input c w hstate hwi hwp => ?_⟩
   obtain ⟨q, ip, W, WP, out⟩ := c
   obtain rfl : q = some RewindTapeState.start := hstate
@@ -295,9 +329,12 @@ public theorem exists_rewindTape {Symbol : Type*} {K : ℕ} (i : Fin K) :
     have heq := runFrom_eq_of_halt (rewindTape i) _ hu hhaltu
     rw [hrun] at heq
     exact ⟨u, hu, hact, heq.symm⟩
-  refine ⟨u, by omega, hactive, hhalt, fun m _ => ?_⟩
+  refine ⟨u, by omega, hactive, hhalt, fun m hm => ?_⟩
   obtain ⟨f1, f2, f3, f4⟩ :=
     runFrom_frame (⟨some RewindTapeState.start, ip, W, WP, out⟩) m
-  exact ⟨f1, f2, fun j hj => ⟨f3 j, f4 j hj⟩, f3 i⟩
+  obtain ⟨g1, g2⟩ := runFrom_pos_range (i := i) (input := input) (ip := ip) (W := W) (WP := WP)
+    (out := out) hwi' m (by omega)
+  rw [← hc0] at g1 g2
+  exact ⟨f1, f2, fun j hj => ⟨f3 j, f4 j hj⟩, f3 i, g1, g2⟩
 
 end Turing.MultiTapeTM
