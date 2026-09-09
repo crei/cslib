@@ -60,6 +60,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.DeterministicToNonde
 public import Cslib.Computability.Machines.Turing.MultiTape.Nondeterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Tidy
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Clear
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.RewindInput
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Sequential
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsTapes
 public import Cslib.Computability.Machines.Turing.MultiTape.TapeLemmas
