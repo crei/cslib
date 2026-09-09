@@ -387,4 +387,82 @@ public theorem exists_transformsTapes_ofComputable
       Nat.mul_le_mul (by omega) (le_refl _)
     omega
 
+/-- **From a tape transformer back to a computable function.** A machine that, reading the input
+from the real input tape with every work tape blank, halts with the encoded result on work tape
+`o`, computes that function once the result is copied from tape `o` to the real output tape. -/
+public theorem computableInTimeAndSpace_of_transformsTapes {K : ℕ} {State : Type} [Finite State]
+    (o : Fin K) {tm : MultiTapeTM K Bool State}
+    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {gg : α → β} {t s : α → ℕ}
+    (hT : ∀ a, TransformsTapes tm (fun input ws => input = encIn a ∧ ∀ l, ws l = [])
+      (fun _ ws ws' => ws' = Function.update ws o (encOut (gg a))) (t a) (s a)) :
+    ∃ c, ComputableInTimeAndSpace gg encIn encOut
+      (fun a => t a + (encOut (gg a)).length + 2)
+      (fun a => c * (s a + (encOut (gg a)).length + 1)) := by
+  obtain ⟨SE, hSE, tmE, hE⟩ := exists_emitTape (Symbol := Bool) o
+  have := hSE
+  refine ⟨K + 1, K, State ⊕ SE, inferInstance, tm.seq tmE, fun a => ?_⟩
+  -- run the transformer, then emit tape `o`
+  set start := (tm.seq tmE).initCfg (encIn a) with hstart
+  have hstart_words : start = wordsCfg (encIn a) (some (tm.seq tmE).q₀) (fun _ => []) [] := by
+    rw [hstart, initCfg_eq_wordsCfg]
+  -- phase 1: the transformer halts with the result on tape `o`
+  obtain ⟨τ, hτ, ws', hrun1, hws', hsp1⟩ :=
+    hT a (encIn a) (fun _ => []) [] ⟨rfl, fun _ => rfl⟩
+  have hc1eq : tm.runFrom (start.withState (some tm.q₀)) τ =
+      wordsCfg (encIn a) none ws' [] := by
+    rw [hstart_words]; exact hrun1
+  -- first halting time of phase 1, for activity
+  obtain ⟨τ', hτ'le, hτ'halt, hτ'act⟩ :=
+    exists_minimal_halting_time tm (start.withState (some tm.q₀)) τ (by rw [hc1eq]; rfl)
+  have hc1eq' : tm.runFrom (start.withState (some tm.q₀)) τ' = wordsCfg (encIn a) none ws' [] :=
+    (runFrom_eq_of_halt tm _ hτ'le hτ'halt).symm.trans hc1eq
+  set c₁ := wordsCfg (encIn a) (none : Option State) ws' [] with hc1def
+  -- tape `o` holds the encoded result, head at 0
+  have ho_tape : c₁.workTapes o = tapeOfList (encOut (gg a)) := by
+    rw [hc1def]
+    change tapeOfList (ws' o) = tapeOfList (encOut (gg a))
+    rw [hws', Function.update_self]
+  have ho_pos : c₁.workTapePos o = 0 := by rw [hc1def, wordsCfg_workTapePos]
+  -- phase 2: emit tape `o` to the output
+  obtain ⟨u₂, hu₂, h₂act, h₂run, h₂frame⟩ :=
+    hE (encIn a) (c₁.withState (some tmE.q₀)) (encOut (gg a)) rfl ho_tape ho_pos
+  -- the two phase-space bounds
+  have hstartws : start.withState (some tm.q₀) =
+      wordsCfg (encIn a) (some tm.q₀) (fun _ => []) [] := by
+    rw [hstart_words]; rfl
+  have hsp1' : tm.spaceUsed (start.withState (some tm.q₀)) τ' ≤ s a := by
+    rw [hstartws]
+    exact le_trans (spaceUsed_mono tm _ hτ'le) hsp1
+  have hsp2' : tmE.spaceUsed (c₁.withState (some tmE.q₀)) u₂ ≤
+      (encOut (gg a)).length + 1 + K := by
+    refine le_trans (spaceUsed_le_of_one_moving (c₁.withState (some tmE.q₀)) u₂ o
+      0 ((encOut (gg a)).length : ℤ) (fun m hm => ⟨(h₂frame m hm).2.2.2.1,
+        (h₂frame m hm).2.2.2.2⟩) (fun m hm j hj => (h₂frame m hm).2.2.1 j hj)) ?_
+    have : ((encOut (gg a)).length + 1 - (0 : ℤ)).toNat = (encOut (gg a)).length + 1 := by omega
+    omega
+  -- assemble
+  obtain ⟨hseq_run, hseq_act, hseq_sp⟩ :=
+    seq_spec (tm₁ := tm) (tm₂ := tmE) (c := start) (by rw [hstart_words]; rfl)
+      hc1eq' (by rw [hc1def]; rfl) hτ'act hsp1' h₂run rfl h₂act hsp2'
+  refine ⟨τ' + u₂, ?_, (tm.seq tmE).spaceUsed start (τ' + u₂), ?_, ?_, ?_, rfl⟩
+  · -- time bound
+    change τ' + u₂ ≤ t a + (encOut (gg a)).length + 2
+    have : u₂ ≤ (encOut (gg a)).length + 2 := hu₂
+    omega
+  · -- space bound: `s a + (|encOut|+1+K) ≤ (K+1)·(s a + |encOut| + 1)`
+    change (tm.seq tmE).spaceUsed start (τ' + u₂) ≤ (K + 1) * (s a + (encOut (gg a)).length + 1)
+    refine le_trans hseq_sp ?_
+    set S := s a + (encOut (gg a)).length + 1 with hSdef
+    have hexp : (K + 1) * S = S + K * S := by rw [Nat.add_mul, Nat.one_mul, Nat.add_comm]
+    have hKS : K ≤ K * S := Nat.le_mul_of_pos_right K (by omega)
+    have : s a + ((encOut (gg a)).length + 1 + K) = S + K := by omega
+    omega
+  · -- the run halts
+    rw [hseq_run]; rfl
+  · -- output is the encoded result
+    rw [hseq_run]
+    simp only [Cfg.withState_output]
+    change (c₁.withState (some tmE.q₀)).output ++ encOut (gg a) = encOut (gg a)
+    rw [Cfg.withState_output, hc1def, wordsCfg_output, List.nil_append]
+
 end Turing.MultiTapeTM
