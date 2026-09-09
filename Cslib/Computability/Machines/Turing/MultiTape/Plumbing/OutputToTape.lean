@@ -127,15 +127,7 @@ public lemma runFrom_outCfg (tm : MultiTapeTM k Symbol State) (c : Cfg k Symbol 
     tm.outputToTape.runFrom (outCfg c) n = outCfg (tm.runFrom c n) :=
   runFrom_comm_of_step outCfg (step_outCfg tm) c n
 
-/-- The same configuration with a different real output. `outputToTape` never writes the real
-output, so its run commutes with this — the caller may run it with output already present, as
-`TransformsTapes` quantifies over. -/
-@[expose, simps] public def _root_.Turing.Cfg.withOutput (c : Cfg k' Symbol State input')
-    (out : List Symbol) : Cfg k' Symbol State input' :=
-  ⟨c.state, c.inputPos, c.workTapes, c.workTapePos, out⟩
-
 section WithOutput
-variable {k' : ℕ}
 
 /-- `outputToTape tm` never writes the real output, so replacing it commutes with a step. -/
 public lemma step_outputToTape_withOutput (tm : MultiTapeTM k Symbol State)
