@@ -6,6 +6,7 @@ Authors: Christian Reitwiessner, Samuel Schlesinger
 
 module
 
+public import Mathlib.Algebra.BigOperators.Fin
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.StepLemmas
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsTapes
 
@@ -269,6 +270,54 @@ public lemma runFrom_inCfg (tm : MultiTapeTM k Symbol State) (mark : Symbol)
       inCfg mark (tm.runFrom c n) outerInput :=
   runFrom_comm_of_step (fun c => inCfg mark c outerInput)
     (fun c => step_inCfg tm mark c outerInput) c n
+
+/-- **Space of the input-redirected machine.** The `k` inner tapes visit exactly what the original
+does; the two extra tapes (virtual input, flag) each move only with the simulated input head,
+which stays within `[-1, I.length]` — so they add at most `2 * (I.length + 2)`. -/
+public lemma spaceUsed_inputFromTape (tm : MultiTapeTM k Symbol State) (mark : Symbol)
+    (c : Cfg k Symbol State I) (outerInput : List Symbol) (n : ℕ) :
+    tm.inputFromTape.spaceUsed (inCfg mark c outerInput) n ≤
+      tm.spaceUsed c n + 2 * (I.length + 2) := by
+  classical
+  have hmir : ∀ m, tm.inputFromTape.runFrom (inCfg mark c outerInput) m =
+      inCfg mark (tm.runFrom c m) outerInput := fun m => runFrom_inCfg tm mark c outerInput m
+  -- the inner tapes: same visited set as the original (heads agree under `inCfg`)
+  have hcast : ∀ j : Fin k, tm.inputFromTape.visitedByTapeHead (inCfg mark c outerInput) n
+      (j.castAdd 2) = tm.visitedByTapeHead c n j := by
+    intro j
+    refine Finset.image_congr fun m _ => ?_
+    rw [hmir m, inCfg_workTapePos_castAdd]
+  -- an extra tape's head lies in `[-1, I.length]` at every step
+  have hextra : ∀ l : Fin (k + 2), l = ⟨k, by omega⟩ ∨ l = ⟨k + 1, by omega⟩ →
+      tm.inputFromTape.visitedByTapeHead (inCfg mark c outerInput) n l ⊆
+        Finset.Icc (-1 : ℤ) (I.length : ℤ) := by
+    intro l hl z hz
+    obtain ⟨m, hm, rfl⟩ := mem_visitedByTapeHead.mp hz
+    rw [hmir m]
+    have hb := (tm.runFrom c m).inputPos.isLt
+    rcases hl with rfl | rfl
+    · rw [inCfg_workTapePos_vip]; exact Finset.mem_Icc.mpr ⟨by omega, by omega⟩
+    · rw [inCfg_workTapePos_flag]; exact Finset.mem_Icc.mpr ⟨by omega, by omega⟩
+  have hextra_card : ∀ l : Fin (k + 2), l = ⟨k, by omega⟩ ∨ l = ⟨k + 1, by omega⟩ →
+      tm.inputFromTape.spaceUsedByTape (inCfg mark c outerInput) n l ≤ I.length + 2 := by
+    intro l hl
+    refine le_trans (Finset.card_le_card (hextra l hl)) ?_
+    rw [Int.card_Icc]; omega
+  -- split the tape sum: inner tapes + the two extra
+  rw [spaceUsed, Fin.sum_univ_add]
+  have hinner : ∑ j : Fin k, tm.inputFromTape.spaceUsedByTape (inCfg mark c outerInput) n
+      (j.castAdd 2) = tm.spaceUsed c n := by
+    rw [spaceUsed]
+    exact Finset.sum_congr rfl fun j _ => congrArg Finset.card (hcast j)
+  have htwo : ∑ j : Fin 2, tm.inputFromTape.spaceUsedByTape (inCfg mark c outerInput) n
+      (j.natAdd k) ≤ 2 * (I.length + 2) := by
+    rw [Fin.sum_univ_two]
+    have e0 := hextra_card ((0 : Fin 2).natAdd k) (Or.inl (Fin.ext (by simp)))
+    have e1 := hextra_card ((1 : Fin 2).natAdd k) (Or.inr (Fin.ext (by simp)))
+    omega
+  rw [hinner]
+  exact Nat.add_le_add_left htwo _
+
 
 end Projections
 
