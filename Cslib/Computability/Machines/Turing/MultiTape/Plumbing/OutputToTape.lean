@@ -44,7 +44,7 @@ at the write frontier. -/
 
 /-- A configuration of `tm`, as the redirected machine sees it: the output so far sits on the
 last work tape with the head at its end, and the real output is empty. -/
-@[expose, simps] public def outCfg (c : Cfg k Symbol State input) :
+@[expose] public def outCfg (c : Cfg k Symbol State input) :
     Cfg (k + 1) Symbol State input :=
   ⟨c.state, c.inputPos,
     Fin.lastCases (tapeOfList c.output) (fun j => c.workTapes j),

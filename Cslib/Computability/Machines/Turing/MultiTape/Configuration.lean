@@ -139,11 +139,33 @@ lemma val_moveInputPos_le {n : ℕ} (pos : Fin (n + 2)) (m : SignType) :
     have := pos.isLt
     rcases m <;> (simp only [SignType.cast] at h; omega)
 
+/-- The value of the input head after a move, as a clamped integer. `omega`-friendly. -/
+lemma val_moveInputPos_eq {n : ℕ} (pos : Fin (n + 2)) (m : SignType) :
+    ((moveInputPos pos m).val : ℤ) = min ((n : ℤ) + 1) (max 0 ((pos.val : ℤ) + (m.cast : ℤ))) := by
+  simp only [moveInputPos]
+  have hmc : (m.cast : ℤ) = -1 ∨ (m.cast : ℤ) = 0 ∨ (m.cast : ℤ) = 1 := by
+    rcases m with _ | _ | _ <;> simp [SignType.cast]
+  by_cases h : (((pos.val : ℤ) + (m.cast : ℤ)).toNat) < n + 2
+  · rw [dite_eq_left (by exact h)]
+    have := pos.isLt
+    push_cast
+    omega
+  · rw [dite_eq_right (by exact h)]
+    have := pos.isLt
+    push_cast
+    omega
+
 /-- The symbol currently under the input tape head. -/
 def Cfg.inputSymbol (cfg : Cfg k Symbol State input) : Option Symbol :=
   if h₁ : cfg.inputPos = 0 then none
   else if h₂ : cfg.inputPos = input.length + 1 then none
   else input[cfg.inputPos.val - 1]'(by grind)
+
+/-- At either boundary of the input, the head reads a blank. -/
+lemma inputSymbol_eq_none_of_boundary {cfg : Cfg k Symbol State input}
+    (h : cfg.inputPos.val = 0 ∨ cfg.inputPos.val = input.length + 1) :
+    cfg.inputSymbol = none := by
+  grind [Cfg.inputSymbol]
 
 @[simp]
 lemma inputSymbolInner {cfg : Cfg k Symbol State input} (p : ℕ)
