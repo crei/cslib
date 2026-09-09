@@ -77,6 +77,10 @@ section Projections
 variable {mark : Symbol} {I : List Symbol} {outerInput : List Symbol}
 
 @[simp]
+public lemma inCfg_inputPos (c : Cfg k Symbol State I) :
+    (inCfg mark c outerInput).inputPos = 1 := rfl
+
+@[simp]
 public lemma inCfg_workTapes_castAdd (c : Cfg k Symbol State I) (j : Fin k) :
     (inCfg mark c outerInput).workTapes (j.castAdd 2) = c.workTapes j := by
   have h : (j.castAdd 2).val < k := j.isLt
@@ -179,6 +183,92 @@ public lemma clampMove_correct (mark : Symbol) (c : Cfg k Symbol State I) (m : S
       rcases m with _ | _ | _ <;>
         simp only [clampMove, val_moveInputPos_eq, min_def, max_def, SignType.cast] <;>
         split_ifs <;> omega
+
+/-- Reading the sim machine's input argument: the virtual input head reads what the simulated
+input head reads. -/
+private lemma inCfg_vip_symbol (mark : Symbol) (c : Cfg k Symbol State I)
+    (outerInput : List Symbol) :
+    (inCfg mark c outerInput).workTapeSymbols ⟨k, by omega⟩ = c.inputSymbol := by
+  rw [Cfg.workTapeSymbols, inCfg_workTapes_vip, inCfg_workTapePos_vip, vip_read]
+
+/-- Reading the sim machine's flag: marked exactly at the left boundary. -/
+private lemma inCfg_flag_symbol (mark : Symbol) (c : Cfg k Symbol State I)
+    (outerInput : List Symbol) :
+    (inCfg mark c outerInput).workTapeSymbols ⟨k + 1, by omega⟩ =
+      (if c.inputPos.val = 0 then some mark else none) := by
+  rw [Cfg.workTapeSymbols, inCfg_workTapes_flag, inCfg_workTapePos_flag, flag_read]
+
+/-- Decompose a tape index of the redirecting machine: an original work tape, the virtual input
+tape, or the flag tape. -/
+private lemma tape_cases (l : Fin (k + 2)) :
+    (∃ j : Fin k, l = j.castAdd 2 ∧ l.val < k) ∨ l = ⟨k, by omega⟩ ∨ l = ⟨k + 1, by omega⟩ := by
+  rcases Nat.lt_trichotomy l.val k with h | h | h
+  · refine Or.inl ⟨⟨l.val, h⟩, ?_, h⟩
+    apply Fin.ext
+    simp
+  · exact Or.inr (Or.inl (Fin.ext (by simp [h])))
+  · have := l.isLt
+    exact Or.inr (Or.inr (Fin.ext (by simp; omega)))
+
+/-- **The redirection is a step-semiconjugation.** One step of the machine reading its input from
+the virtual tape mirrors one step of the original, under the embedding `inCfg`. -/
+public lemma step_inCfg (tm : MultiTapeTM k Symbol State) (mark : Symbol)
+    (c : Cfg k Symbol State I) (outerInput : List Symbol) :
+    tm.inputFromTape.step (inCfg mark c outerInput) =
+      inCfg mark (tm.step c) outerInput := by
+  cases hq : c.state with
+  | none =>
+    have h1 : (inCfg mark c outerInput).state = none := by rw [inCfg]; exact hq
+    rw [step_of_halt h1, step_of_halt hq]
+  | some q =>
+    have h1 : (inCfg mark c outerInput).state = some q := by rw [inCfg]; exact hq
+    have harg : tm.inputFromTape.tr q (inCfg mark c outerInput).inputSymbol
+        (inCfg mark c outerInput).workTapeSymbols =
+        (let a := tm.tr q c.inputSymbol c.workTapeSymbols
+          let m := clampMove c.inputSymbol
+            (if c.inputPos.val = 0 then some mark else none) a.inputTape
+          { inputTape := 0
+            workTapes := fun l => if h : l.val < k then a.workTapes ⟨l.val, h⟩ else (none, m)
+            output := a.output
+            state := a.state } : Action (k + 2) Symbol State) := by
+      simp only [inputFromTape, inCfg_vip_symbol, inCfg_flag_symbol,
+        inCfg_workTapeSymbols_castAdd]
+    rw [step_apply_of_state h1, harg]
+    set a := tm.tr q c.inputSymbol c.workTapeSymbols with ha
+    have hstepc : tm.step c = a.apply c := step_apply_of_state hq
+    rw [hstepc]
+    have hmc := clampMove_correct (I := I) mark c a.inputTape
+    have hip : (a.apply c).inputPos = moveInputPos c.inputPos a.inputTape := rfl
+    refine Cfg.ext rfl ?_ ?_ ?_ rfl
+    · simp only [Action.apply_inputPos, moveInputPos_zero, inCfg]
+    · funext l z
+      rcases tape_cases l with ⟨j, rfl, hjk⟩ | rfl | rfl
+      · simp only [Action.apply_workTapes, Fin.val_castAdd, dite_eq_left j.isLt, Fin.eta,
+          inCfg_workTapes_castAdd, inCfg_workTapePos_castAdd]
+      · have hnk : ¬ ((⟨k, by omega⟩ : Fin (k + 2)).val < k) := by simp
+        simp only [Action.apply_workTapes, dite_eq_right hnk, inCfg_workTapes_vip]
+      · have hnk1 : ¬ ((⟨k + 1, by omega⟩ : Fin (k + 2)).val < k) := by simp
+        simp only [Action.apply_workTapes, dite_eq_right hnk1, inCfg_workTapes_flag]
+    · funext l
+      rcases tape_cases l with ⟨j, rfl, hjk⟩ | rfl | rfl
+      · simp only [Action.apply_workTapePos, Fin.val_castAdd, dite_eq_left j.isLt, Fin.eta,
+          inCfg_workTapePos_castAdd]
+      · have hnk : ¬ ((⟨k, by omega⟩ : Fin (k + 2)).val < k) := by simp
+        simp only [Action.apply_workTapePos, dite_eq_right hnk, inCfg_workTapePos_vip,
+          Action.apply_inputPos]
+        omega
+      · have hnk1 : ¬ ((⟨k + 1, by omega⟩ : Fin (k + 2)).val < k) := by simp
+        simp only [Action.apply_workTapePos, dite_eq_right hnk1, inCfg_workTapePos_flag,
+          Action.apply_inputPos]
+        omega
+
+/-- The redirected run mirrors the original. -/
+public lemma runFrom_inCfg (tm : MultiTapeTM k Symbol State) (mark : Symbol)
+    (c : Cfg k Symbol State I) (outerInput : List Symbol) (n : ℕ) :
+    tm.inputFromTape.runFrom (inCfg mark c outerInput) n =
+      inCfg mark (tm.runFrom c n) outerInput :=
+  runFrom_comm_of_step (fun c => inCfg mark c outerInput)
+    (fun c => step_inCfg tm mark c outerInput) c n
 
 end Projections
 
