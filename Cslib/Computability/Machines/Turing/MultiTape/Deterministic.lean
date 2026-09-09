@@ -267,6 +267,26 @@ lemma step_output (cfg : Cfg k Symbol State input) :
   unfold step outputSymbol Action.apply
   cases cfg.state <;> simp
 
+/-- Nothing changes after the machine has halted. -/
+lemma runFrom_eq_of_halt
+    (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) {τ t : ℕ} (hle : τ ≤ t)
+    (hhalt : (tm.runFrom cfg τ).state = none) :
+    tm.runFrom cfg t = tm.runFrom cfg τ := by
+  conv_lhs => rw [← Nat.sub_add_cancel hle, Nat.add_comm]
+  rw [runFrom_add, runFrom_of_halt _ hhalt]
+
+/-- Every halted run has a first halting time no later than the supplied one. -/
+lemma exists_minimal_halting_time
+    (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) (t : ℕ)
+    (hhalt : (tm.runFrom cfg t).state = none) :
+    ∃ u ≤ t, (tm.runFrom cfg u).state = none ∧ ∀ s < u, (tm.runFrom cfg s).state ≠ none := by
+  classical
+  have hex : ∃ n, (tm.runFrom cfg n).state = none := ⟨t, hhalt⟩
+  exact ⟨Nat.find hex, Nat.find_min' hex hhalt, Nat.find_spec hex,
+    fun s hs => Nat.find_min hex hs⟩
+
 /-- The output does not change after the machine has halted. -/
 lemma runFrom_output_eq_of_halt
     (tm : MultiTapeTM k Symbol State)

@@ -56,7 +56,8 @@ variable {k : ℕ} {Symbol State : Type*} {input : List Symbol}
 public lemma tapeOfList_ofNat (xs : List Symbol) (n : ℕ) : tapeOfList xs n = xs[n]? := rfl
 
 @[simp]
-public lemma tapeOfList_negSucc (xs : List Symbol) (n : ℕ) : tapeOfList xs (.negSucc n) = none := rfl
+public lemma tapeOfList_negSucc (xs : List Symbol) (n : ℕ) :
+    tapeOfList xs (.negSucc n) = none := rfl
 
 /-- Appending one symbol writes precisely the cell after the existing word. -/
 public lemma tapeOfList_append_single (xs : List Symbol) (x : Symbol) :
