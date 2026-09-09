@@ -73,6 +73,11 @@ public lemma tapeOfList_nil : tapeOfList ([] : List Symbol) = fun _ => none := b
   funext z
   cases z <;> simp
 
+/-- The same configuration in a different control state, possibly of a different state type. -/
+@[expose, simps] public def _root_.Turing.Cfg.withState (cfg : Cfg k Symbol State input)
+    {State' : Type*} (q : Option State') : Cfg k Symbol State' input :=
+  ⟨q, cfg.inputPos, cfg.workTapes, cfg.workTapePos, cfg.output⟩
+
 /-- The configuration whose work tape `i` holds exactly the word `ws i` with its head at the
 start, whose input head is at the start of the input, in state `q` with output `out`. -/
 @[expose, simps]

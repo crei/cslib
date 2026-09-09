@@ -54,17 +54,18 @@ namespace Sequential
 /-- A configuration of the first phase: a configuration of `tm₀`, with a halted state mapped to
 the initial state of the second phase. Under this map, the whole first phase of `seq` mirrors the
 run of `tm₀`, *including* its halting step. -/
-def leftCfg (tm₁ : MultiTapeTM k Symbol State₁) (cfg : Cfg k Symbol State₀ input) :
+@[expose] public def leftCfg (tm₁ : MultiTapeTM k Symbol State₁) (cfg : Cfg k Symbol State₀ input) :
     Cfg k Symbol (State₀ ⊕ State₁) input :=
   ⟨some (cfg.state.elim (.inr tm₁.q₀) .inl), cfg.inputPos, cfg.workTapes, cfg.workTapePos,
     cfg.output⟩
 
 /-- A configuration of the second phase. Under this map, the second phase of `seq` mirrors the
 run of `tm₁`. -/
-def rightCfg (cfg : Cfg k Symbol State₁ input) : Cfg k Symbol (State₀ ⊕ State₁) input :=
+@[expose] public def rightCfg (cfg : Cfg k Symbol State₁ input) :
+    Cfg k Symbol (State₀ ⊕ State₁) input :=
   ⟨cfg.state.map .inr, cfg.inputPos, cfg.workTapes, cfg.workTapePos, cfg.output⟩
 
-lemma step_leftCfg (cfg : Cfg k Symbol State₀ input) (h : cfg.state ≠ none) :
+public lemma step_leftCfg (cfg : Cfg k Symbol State₀ input) (h : cfg.state ≠ none) :
     (tm₀.seq tm₁).step (leftCfg tm₁ cfg) = leftCfg tm₁ (tm₀.step cfg) := by
   obtain ⟨q, hq⟩ := Option.ne_none_iff_exists'.mp h
   have h1 : (leftCfg tm₁ cfg).state = some (Sum.inl q : State₀ ⊕ State₁) := by
@@ -72,7 +73,7 @@ lemma step_leftCfg (cfg : Cfg k Symbol State₀ input) (h : cfg.state ≠ none) 
   simp only [step, h1, hq]
   rfl
 
-lemma step_rightCfg (cfg : Cfg k Symbol State₁ input) :
+public lemma step_rightCfg (cfg : Cfg k Symbol State₁ input) :
     (tm₀.seq tm₁).step (rightCfg cfg) = rightCfg (tm₁.step cfg) := by
   cases hq : cfg.state with
   | none =>
@@ -85,12 +86,12 @@ lemma step_rightCfg (cfg : Cfg k Symbol State₁ input) :
     rfl
 
 /-- The second phase of `seq` mirrors the run of `tm₁`. -/
-lemma runFrom_rightCfg (cfg : Cfg k Symbol State₁ input) (n : ℕ) :
+public lemma runFrom_rightCfg (cfg : Cfg k Symbol State₁ input) (n : ℕ) :
     (tm₀.seq tm₁).runFrom (rightCfg cfg) n = rightCfg (tm₁.runFrom cfg n) :=
   runFrom_comm_of_step rightCfg (fun c => step_rightCfg c) cfg n
 
 /-- While `tm₀` is running, `seq` mirrors it. -/
-lemma runFrom_leftCfg (cfg : Cfg k Symbol State₀ input) (n : ℕ)
+public lemma runFrom_leftCfg (cfg : Cfg k Symbol State₀ input) (n : ℕ)
     (h : ∀ m < n, (tm₀.runFrom cfg m).state ≠ none) :
     (tm₀.seq tm₁).runFrom (leftCfg tm₁ cfg) n = leftCfg tm₁ (tm₀.runFrom cfg n) := by
   induction n with
@@ -100,22 +101,37 @@ lemma runFrom_leftCfg (cfg : Cfg k Symbol State₀ input) (n : ℕ)
       step_leftCfg _ (h n (by omega))]
 
 @[simp]
-lemma leftCfg_wordsCfg (q : State₀) (ws : Fin k → List Symbol) (out : List Symbol) :
+public lemma leftCfg_wordsCfg (q : State₀) (ws : Fin k → List Symbol) (out : List Symbol) :
     leftCfg tm₁ (wordsCfg input (some q) ws out) =
       wordsCfg input (some (Sum.inl q : State₀ ⊕ State₁)) ws out := rfl
 
 @[simp]
-lemma rightCfg_wordsCfg (q : Option State₁) (ws : Fin k → List Symbol) (out : List Symbol) :
+public lemma rightCfg_wordsCfg (q : Option State₁) (ws : Fin k → List Symbol) (out : List Symbol) :
     rightCfg (State₀ := State₀) (wordsCfg input q ws out) =
       wordsCfg input (q.map Sum.inr) ws out := rfl
 
 @[simp]
-lemma workTapePos_leftCfg (cfg : Cfg k Symbol State₀ input) :
+public lemma workTapePos_leftCfg (cfg : Cfg k Symbol State₀ input) :
     (leftCfg tm₁ cfg).workTapePos = cfg.workTapePos := rfl
 
 @[simp]
-lemma workTapePos_rightCfg (cfg : Cfg k Symbol State₁ input) :
+public lemma workTapePos_rightCfg (cfg : Cfg k Symbol State₁ input) :
     (rightCfg (State₀ := State₀) cfg).workTapePos = cfg.workTapePos := rfl
+
+/-- **The run of `seq`, raw form.** Once the first machine has halted (at its first halting
+time), the composite continues as the second machine from the handoff configuration. This is the
+form used to chain phases whose intermediate configurations are not normalised; the
+`TransformsTapes`-level composition is `transformsTapes_seq`. -/
+public lemma runFrom_seq (cfg : Cfg k Symbol State₀ input) (u v : ℕ)
+    (hhalt : (tm₀.runFrom cfg u).state = none)
+    (hactive : ∀ m < u, (tm₀.runFrom cfg m).state ≠ none) :
+    (tm₀.seq tm₁).runFrom (leftCfg tm₁ cfg) (u + v) =
+      rightCfg (tm₁.runFrom ((tm₀.runFrom cfg u).withState (some tm₁.q₀)) v) := by
+  rw [runFrom_add, runFrom_leftCfg _ u hactive]
+  have h : leftCfg tm₁ (tm₀.runFrom cfg u) =
+      rightCfg ((tm₀.runFrom cfg u).withState (some tm₁.q₀)) := by
+    simp [leftCfg, rightCfg, Cfg.withState, hhalt]
+  rw [h, runFrom_rightCfg]
 
 end Sequential
 
