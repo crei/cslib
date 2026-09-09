@@ -188,13 +188,13 @@ private lemma run_goRight (p : ℤ) (hlp : l ≤ p) (d : ℕ) (hd : p + d ≤ r 
 
 include hifp in
 /-- The turn at the right end of the footprint. -/
-private lemma step_turn (hl0 : l ≤ 0) (hr : 0 ≤ r) :
+private lemma step_turn (_hl0 : l ≤ 0) (hr : 0 ≤ r) :
     (sweep i fp).step (cfg i fp base (some .goRight) (r + 1) G (F l r)) =
       cfg i fp base (some .toAnchor) r G (F l r) := by
   have hread : F l r (r + 1) = none := by
     have h1 : ¬ (r + 1 = 0) := by omega
     have h2 : ¬ (l ≤ r + 1 ∧ r + 1 ≤ r) := by omega
-    simp [F, h1, h2]
+    simp [F, h1]
   rw [step_cfg hifp base .goRight (r + 1) G (F l r) none none (-1) (some .toAnchor)
     (fun inp work hw => by simp only [sweep]; rw [hw, hread])]
   rw [show r + 1 + ((-1 : SignType) : ℤ) = r from by rw [cast_neg_one]; omega]
@@ -240,7 +240,7 @@ private lemma eraseAbove_zero_eq (T : ℤ → Option Bool) :
 
 include hifp in
 /-- Phase 2: sweep left from the right end down to the anchor, erasing both tapes. -/
-private lemma run_toAnchor (hl0 : l ≤ 0) (h0r : 0 ≤ r) (d : ℕ) (hd : (d : ℤ) ≤ r) :
+private lemma run_toAnchor (hl0 : l ≤ 0) (_h0r : 0 ≤ r) (d : ℕ) (hd : (d : ℤ) ≤ r) :
     (sweep i fp).runFrom
         (cfg i fp base (some .toAnchor) r (eraseAbove G r) (eraseAbove (F l r) r)) d =
       cfg i fp base (some .toAnchor) (r - d) (eraseAbove G (r - d))
@@ -264,7 +264,7 @@ private lemma run_toAnchor (hl0 : l ≤ 0) (h0r : 0 ≤ r) (d : ℕ) (hd : (d : 
 
 include hifp in
 /-- The anchor step: erase the garbage under the anchor, keep the anchor, turn left. -/
-private lemma step_anchor (hl0 : l ≤ 0) (h0r : 0 ≤ r) :
+private lemma step_anchor (_hl0 : l ≤ 0) (_h0r : 0 ≤ r) :
     (sweep i fp).step
         (cfg i fp base (some .toAnchor) 0 (eraseAbove G 0) (eraseAbove (F l r) 0)) =
       cfg i fp base (some .sweepLeft) (-1) (eraseAbove G (-1))
@@ -282,7 +282,7 @@ private lemma step_anchor (hl0 : l ≤ 0) (h0r : 0 ≤ r) :
 
 include hifp in
 /-- Phase 3: sweep left below the anchor, erasing both tapes. -/
-private lemma run_sweepLeft (hl0 : l ≤ 0) (h0r : 0 ≤ r) (d : ℕ) (hd : (d : ℤ) ≤ -l) :
+private lemma run_sweepLeft (_hl0 : l ≤ 0) (h0r : 0 ≤ r) (d : ℕ) (hd : (d : ℤ) ≤ -l) :
     (sweep i fp).runFrom
         (cfg i fp base (some .sweepLeft) (-1) (eraseAbove G (-1))
           (eraseKeepAnchor (F l r) (-1))) d =
@@ -297,7 +297,7 @@ private lemma run_sweepLeft (hl0 : l ≤ 0) (h0r : 0 ≤ r) (d : ℕ) (hd : (d :
       have h0 : ¬ (-1 - (d : ℤ) = 0) := by omega
       have hc : ¬ (-1 - (d : ℤ) < -1 - (d : ℤ) ∧ -1 - (d : ℤ) ≠ 0) := by omega
       have hin : l ≤ -1 - (d : ℤ) ∧ -1 - (d : ℤ) ≤ r := by omega
-      simp [eraseKeepAnchor, F, h0, hc, hin]
+      simp [eraseKeepAnchor, F, h0, hin]
     rw [step_cfg hifp base .sweepLeft (-1 - d) (eraseAbove G (-1 - d))
       (eraseKeepAnchor (F l r) (-1 - d)) (some none) (some none) (-1) (some .sweepLeft)
       (fun inp work hw => by simp only [sweep]; rw [hw, hread])]
@@ -318,7 +318,7 @@ private lemma step_turnLeft (hl0 : l ≤ 0) :
     have hc : ¬ (l - 1 < l - 1 ∧ l - 1 ≠ 0) := by omega
     have h0 : ¬ (l - 1 = 0) := by omega
     have hin : ¬ (l ≤ l - 1 ∧ l - 1 ≤ r) := by omega
-    simp [eraseKeepAnchor, F, hc, h0, hin]
+    simp [eraseKeepAnchor, F, h0]
   rw [step_cfg hifp base .sweepLeft (l - 1) (eraseAbove G (l - 1))
     (eraseKeepAnchor (F l r) (l - 1)) none none 1 (some .seek)
     (fun inp work hw => by simp only [sweep]; rw [hw, hread])]
@@ -327,7 +327,7 @@ private lemma step_turnLeft (hl0 : l ≤ 0) :
 
 include hifp in
 /-- Phase 4: walk right over the erased cells towards the anchor. -/
-private lemma run_seek (hl0 : l ≤ 0) (d : ℕ) (hd : (d : ℤ) ≤ -l) :
+private lemma run_seek (_hl0 : l ≤ 0) (d : ℕ) (hd : (d : ℤ) ≤ -l) :
     (sweep i fp).runFrom
         (cfg i fp base (some .seek) l (eraseAbove G (l - 1))
           (eraseKeepAnchor (F l r) (l - 1))) d =
@@ -349,7 +349,7 @@ private lemma run_seek (hl0 : l ≤ 0) (d : ℕ) (hd : (d : ℤ) ≤ -l) :
 
 include hifp in
 /-- The halting step: erase the anchor, stay at `0`. -/
-private lemma step_final (hl0 : l ≤ 0) :
+private lemma step_final (_hl0 : l ≤ 0) :
     (sweep i fp).step
         (cfg i fp base (some .seek) 0 (eraseAbove G (l - 1))
           (eraseKeepAnchor (F l r) (l - 1))) =
@@ -357,7 +357,7 @@ private lemma step_final (hl0 : l ≤ 0) :
         (Function.update (eraseKeepAnchor (F l r) (l - 1)) 0 none) := by
   have hread : eraseKeepAnchor (F l r) (l - 1) 0 = some true := by
     have hc : ¬ (l - 1 < (0 : ℤ) ∧ (0 : ℤ) ≠ 0) := by omega
-    simp [eraseKeepAnchor, hc, F]
+    simp [eraseKeepAnchor, F]
   rw [step_cfg hifp base .seek 0 (eraseAbove G (l - 1))
     (eraseKeepAnchor (F l r) (l - 1)) none (some none) 0 none
     (fun inp work hw => by simp only [sweep]; rw [hw, hread])]
@@ -373,7 +373,7 @@ private lemma eraseAbove_final (hG : ∀ z, z < l ∨ r < z → G z = none) :
   · simp [eraseAbove, h, hG z (Or.inl (by omega))]
 
 /-- After the sweep, the footprint is blank. -/
-private lemma eraseKeepAnchor_final (hl0 : l ≤ 0) :
+private lemma eraseKeepAnchor_final (_hl0 : l ≤ 0) :
     Function.update (eraseKeepAnchor (F l r) (l - 1)) 0 none = fun _ => none := by
   funext z
   by_cases h0 : z = 0
