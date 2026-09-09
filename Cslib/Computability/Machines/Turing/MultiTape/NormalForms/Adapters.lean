@@ -533,4 +533,18 @@ public theorem transformsTapes_extendTapes {k k' : ℕ} {State : Type}
     rw [hstart]
     exact le_trans (spaceUsed_embed_le M e _ _ _ τ) (Nat.add_le_add_right hsp _)
 
+/-- **Complexity of a composition.** If `f` and `gg` are computable, so is `gg ∘ f`: run the
+machine for `f` (its result on a work tape), then the machine for `gg` reading that tape, then emit.
+The two machines are placed on a shared tape layout with the first's output tape identified with the
+second's input tape; the first's blank scratch is reused by the second. -/
+public theorem computableInTimeAndSpace_comp
+    {f : α → β} {gg : β → γ} {encA : α ↪ List Bool} {encB : β ↪ List Bool} {encC : γ ↪ List Bool}
+    {tf sf : α → ℕ} {tg sg : β → ℕ}
+    (hf : ComputableInTimeAndSpace f encA encB tf sf)
+    (hg : ComputableInTimeAndSpace gg encB encC tg sg) :
+    ∃ c, ComputableInTimeAndSpace (gg ∘ f) encA encC
+      (fun a => c * (tf a + tg (f a) + (encB (f a)).length + 1))
+      (fun a => c * (sf a + sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1)) := by
+  sorry
+
 end Turing.MultiTapeTM
