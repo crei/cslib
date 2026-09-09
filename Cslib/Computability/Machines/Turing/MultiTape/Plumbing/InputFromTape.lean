@@ -6,6 +6,7 @@ Authors: Christian Reitwiessner, Samuel Schlesinger
 
 module
 
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.StepLemmas
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsTapes
 
 /-!
@@ -154,14 +155,12 @@ public lemma clampMove_correct (mark : Symbol) (c : Cfg k Symbol State I) (m : S
       ((c.inputPos.val : ℤ) - 1) +
         (clampMove c.inputSymbol (if c.inputPos.val = 0 then some mark else none) m : ℤ) := by
   have hlen : c.inputPos.val ≤ I.length + 1 := by have := c.inputPos.isLt; omega
-  have cN : (SignType.neg.cast : ℤ) = -1 := by simp [SignType.cast]
-  have cZ : (SignType.zero.cast : ℤ) = 0 := by simp [SignType.cast]
-  have cP : (SignType.pos.cast : ℤ) = 1 := by simp [SignType.cast]
   rcases Nat.eq_zero_or_pos c.inputPos.val with h0 | h1
   · -- left boundary: virtual head blank, flag marked
     rw [inputSymbol_eq_none_of_boundary (Or.inl h0), ite_eq_left h0]
     rcases m with _ | _ | _ <;>
-      simp only [clampMove, val_moveInputPos_eq, min_def, max_def, cN, cZ, cP] <;>
+      simp only [clampMove, val_moveInputPos_eq, min_def, max_def,
+        SignType.cast_neg_one, SignType.cast_zero_int, SignType.cast_one_int] <;>
       split_ifs <;> omega
   · rcases Nat.lt_or_ge (c.inputPos.val) (I.length + 1) with hlt | hge
     · -- inside the input: virtual head nonblank
@@ -173,13 +172,15 @@ public lemma clampMove_correct (mark : Symbol) (c : Cfg k Symbol State I) (m : S
         exact ⟨_, rfl⟩
       rw [hb]
       rcases m with _ | _ | _ <;>
-        simp only [clampMove, val_moveInputPos_eq, min_def, max_def, cN, cZ, cP] <;>
+        simp only [clampMove, val_moveInputPos_eq, min_def, max_def,
+          SignType.cast_neg_one, SignType.cast_zero_int, SignType.cast_one_int] <;>
         split_ifs <;> omega
     · -- right boundary: virtual head blank, flag unmarked
       have hv : c.inputPos.val = I.length + 1 := by omega
       rw [inputSymbol_eq_none_of_boundary (Or.inr hv), ite_eq_right (by omega)]
       rcases m with _ | _ | _ <;>
-        simp only [clampMove, val_moveInputPos_eq, min_def, max_def, cN, cZ, cP] <;>
+        simp only [clampMove, val_moveInputPos_eq, min_def, max_def,
+          SignType.cast_neg_one, SignType.cast_zero_int, SignType.cast_one_int] <;>
         split_ifs <;> omega
 
 end Projections
