@@ -58,6 +58,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Configuration
 public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.DeterministicToNondeterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.Nondeterministic
+public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Adapters
 public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Instrument
 public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Sweep
 public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Tidy
