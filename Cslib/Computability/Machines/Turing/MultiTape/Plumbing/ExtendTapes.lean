@@ -91,6 +91,18 @@ public lemma partialInv_eq_none (e : Fin k ↪ Fin k') {l : Fin k'} (hl : ¬ ∃
     partialInv e l = none :=
   dite_eq_right hl
 
+/-- If the partial inverse is `some j`, then `e j = l`. -/
+public lemma partialInv_eq_some (e : Fin k ↪ Fin k') {l : Fin k'} {j : Fin k}
+    (h : partialInv e l = some j) : e j = l := by
+  unfold partialInv at h
+  by_cases hl : ∃ j, e j = l
+  · rw [dif_pos hl] at h
+    have hspec := Fintype.choose_spec (fun j' => e j' = l)
+      (existsUnique_of_exists_of_unique hl fun _ _ ha hb => e.injective (ha.trans hb.symm))
+    rw [Option.some_inj] at h
+    rw [← h]; exact hspec
+  · rw [dif_neg hl] at h; exact absurd h (by simp)
+
 @[simp]
 public lemma embed_inputSymbol (e : Fin k ↪ Fin k') (cfg : Cfg k Symbol State input)
     (extraTapes : Fin k' → ℤ → Option Symbol) (extraPos : Fin k' → ℤ) :

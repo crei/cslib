@@ -11,6 +11,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.OutputToTap
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.RewindTape
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.InputFromTape
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.EmitTape
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ExtendTapes
 
 /-!
 # From a computable function to a tape transformer
@@ -464,5 +465,72 @@ public theorem computableInTimeAndSpace_of_transformsTapes {K : ℕ} {State : Ty
     simp only [Cfg.withState_output]
     change (c₁.withState (some tmE.q₀)).output ++ encOut (gg a) = encOut (gg a)
     rw [Cfg.withState_output, hc1def, wordsCfg_output, List.nil_append]
+
+/-- A `wordsCfg` over `k'` tapes, viewed as the `k`-tape `wordsCfg` on the tapes selected by `e`,
+embedded with the remaining tapes carrying the leftover words. -/
+private lemma wordsCfg_eq_embed {k k' : ℕ} {State : Type} (e : Fin k ↪ Fin k')
+    (input : List Bool) (q : Option State) (ws : Fin k' → List Bool) (out : List Bool) :
+    wordsCfg input q ws out =
+      embed e (wordsCfg input q (fun j => ws (e j)) out)
+        (fun l => tapeOfList (ws l)) (fun _ => 0) := by
+  refine Cfg.ext rfl rfl ?_ ?_ rfl
+  · funext l z
+    change tapeOfList (ws l) z = _
+    rcases hpi : partialInv e l with _ | j
+    · simp [embed, hpi]
+    · simp only [embed, hpi, wordsCfg_workTapes, partialInv_eq_some e hpi]
+  · funext l
+    change (0 : ℤ) = _
+    rcases hpi : partialInv e l with _ | j <;> simp [embed, hpi]
+
+/-- **Reindexing preserves being a tape transformer.** If `M` transforms tapes along `P`/`Q`, then
+`extendTapes M e` transforms them on the tapes selected by `e`, leaving the tapes outside the range
+of `e` untouched, in the same time and space plus one cell per added tape. -/
+public theorem transformsTapes_extendTapes {k k' : ℕ} {State : Type}
+    (e : Fin k ↪ Fin k') {M : MultiTapeTM k Bool State}
+    {P : (input : List Bool) → (Fin k → List Bool) → Prop}
+    {Q : (input : List Bool) → (Fin k → List Bool) → (Fin k → List Bool) → Prop}
+    {t s : ℕ} (h : TransformsTapes M P Q t s) :
+    TransformsTapes (extendTapes M e)
+      (fun input ws => P input (fun j => ws (e j)) ∧ ∀ l, (∀ j, e j ≠ l) → ws l = [])
+      (fun input ws ws' => Q input (fun j => ws (e j)) (fun j => ws' (e j)) ∧
+        ∀ l, (∀ j, e j ≠ l) → ws' l = ws l)
+      t (s + (k' - k)) := by
+  intro input ws out ⟨hP, hextra⟩
+  -- the start config, viewed through the embedding
+  have hstart : wordsCfg input (some (extendTapes M e).q₀) ws out =
+      embed e (wordsCfg input (some M.q₀) (fun j => ws (e j)) out)
+        (fun l => tapeOfList (ws l)) (fun _ => 0) :=
+    wordsCfg_eq_embed e input (some M.q₀) ws out
+  -- run the inner machine
+  obtain ⟨τ, hτ, ws', hrun, hQ, hsp⟩ :=
+    h input (fun j => ws (e j)) out hP
+  refine ⟨τ, hτ, fun l => match partialInv e l with | some j => ws' j | none => ws l, ?_, ?_, ?_⟩
+  · -- the run: the embedded halting config is a `wordsCfg`
+    rw [hstart, runFrom_embed, hrun]
+    refine Cfg.ext rfl rfl ?_ ?_ rfl
+    · funext l z
+      change (embed e (wordsCfg input (none : Option State) ws' out)
+        (fun l => tapeOfList (ws l)) (fun _ => 0)).workTapes l z =
+        (wordsCfg input (none : Option State)
+          (fun l => match partialInv e l with | some j => ws' j | none => ws l) out).workTapes l z
+      rcases hpi : partialInv e l with _ | j
+      · simp [embed, hpi]
+      · simp [embed, hpi, wordsCfg_workTapes]
+    · funext l
+      change (embed e (wordsCfg input (none : Option State) ws' out)
+        (fun l => tapeOfList (ws l)) (fun _ => 0)).workTapePos l = (0 : ℤ)
+      rcases hpi : partialInv e l with _ | j <;> simp [embed, hpi]
+  · -- the postcondition
+    refine ⟨?_, ?_⟩
+    · have : (fun j => (fun l => match partialInv e l with | some j => ws' j | none => ws l) (e j))
+          = ws' := by
+        funext j; simp only [partialInv_embed]
+      rw [this]; exact hQ
+    · intro l hl
+      simp only [partialInv_eq_none e (fun ⟨j, hj⟩ => hl j hj)]
+  · -- the space
+    rw [hstart]
+    exact le_trans (spaceUsed_embed_le M e _ _ _ τ) (Nat.add_le_add_right hsp _)
 
 end Turing.MultiTapeTM
