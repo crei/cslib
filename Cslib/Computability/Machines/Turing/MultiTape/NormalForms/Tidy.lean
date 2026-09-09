@@ -66,62 +66,6 @@ open Sequential
 
 variable {K : ℕ} {S₁ S₂ : Type} {input : List Bool}
 
-/-- Raw sequential composition of two halting runs: the composite runs the first machine's run and
-then the second's, with times and space bounds adding, and stays live throughout — the handoff
-itself is a live state. -/
-private lemma seq_spec {tm₁ : MultiTapeTM K Bool S₁} {tm₂ : MultiTapeTM K Bool S₂}
-    {c : Cfg K Bool (S₁ ⊕ S₂) input} {c₁ : Cfg K Bool S₁ input} {c₂ : Cfg K Bool S₂ input}
-    {u₁ u₂ s₁' s₂' : ℕ}
-    (hc : c.state = some (tm₁.seq tm₂).q₀)
-    (h₁ : tm₁.runFrom (c.withState (some tm₁.q₀)) u₁ = c₁)
-    (h₁halt : c₁.state = none)
-    (h₁act : ∀ m < u₁, (tm₁.runFrom (c.withState (some tm₁.q₀)) m).state ≠ none)
-    (h₁sp : tm₁.spaceUsed (c.withState (some tm₁.q₀)) u₁ ≤ s₁')
-    (h₂ : tm₂.runFrom (c₁.withState (some tm₂.q₀)) u₂ = c₂)
-    (h₂halt : c₂.state = none)
-    (h₂act : ∀ m < u₂, (tm₂.runFrom (c₁.withState (some tm₂.q₀)) m).state ≠ none)
-    (h₂sp : tm₂.spaceUsed (c₁.withState (some tm₂.q₀)) u₂ ≤ s₂') :
-    (tm₁.seq tm₂).runFrom c (u₁ + u₂) = c₂.withState (none : Option (S₁ ⊕ S₂)) ∧
-    (∀ m < u₁ + u₂, ((tm₁.seq tm₂).runFrom c m).state ≠ none) ∧
-    (tm₁.seq tm₂).spaceUsed c (u₁ + u₂) ≤ s₁' + s₂' := by
-  set cs := c.withState (some tm₁.q₀) with hcs
-  have hcleft : c = leftCfg tm₂ cs := by
-    refine Cfg.ext ?_ rfl rfl rfl rfl
-    rw [hc]
-    rfl
-  have hhalt₁ : (tm₁.runFrom cs u₁).state = none := by rw [h₁]; exact h₁halt
-  have hleft : ∀ m ≤ u₁, (tm₁.seq tm₂).runFrom c m = leftCfg tm₂ (tm₁.runFrom cs m) := by
-    intro m hm
-    rw [hcleft, runFrom_leftCfg _ m fun r hr => h₁act r (by omega)]
-  have hmid : (tm₁.seq tm₂).runFrom c u₁ = rightCfg (c₁.withState (some tm₂.q₀)) := by
-    rw [hleft u₁ le_rfl, h₁]
-    refine Cfg.ext ?_ rfl rfl rfl rfl
-    simp [leftCfg, rightCfg, Cfg.withState, h₁halt]
-  have hright : ∀ m, (tm₁.seq tm₂).runFrom c (u₁ + m) =
-      rightCfg (tm₂.runFrom (c₁.withState (some tm₂.q₀)) m) := by
-    intro m
-    rw [runFrom_add, hmid, runFrom_rightCfg]
-  refine ⟨?_, ?_, ?_⟩
-  · rw [hright u₂, h₂]
-    refine Cfg.ext ?_ rfl rfl rfl rfl
-    simp [rightCfg, Cfg.withState, h₂halt]
-  · intro m hm
-    rcases Nat.le_total m u₁ with h | h
-    · rw [hleft m h]
-      simp [leftCfg]
-    · obtain ⟨m', rfl⟩ : ∃ m', m = u₁ + m' := ⟨m - u₁, by omega⟩
-      rw [hright m']
-      have h := h₂act m' (by omega)
-      simpa only [rightCfg, ne_eq, Option.map_eq_none_iff] using h
-  · refine le_trans (spaceUsed_add_le _ _ _) (Nat.add_le_add ?_ ?_)
-    · refine le_trans (le_of_eq (spaceUsed_eq_of_workTapePos _ _ u₁ fun m hm => ?_)) h₁sp
-      rw [hleft m hm]
-      rfl
-    · rw [hmid]
-      refine le_trans (le_of_eq (spaceUsed_eq_of_workTapePos _ _ u₂ fun m hm => ?_)) h₂sp
-      rw [runFrom_rightCfg]
-      rfl
-
 /-- The machine that halts on its first step, changing nothing. -/
 private def haltTM (K : ℕ) : MultiTapeTM K Bool Unit where
   q₀ := ()
