@@ -185,4 +185,62 @@ lemma spaceUsed_eq_of_workTapePos {State' : Type*} {input' : List Symbol}
   refine Finset.sum_congr rfl fun i _ => congrArg Finset.card (Finset.image_congr fun m hm => ?_)
   exact congrFun (h m (Nat.lt_succ_iff.mp (Finset.mem_range.mp hm))) i
 
+/-- The cells a head visits between two moments of one run all lie in the visited set. -/
+lemma uIcc_workTapePos_subset_visitedByTapeHead_of_le (cfg : Cfg k Symbol State input)
+    (i : Fin k) {t₁ t₂ t : ℕ} (h₁ : t₁ ≤ t₂) (h₂ : t₂ ≤ t) :
+    Finset.uIcc ((tm.runFrom cfg t₁).workTapePos i) ((tm.runFrom cfg t₂).workTapePos i)
+      ⊆ tm.visitedByTapeHead cfg t i := by
+  intro z hz
+  have h := tm.uIcc_workTapePos_subset_visitedByTapeHead (tm.runFrom cfg t₁) i (t₂ - t₁)
+  rw [← runFrom_add, show t₁ + (t₂ - t₁) = t₂ from by omega] at h
+  have hsub : tm.visitedByTapeHead (tm.runFrom cfg t₁) (t₂ - t₁) i
+      ⊆ tm.visitedByTapeHead cfg t i := by
+    intro y hy
+    obtain ⟨m, hm, rfl⟩ := mem_visitedByTapeHead.mp hy
+    rw [← runFrom_add]
+    exact mem_visitedByTapeHead.mpr ⟨t₁ + m, by omega, rfl⟩
+  exact hsub (h hz)
+
+/-- **A head's visited set is an interval**: a head path is connected, so the visited cells are
+exactly the integers between the leftmost and the rightmost, and the starting cell is among
+them. -/
+lemma exists_visitedByTapeHead_eq_Icc (cfg : Cfg k Symbol State input) (t : ℕ) (i : Fin k) :
+    ∃ l r : ℤ, l ≤ cfg.workTapePos i ∧ cfg.workTapePos i ≤ r ∧
+      tm.visitedByTapeHead cfg t i = Finset.Icc l r := by
+  have hne : (tm.visitedByTapeHead cfg t i).Nonempty :=
+    ⟨cfg.workTapePos i, mem_visitedByTapeHead.mpr ⟨0, by omega, rfl⟩⟩
+  have hmem : cfg.workTapePos i ∈ tm.visitedByTapeHead cfg t i :=
+    mem_visitedByTapeHead.mpr ⟨0, by omega, rfl⟩
+  refine ⟨(tm.visitedByTapeHead cfg t i).min' hne, (tm.visitedByTapeHead cfg t i).max' hne,
+    Finset.min'_le _ _ hmem, Finset.le_max' _ _ hmem, ?_⟩
+  apply Finset.Subset.antisymm
+  · intro z hz
+    exact Finset.mem_Icc.mpr ⟨Finset.min'_le _ _ hz, Finset.le_max' _ _ hz⟩
+  · intro z hz
+    obtain ⟨t₁, ht₁, hpos₁⟩ := mem_visitedByTapeHead.mp (Finset.min'_mem _ hne)
+    obtain ⟨t₂, ht₂, hpos₂⟩ := mem_visitedByTapeHead.mp (Finset.max'_mem _ hne)
+    have hzu : z ∈ Finset.uIcc ((tm.runFrom cfg t₁).workTapePos i)
+        ((tm.runFrom cfg t₂).workTapePos i) := by
+      rw [hpos₁, hpos₂, Finset.uIcc_of_le (Finset.min'_le _ _ (Finset.max'_mem _ hne))]
+      exact hz
+    rcases Nat.le_total t₁ t₂ with h | h
+    · exact tm.uIcc_workTapePos_subset_visitedByTapeHead_of_le cfg i h (by omega) hzu
+    · rw [Finset.uIcc_comm] at hzu
+      exact tm.uIcc_workTapePos_subset_visitedByTapeHead_of_le cfg i h (by omega) hzu
+
+/-- A run that never moves a work-tape head visits one cell per tape. -/
+lemma spaceUsed_le_of_workTapePos_const (cfg : Cfg k Symbol State input) (u : ℕ)
+    (h : ∀ m ≤ u, (tm.runFrom cfg m).workTapePos = cfg.workTapePos) :
+    tm.spaceUsed cfg u ≤ k := by
+  have hcard : ∀ i, tm.spaceUsedByTape cfg u i ≤ 1 := by
+    intro i
+    refine le_trans (Finset.card_le_card ?_) (le_of_eq (Finset.card_singleton
+      (cfg.workTapePos i)))
+    intro z hz
+    obtain ⟨m, hm, rfl⟩ := mem_visitedByTapeHead.mp hz
+    rw [h m (by omega)]
+    exact Finset.mem_singleton_self _
+  calc tm.spaceUsed cfg u ≤ ∑ _i : Fin k, 1 := Finset.sum_le_sum fun i _ => hcard i
+    _ = k := by simp
+
 end Turing.MultiTapeTM

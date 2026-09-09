@@ -128,6 +128,17 @@ lemma moveInputPos_pos_of_ne_right {n : ℕ} (p : Fin (n + 2)) (h : p.val ≠ n 
   · simp
     omega
 
+/-- The input head moves by at most one position. -/
+lemma val_moveInputPos_le {n : ℕ} (pos : Fin (n + 2)) (m : SignType) :
+    (moveInputPos pos m).val ≤ pos.val + 1 := by
+  simp only [moveInputPos]
+  by_cases h : (((pos.val : ℤ) + m.cast).toNat) < n + 2
+  · rw [dif_pos h]
+    rcases m <;> simp [SignType.cast] <;> omega
+  · rw [dif_neg h]
+    have := pos.isLt
+    rcases m <;> simp [SignType.cast] at h <;> omega
+
 /-- The symbol currently under the input tape head. -/
 def Cfg.inputSymbol (cfg : Cfg k Symbol State input) : Option Symbol :=
   if h₁ : cfg.inputPos = 0 then none

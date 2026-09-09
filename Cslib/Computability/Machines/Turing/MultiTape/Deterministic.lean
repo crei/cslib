@@ -267,6 +267,24 @@ lemma step_output (cfg : Cfg k Symbol State input) :
   unfold step outputSymbol Action.apply
   cases cfg.state <;> simp
 
+/-- The input head strays at most `t` positions from where it started in `t` steps. -/
+lemma inputPos_runFrom_le (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) (t : ℕ) :
+    ((tm.runFrom cfg t).inputPos : ℕ) ≤ (cfg.inputPos : ℕ) + t := by
+  induction t with
+  | zero => simp
+  | succ t ih =>
+    rw [runFrom_succ_eq_step']
+    by_cases hq : (tm.runFrom cfg t).state = none
+    · rw [step_of_halt hq]
+      omega
+    · obtain ⟨q, hq⟩ := Option.ne_none_iff_exists'.mp hq
+      have h : ((tm.step (tm.runFrom cfg t)).inputPos : ℕ) ≤
+          ((tm.runFrom cfg t).inputPos : ℕ) + 1 := by
+        simp only [step, hq, Action.apply]
+        exact val_moveInputPos_le _ _
+      omega
+
 /-- Nothing changes after the machine has halted. -/
 lemma runFrom_eq_of_halt
     (tm : MultiTapeTM k Symbol State)

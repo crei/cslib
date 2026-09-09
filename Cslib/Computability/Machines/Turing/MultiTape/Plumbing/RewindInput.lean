@@ -243,7 +243,7 @@ step of the run. Before the halting step the machine is live, so runs chain sequ
 public theorem exists_rewindInput (k : ℕ) (Symbol : Type*) :
     ∃ (State : Type) (_ : Finite State) (tm : MultiTapeTM k Symbol State),
       ∀ (input : List Symbol) (c : Cfg k Symbol State input), c.state = some tm.q₀ →
-        ∃ u ≤ input.length + 3,
+        ∃ u ≤ c.inputPos.val + 2,
           (∀ m < u, (tm.runFrom c m).state ≠ none) ∧
           tm.runFrom c u = ⟨none, 1, c.workTapes, c.workTapePos, c.output⟩ ∧
           ∀ m ≤ u, (tm.runFrom c m).workTapes = c.workTapes ∧
@@ -253,7 +253,7 @@ public theorem exists_rewindInput (k : ℕ) (Symbol : Type*) :
   obtain ⟨q, p, w, wp, out⟩ := c
   obtain rfl : q = some RewindState.probe := hc
   -- the run halts at position `1` after at most `input.length + 3` steps
-  obtain ⟨u₀, hu₀, hrun⟩ : ∃ u₀ ≤ input.length + 3,
+  obtain ⟨u₀, hu₀, hrun⟩ : ∃ u₀ ≤ p.val + 2,
       (rewindInput k Symbol).runFrom ⟨some .probe, p, w, wp, out⟩ u₀ =
         ⟨none, 1, w, wp, out⟩ := by
     rcases Nat.eq_zero_or_pos p.val with hp0 | hp1
