@@ -243,4 +243,37 @@ lemma spaceUsed_le_of_workTapePos_const (cfg : Cfg k Symbol State input) (u : �
   calc tm.spaceUsed cfg u ≤ ∑ _i : Fin k, 1 := Finset.sum_le_sum fun i _ => hcard i
     _ = k := by simp
 
+/-- Space bound for a run in which one head stays inside an interval and every other head is
+fixed: the moving tape contributes the interval, each other tape a single cell. -/
+lemma spaceUsed_le_of_one_moving (cfg : Cfg k Symbol State input) (t : ℕ) (i : Fin k)
+    (lo hi : ℤ)
+    (hi_move : ∀ m ≤ t, lo ≤ (tm.runFrom cfg m).workTapePos i ∧
+      (tm.runFrom cfg m).workTapePos i ≤ hi)
+    (hfixed : ∀ m ≤ t, ∀ j, j ≠ i → (tm.runFrom cfg m).workTapePos j = cfg.workTapePos j) :
+    tm.spaceUsed cfg t ≤ (hi + 1 - lo).toNat + k := by
+  have hi_tape : tm.spaceUsedByTape cfg t i ≤ (hi + 1 - lo).toNat := by
+    refine le_trans (Finset.card_le_card ?_) (le_of_eq (Int.card_Icc lo hi))
+    intro z hz
+    obtain ⟨m, hm, rfl⟩ := mem_visitedByTapeHead.mp hz
+    exact Finset.mem_Icc.mpr (hi_move m (by omega))
+  have hj_tape : ∀ j ∈ Finset.univ.erase i, tm.spaceUsedByTape cfg t j ≤ 1 := by
+    intro j hj
+    have hji : j ≠ i := Finset.ne_of_mem_erase hj
+    refine le_trans (Finset.card_le_card ?_) (le_of_eq (Finset.card_singleton
+      (cfg.workTapePos j)))
+    intro z hz
+    obtain ⟨m, hm, rfl⟩ := mem_visitedByTapeHead.mp hz
+    rw [hfixed m (by omega) j hji]
+    exact Finset.mem_singleton_self _
+  calc tm.spaceUsed cfg t
+      = tm.spaceUsedByTape cfg t i +
+          ∑ j ∈ Finset.univ.erase i, tm.spaceUsedByTape cfg t j :=
+        (Finset.add_sum_erase _ _ (Finset.mem_univ i)).symm
+    _ ≤ (hi + 1 - lo).toNat + ∑ _j ∈ Finset.univ.erase i, 1 :=
+        Nat.add_le_add hi_tape (Finset.sum_le_sum hj_tape)
+    _ ≤ (hi + 1 - lo).toNat + k := by
+        rw [← Finset.card_eq_sum_ones, Finset.card_erase_of_mem (Finset.mem_univ i),
+          Finset.card_univ, Fintype.card_fin]
+        omega
+
 end Turing.MultiTapeTM
