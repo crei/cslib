@@ -133,11 +133,11 @@ lemma val_moveInputPos_le {n : ℕ} (pos : Fin (n + 2)) (m : SignType) :
     (moveInputPos pos m).val ≤ pos.val + 1 := by
   simp only [moveInputPos]
   by_cases h : (((pos.val : ℤ) + m.cast).toNat) < n + 2
-  · rw [dif_pos h]
-    rcases m <;> simp [SignType.cast] <;> omega
-  · rw [dif_neg h]
+  · rw [dite_eq_left h]
+    rcases m <;> (simp only [SignType.cast]; omega)
+  · rw [dite_eq_right h]
     have := pos.isLt
-    rcases m <;> simp [SignType.cast] at h <;> omega
+    rcases m <;> (simp only [SignType.cast] at h; omega)
 
 /-- The symbol currently under the input tape head. -/
 def Cfg.inputSymbol (cfg : Cfg k Symbol State input) : Option Symbol :=
