@@ -545,6 +545,246 @@ public theorem computableInTimeAndSpace_comp
     ∃ c, ComputableInTimeAndSpace (gg ∘ f) encA encC
       (fun a => c * (tf a + tg (f a) + (encB (f a)).length + 1))
       (fun a => c * (sf a + sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1)) := by
-  sorry
+  classical
+  -- `M_f` reads the real input and leaves `encB (f a)` on its output tape `o_f`.
+  obtain ⟨c_f, K_f, o_f, S_f, hS_f, M_f, hM_f⟩ := exists_transformsTapes_ofComputableInput hf
+  -- `M_g` reads `encB x` from its input tape `i_g` and leaves `encC (gg x)` on `o_g`.
+  obtain ⟨c_g, K_g, i_g, o_g, S_g, hS_g, M_g, hio, hM_g⟩ := exists_transformsTapes_ofComputable hg
+  have hfin_f := hS_f
+  have hfin_g := hS_g
+  -- The length of `gg`'s output is bounded by its running time.
+  have hlenC : ∀ x, (encC (gg x)).length ≤ tg x := by
+    intro x
+    obtain ⟨kk, SS, hfinSS, tmm, hcomp⟩ := hg
+    obtain ⟨t', ht', s', hs', hhaltm, houtm, hspm⟩ := hcomp x
+    have hlen : ∀ d, (tmm.runFrom (tmm.initCfg (encB x)) d).output.length ≤ d := by
+      intro d
+      induction d with
+      | zero => rw [runFrom_zero, initCfg_eq_wordsCfg]; simp
+      | succ d ih =>
+        rw [runFrom_succ_eq_step', step_output, List.length_append]
+        have h1 : (tmm.outputSymbol (tmm.runFrom (tmm.initCfg (encB x)) d)).toList.length ≤ 1 := by
+          cases tmm.outputSymbol (tmm.runFrom (tmm.initCfg (encB x)) d) <;> simp
+        omega
+    have hle := hlen t'
+    rw [houtm] at hle
+    omega
+  -- The shared tape layout on `Fin (K_f + K_g)`: `M_f` occupies the first block, `M_g` the second,
+  -- with `M_g`'s virtual input tape `i_g` identified with `M_f`'s output tape `o_f`.
+  let e_f : Fin K_f ↪ Fin (K_f + K_g) := Fin.castAddEmb K_g
+  have e_g_inj : Function.Injective
+      (fun j : Fin K_g =>
+        if j = i_g then (o_f.castAdd K_g : Fin (K_f + K_g)) else j.natAdd K_f) := by
+    intro j₁ j₂ h
+    dsimp only at h
+    split_ifs at h with h1 h2
+    · rw [h1, h2]
+    · exfalso
+      have hv := congrArg Fin.val h
+      rw [Fin.val_castAdd, Fin.val_natAdd] at hv
+      have := o_f.isLt; omega
+    · exfalso
+      have hv := congrArg Fin.val h
+      rw [Fin.val_natAdd, Fin.val_castAdd] at hv
+      have := o_f.isLt; omega
+    · have hv := congrArg Fin.val h
+      rw [Fin.val_natAdd, Fin.val_natAdd] at hv
+      exact Fin.ext (by omega)
+  let e_g : Fin K_g ↪ Fin (K_f + K_g) :=
+    ⟨fun j => if j = i_g then (o_f.castAdd K_g) else j.natAdd K_f, e_g_inj⟩
+  -- `M_g`'s input tape coincides with `M_f`'s output tape.
+  have hei : (e_g i_g : Fin (K_f + K_g)) = e_f o_f := by
+    change (if i_g = i_g then (o_f.castAdd K_g : Fin (K_f + K_g)) else i_g.natAdd K_f)
+      = o_f.castAdd K_g
+    rw [ite_eq_left rfl]
+  -- The composite tape transformer: run `M_f`, then `M_g` reading `M_f`'s output.
+  have hMc : ∀ a, TransformsTapes ((extendTapes M_f e_f).seq (extendTapes M_g e_g))
+      (fun input ws => input = encA a ∧ ∀ l, ws l = [])
+      (fun _ _ ws' => ws' (e_g o_g) = encC (gg (f a)))
+      (c_f * (tf a + 1) + c_g * (tg (f a) + 1))
+      (c_f * (sf a + (encB (f a)).length + 1) + K_f + (K_f + K_g - K_f) +
+        (c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) + K_g +
+          (K_f + K_g - K_g))) := by
+    intro a
+    refine (transformsTapes_seq (transformsTapes_extendTapes e_f (hM_f a))
+      (transformsTapes_extendTapes e_g (hM_g (f a))) ?_).imp ?_ ?_ le_rfl le_rfl
+    · -- The handoff: after `M_f`, `M_g`'s precondition holds on the shared layout.
+      rintro input ws ws' ⟨⟨rfl, hwf⟩, hoff⟩ ⟨hQf1, hQf2⟩
+      have hwsblank : ∀ l, ws l = [] := by
+        intro l
+        by_cases hl : ∃ j, e_f j = l
+        · obtain ⟨j, rfl⟩ := hl; exact hwf j
+        · exact hoff l (fun j hj => hl ⟨j, hj⟩)
+      refine ⟨⟨?_, ?_⟩, ?_⟩
+      · -- `M_g`'s input tape carries `encB (f a)`.
+        change ws' (e_g i_g) = encB (f a)
+        rw [hei]
+        have hk := congrFun hQf1 o_f
+        simpa using hk
+      · -- Every other of `M_g`'s tapes is blank.
+        intro l hl
+        change ws' (e_g l) = []
+        have hne : (e_g l : Fin (K_f + K_g)) = l.natAdd K_f := by
+          change (if l = i_g then (o_f.castAdd K_g : Fin (K_f + K_g)) else l.natAdd K_f)
+            = l.natAdd K_f
+          rw [ite_eq_right hl]
+        have hout : ∀ j, e_f j ≠ e_g l := by
+          intro j hj
+          have h1 : (e_f j).val < K_f := by
+            change (j.castAdd K_g).val < K_f
+            rw [Fin.val_castAdd]; exact j.isLt
+          rw [hj, hne, Fin.val_natAdd] at h1; omega
+        rw [hQf2 (e_g l) hout, hwsblank]
+      · -- The tapes outside `M_g`'s layout are blank.
+        intro l hl
+        by_cases hlr : ∃ j, e_f j = l
+        · obtain ⟨j, rfl⟩ := hlr
+          have hjo : j ≠ o_f := by intro hjeq; subst hjeq; exact hl i_g hei
+          have hk := congrFun hQf1 j
+          rw [Function.update_of_ne hjo] at hk
+          exact hk.trans (hwf j)
+        · exact (hQf2 l (fun j hj => hlr ⟨j, hj⟩)).trans (hwsblank l)
+    · -- Precondition: an all-blank input satisfies the lifted `M_f` precondition.
+      rintro input ws ⟨rfl, hblank⟩
+      exact ⟨⟨rfl, fun l => hblank (e_f l)⟩, fun l _ => hblank l⟩
+    · -- Postcondition: read the result off `M_g`'s output tape.
+      rintro input ws ws'' _ ⟨ws', _, hQg⟩
+      have hk := congrFun hQg.1 o_g
+      simpa using hk
+  -- Append an emit machine to copy the result from `e_g o_g` to the real output tape.
+  have hbase : ComputableInTimeAndSpace (gg ∘ f) encA encC
+      (fun a => c_f * (tf a + 1) + c_g * (tg (f a) + 1) + (encC (gg (f a))).length + 2)
+      (fun a => (K_f + K_g + 1) *
+        (c_f * (sf a + (encB (f a)).length + 1) + K_f + (K_f + K_g - K_f) +
+          (c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) + K_g +
+            (K_f + K_g - K_g)) + (encC (gg (f a))).length + 1)) := by
+    obtain ⟨SE, hSE, tmE, hE⟩ := exists_emitTape (Symbol := Bool) (e_g o_g)
+    have := hSE
+    refine ⟨K_f + K_g, (S_f ⊕ S_g) ⊕ SE, inferInstance,
+      ((extendTapes M_f e_f).seq (extendTapes M_g e_g)).seq tmE, fun a => ?_⟩
+    set tm := (extendTapes M_f e_f).seq (extendTapes M_g e_g) with htm
+    set start := (tm.seq tmE).initCfg (encA a) with hstart
+    have hstart_words : start = wordsCfg (encA a) (some (tm.seq tmE).q₀) (fun _ => []) [] := by
+      rw [hstart, initCfg_eq_wordsCfg]
+    obtain ⟨τ, hτ, ws', hrun1, hws', hsp1⟩ :=
+      hMc a (encA a) (fun _ => []) [] ⟨rfl, fun _ => rfl⟩
+    have hc1eq : tm.runFrom (start.withState (some tm.q₀)) τ =
+        wordsCfg (encA a) none ws' [] := by
+      rw [hstart_words]; exact hrun1
+    obtain ⟨τ', hτ'le, hτ'halt, hτ'act⟩ :=
+      exists_minimal_halting_time tm (start.withState (some tm.q₀)) τ (by rw [hc1eq]; rfl)
+    have hc1eq' : tm.runFrom (start.withState (some tm.q₀)) τ' = wordsCfg (encA a) none ws' [] :=
+      (runFrom_eq_of_halt tm _ hτ'le hτ'halt).symm.trans hc1eq
+    set c₁ := wordsCfg (encA a) (none : Option (S_f ⊕ S_g)) ws' [] with hc1def
+    have ho_tape : c₁.workTapes (e_g o_g) = tapeOfList (encC (gg (f a))) := by
+      rw [hc1def]
+      change tapeOfList (ws' (e_g o_g)) = tapeOfList (encC (gg (f a)))
+      rw [hws']
+    have ho_pos : c₁.workTapePos (e_g o_g) = 0 := by rw [hc1def, wordsCfg_workTapePos]
+    obtain ⟨u₂, hu₂, h₂act, h₂run, h₂frame⟩ :=
+      hE (encA a) (c₁.withState (some tmE.q₀)) (encC (gg (f a))) rfl ho_tape ho_pos
+    have hstartws : start.withState (some tm.q₀) =
+        wordsCfg (encA a) (some tm.q₀) (fun _ => []) [] := by
+      rw [hstart_words]; rfl
+    have hsp1' : tm.spaceUsed (start.withState (some tm.q₀)) τ' ≤
+        c_f * (sf a + (encB (f a)).length + 1) + K_f + (K_f + K_g - K_f) +
+          (c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) + K_g +
+            (K_f + K_g - K_g)) := by
+      rw [hstartws]
+      exact le_trans (spaceUsed_mono tm _ hτ'le) hsp1
+    have hsp2' : tmE.spaceUsed (c₁.withState (some tmE.q₀)) u₂ ≤
+        (encC (gg (f a))).length + 1 + (K_f + K_g) := by
+      refine le_trans (spaceUsed_le_of_one_moving (c₁.withState (some tmE.q₀)) u₂ (e_g o_g)
+        0 ((encC (gg (f a))).length : ℤ) (fun m hm => ⟨(h₂frame m hm).2.2.2.1,
+          (h₂frame m hm).2.2.2.2⟩) (fun m hm j hj => (h₂frame m hm).2.2.1 j hj)) ?_
+      have : ((encC (gg (f a))).length + 1 - (0 : ℤ)).toNat = (encC (gg (f a))).length + 1 := by
+        omega
+      omega
+    obtain ⟨hseq_run, hseq_act, hseq_sp⟩ :=
+      seq_spec (tm₁ := tm) (tm₂ := tmE) (c := start) (by rw [hstart_words]; rfl)
+        hc1eq' (by rw [hc1def]; rfl) hτ'act hsp1' h₂run rfl h₂act hsp2'
+    refine ⟨τ' + u₂, ?_, (tm.seq tmE).spaceUsed start (τ' + u₂), ?_, ?_, ?_, rfl⟩
+    · -- Time bound.
+      change τ' + u₂ ≤ c_f * (tf a + 1) + c_g * (tg (f a) + 1) + (encC (gg (f a))).length + 2
+      have : u₂ ≤ (encC (gg (f a))).length + 2 := hu₂
+      omega
+    · -- Space bound.
+      change (tm.seq tmE).spaceUsed start (τ' + u₂) ≤ (K_f + K_g + 1) *
+        (c_f * (sf a + (encB (f a)).length + 1) + K_f + (K_f + K_g - K_f) +
+          (c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) + K_g +
+            (K_f + K_g - K_g)) + (encC (gg (f a))).length + 1)
+      refine le_trans hseq_sp ?_
+      set S := c_f * (sf a + (encB (f a)).length + 1) + K_f + (K_f + K_g - K_f) +
+          (c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) + K_g +
+            (K_f + K_g - K_g)) + (encC (gg (f a))).length + 1 with hSdef
+      have hexp : (K_f + K_g + 1) * S = S + (K_f + K_g) * S := by
+        rw [Nat.add_mul, Nat.one_mul, Nat.add_comm]
+      have hKS : (K_f + K_g) ≤ (K_f + K_g) * S := Nat.le_mul_of_pos_right _ (by omega)
+      have hrw : c_f * (sf a + (encB (f a)).length + 1) + K_f + (K_f + K_g - K_f) +
+          (c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) + K_g +
+            (K_f + K_g - K_g)) + ((encC (gg (f a))).length + 1 + (K_f + K_g))
+          = S + (K_f + K_g) := by
+        rw [hSdef]; omega
+      omega
+    · -- The run halts.
+      rw [hseq_run]; rfl
+    · -- The output is the encoded result.
+      rw [hseq_run]
+      simp only [Cfg.withState_output]
+      change (c₁.withState (some tmE.q₀)).output ++ encC (gg (f a)) = encC (gg (f a))
+      rw [Cfg.withState_output, hc1def, wordsCfg_output, List.nil_append]
+  -- Relax the bounds to the stated linear form.
+  refine ⟨(K_f + K_g + 1) * (c_f + c_g + 2 * K_f + 2 * K_g + 2) + c_f + c_g + 3,
+    hbase.mono ?_ ?_⟩
+  · -- Time.
+    intro a
+    have hlc : (encC (gg (f a))).length ≤ tg (f a) := hlenC (f a)
+    have hcf : c_f + c_g + 3 ≤
+        (K_f + K_g + 1) * (c_f + c_g + 2 * K_f + 2 * K_g + 2) + c_f + c_g + 3 := by omega
+    have e1 : c_f * (tf a + 1) ≤ c_f * (tf a + tg (f a) + (encB (f a)).length + 1) :=
+      Nat.mul_le_mul (le_refl _) (by omega)
+    have e2 : c_g * (tg (f a) + 1) ≤ c_g * (tf a + tg (f a) + (encB (f a)).length + 1) :=
+      Nat.mul_le_mul (le_refl _) (by omega)
+    have hexp : (c_f + c_g + 3) * (tf a + tg (f a) + (encB (f a)).length + 1) =
+        c_f * (tf a + tg (f a) + (encB (f a)).length + 1) +
+          c_g * (tf a + tg (f a) + (encB (f a)).length + 1) +
+          3 * (tf a + tg (f a) + (encB (f a)).length + 1) := by
+      rw [Nat.add_mul, Nat.add_mul]
+    have e3 : (c_f + c_g + 3) * (tf a + tg (f a) + (encB (f a)).length + 1) ≤
+        ((K_f + K_g + 1) * (c_f + c_g + 2 * K_f + 2 * K_g + 2) + c_f + c_g + 3) *
+          (tf a + tg (f a) + (encB (f a)).length + 1) := Nat.mul_le_mul hcf (le_refl _)
+    have e4 : (encC (gg (f a))).length + 2 ≤ 3 * (tf a + tg (f a) + (encB (f a)).length + 1) := by
+      omega
+    omega
+  · -- Space.
+    intro a
+    set PS := sf a + sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1 with hPS
+    have hsub1 : K_f + K_g - K_f = K_g := by omega
+    have hsub2 : K_f + K_g - K_g = K_f := by omega
+    have f1 : c_f * (sf a + (encB (f a)).length + 1) ≤ c_f * PS :=
+      Nat.mul_le_mul (le_refl _) (by omega)
+    have f2 : c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) ≤ c_g * PS :=
+      Nat.mul_le_mul (le_refl _) (by omega)
+    have q1 : 2 * K_f ≤ 2 * K_f * PS := Nat.le_mul_of_pos_right _ (by omega)
+    have q2 : 2 * K_g ≤ 2 * K_g * PS := Nat.le_mul_of_pos_right _ (by omega)
+    have hexpS : (c_f + c_g + 2 * K_f + 2 * K_g + 2) * PS =
+        c_f * PS + c_g * PS + 2 * K_f * PS + 2 * K_g * PS + 2 * PS := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.add_mul]
+    have hSbound : c_f * (sf a + (encB (f a)).length + 1) + K_f + (K_f + K_g - K_f) +
+        (c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) + K_g +
+          (K_f + K_g - K_g)) + (encC (gg (f a))).length + 1 ≤
+        (c_f + c_g + 2 * K_f + 2 * K_g + 2) * PS := by
+      rw [hsub1, hsub2, hexpS]
+      omega
+    calc (K_f + K_g + 1) *
+          (c_f * (sf a + (encB (f a)).length + 1) + K_f + (K_f + K_g - K_f) +
+            (c_g * (sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1) + K_g +
+              (K_f + K_g - K_g)) + (encC (gg (f a))).length + 1)
+        ≤ (K_f + K_g + 1) * ((c_f + c_g + 2 * K_f + 2 * K_g + 2) * PS) :=
+          Nat.mul_le_mul (le_refl _) hSbound
+      _ = ((K_f + K_g + 1) * (c_f + c_g + 2 * K_f + 2 * K_g + 2)) * PS :=
+          (Nat.mul_assoc _ _ _).symm
+      _ ≤ ((K_f + K_g + 1) * (c_f + c_g + 2 * K_f + 2 * K_g + 2) + c_f + c_g + 3) * PS :=
+          Nat.mul_le_mul (by omega) (le_refl _)
 
 end Turing.MultiTapeTM
