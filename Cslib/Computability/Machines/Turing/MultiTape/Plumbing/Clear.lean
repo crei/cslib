@@ -7,7 +7,6 @@ Authors: Christian Reitwiessner
 module
 
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsTapes
-import all Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsTapes
 
 /-!
 # A machine that clears a work tape

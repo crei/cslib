@@ -95,7 +95,7 @@ The postcondition is a single configuration equality, so a machine satisfying it
 everything: heads at the start, tapes blank outside their words, nothing written to the output.
 The bounds are numbers; a specification whose bounds depend on the data is a *family*
 `∀ j, TransformsTapes tm (P j) (Q j) (t j) (s j)` over one fixed machine. -/
-public def TransformsTapes (tm : MultiTapeTM k Symbol State)
+@[expose] public def TransformsTapes (tm : MultiTapeTM k Symbol State)
     (P : (input : List Symbol) → (Fin k → List Symbol) → Prop)
     (Q : (input : List Symbol) → (Fin k → List Symbol) → (Fin k → List Symbol) → Prop)
     (t s : ℕ) : Prop :=
