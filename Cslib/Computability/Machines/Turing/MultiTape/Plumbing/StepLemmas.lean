@@ -19,10 +19,10 @@ debris in the fields it does not care about; `step_apply_of_state hq` turns `ste
 into an `Action.apply` for a one-field rewrite, leaving the transition `tm.tr q _ _` folded until
 the caller computes it.
 
-Also here: reduction of `SignType` casts to `ℤ` (`SignType.cast_neg`/`zero`/`pos`). Combined with
-`Turing.val_moveInputPos_eq` — the input head's post-move position as an `omega`-native clamped
-integer — these are what let head-position goals over the boundary-clamping input head close by
-`omega` instead of by a `SignType`-case analysis. The redirection machines are the customers.
+For head-position goals over the boundary-clamping input head, `Turing.val_moveInputPos_eq` gives
+the post-move position as an `omega`-native clamped integer, so `simp only [val_moveInputPos_eq,
+min_def, max_def]; split_ifs <;> omega` closes them (`SignType` casts to `ℤ` are already
+`simp`-reducible in Mathlib). The redirection machines are the customers.
 -/
 
 @[expose] public section
@@ -30,15 +30,6 @@ integer — these are what let head-position goals over the boundary-clamping in
 namespace Turing
 
 variable {k : ℕ} {Symbol State : Type*} {input : List Symbol}
-
-@[simp] public lemma _root_.SignType.cast_neg_one : ((SignType.neg : SignType) : ℤ) = -1 := by
-  simp [SignType.cast]
-
-@[simp] public lemma _root_.SignType.cast_zero_int : ((SignType.zero : SignType) : ℤ) = 0 := by
-  simp [SignType.cast]
-
-@[simp] public lemma _root_.SignType.cast_one_int : ((SignType.pos : SignType) : ℤ) = 1 := by
-  simp [SignType.cast]
 
 @[simp] public lemma Action.apply_state (a : Action k Symbol State)
     (cfg : Cfg k Symbol State input) : (a.apply cfg).state = a.state := rfl
@@ -55,7 +46,7 @@ variable {k : ℕ} {Symbol State : Type*} {input : List Symbol}
     (cfg : Cfg k Symbol State input) (i : Fin k) :
     (a.apply cfg).workTapePos i = cfg.workTapePos i + (a.workTapes i).2 := rfl
 
-@[simp] public lemma Action.apply_workTapes (a : Action k Symbol State)
+public lemma Action.apply_workTapes (a : Action k Symbol State)
     (cfg : Cfg k Symbol State input) (i : Fin k) :
     (a.apply cfg).workTapes i = match (a.workTapes i).1 with
       | none => cfg.workTapes i

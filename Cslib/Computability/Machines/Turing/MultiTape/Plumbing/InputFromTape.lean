@@ -159,8 +159,7 @@ public lemma clampMove_correct (mark : Symbol) (c : Cfg k Symbol State I) (m : S
   · -- left boundary: virtual head blank, flag marked
     rw [inputSymbol_eq_none_of_boundary (Or.inl h0), ite_eq_left h0]
     rcases m with _ | _ | _ <;>
-      simp only [clampMove, val_moveInputPos_eq, min_def, max_def,
-        SignType.cast_neg_one, SignType.cast_zero_int, SignType.cast_one_int] <;>
+      simp only [clampMove, val_moveInputPos_eq, min_def, max_def, SignType.cast] <;>
       split_ifs <;> omega
   · rcases Nat.lt_or_ge (c.inputPos.val) (I.length + 1) with hlt | hge
     · -- inside the input: virtual head nonblank
@@ -172,15 +171,13 @@ public lemma clampMove_correct (mark : Symbol) (c : Cfg k Symbol State I) (m : S
         exact ⟨_, rfl⟩
       rw [hb]
       rcases m with _ | _ | _ <;>
-        simp only [clampMove, val_moveInputPos_eq, min_def, max_def,
-          SignType.cast_neg_one, SignType.cast_zero_int, SignType.cast_one_int] <;>
+        simp only [clampMove, val_moveInputPos_eq, min_def, max_def, SignType.cast] <;>
         split_ifs <;> omega
     · -- right boundary: virtual head blank, flag unmarked
       have hv : c.inputPos.val = I.length + 1 := by omega
       rw [inputSymbol_eq_none_of_boundary (Or.inr hv), ite_eq_right (by omega)]
       rcases m with _ | _ | _ <;>
-        simp only [clampMove, val_moveInputPos_eq, min_def, max_def,
-          SignType.cast_neg_one, SignType.cast_zero_int, SignType.cast_one_int] <;>
+        simp only [clampMove, val_moveInputPos_eq, min_def, max_def, SignType.cast] <;>
         split_ifs <;> omega
 
 end Projections
