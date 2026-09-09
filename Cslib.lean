@@ -62,6 +62,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Instrume
 public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Sweep
 public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Tidy
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Clear
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.OutputToTape
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.RewindInput
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Sequential
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsTapes
