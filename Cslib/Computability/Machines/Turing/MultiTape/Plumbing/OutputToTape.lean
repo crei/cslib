@@ -153,10 +153,10 @@ public lemma step_outputToTape_withOutput (tm : MultiTapeTM k Symbol State)
       simp [outputToTape]
     rw [step_apply_of_state h1, step_apply_of_state hq, hin, hws]
     refine Cfg.ext rfl rfl ?_ ?_ ?_
-    · funext l z; simp [Action.apply_workTapes, Cfg.withOutput]
-    · funext l; simp [Action.apply_workTapePos, Cfg.withOutput]
-    · simp only [Action.apply_output, Cfg.withOutput_output, hout]
-      simp
+    · funext l z; simp [Cfg.withOutput]
+    · funext l; simp [Cfg.withOutput]
+    · simp only [Action.apply_output, Cfg.withOutput_output, hout, Option.toList_none,
+        List.append_nil]
 
 /-- The redirected run commutes with the real output already present. -/
 public lemma runFrom_outputToTape_withOutput (tm : MultiTapeTM k Symbol State)
