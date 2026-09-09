@@ -226,4 +226,80 @@ public lemma workTapes_addNat_instrument (c : Cfg (k + k) Symbol State input) (j
 
 end Footprint
 
+section MarkAnchors
+
+/-- The one-step machine that writes `mark` on every footprint tape at its head — placing the
+anchors before an instrumented run — and halts. Everything else is untouched. -/
+private def markAnchors (k : ℕ) (Symbol : Type*) (mark : Symbol) :
+    MultiTapeTM (k + k) Symbol Unit where
+  q₀ := ()
+  tr _ _ _ :=
+    { inputTape := 0
+      workTapes := Fin.addCases (fun _ => (none, 0)) (fun _ => (some (some mark), 0))
+      output := none
+      state := none }
+
+/-- One step of `markAnchors`: anchors written at the footprint heads, nothing else changed. -/
+public theorem exists_markAnchors (k : ℕ) (Symbol : Type*) (mark : Symbol) :
+    ∃ (State : Type) (_ : Finite State) (tm : MultiTapeTM (k + k) Symbol State),
+      ∀ (input : List Symbol) (c : Cfg (k + k) Symbol State input), c.state = some tm.q₀ →
+        (tm.runFrom c 1).state = none ∧
+        (tm.runFrom c 1).inputPos = c.inputPos ∧
+        (tm.runFrom c 1).output = c.output ∧
+        (tm.runFrom c 1).workTapePos = c.workTapePos ∧
+        (∀ j : Fin k, (tm.runFrom c 1).workTapes (j.castAdd k) = c.workTapes (j.castAdd k)) ∧
+        (∀ j : Fin k, (tm.runFrom c 1).workTapes (j.addNat k) =
+          Function.update (c.workTapes (j.addNat k)) (c.workTapePos (j.addNat k)) (some mark)) := by
+  refine ⟨Unit, inferInstance, markAnchors k Symbol mark, fun input c hq => ?_⟩
+  have hstep : (markAnchors k Symbol mark).runFrom c 1 = (markAnchors k Symbol mark).step c := by
+    rw [runFrom_succ_eq_step', runFrom_zero]
+  rw [hstep]
+  refine ⟨?_, ?_, ?_, ?_, fun j => ?_, fun j => ?_⟩
+  · simp [step, hq, Action.apply, markAnchors]
+  · simp [step, hq, Action.apply, markAnchors]
+  · simp [step, hq, Action.apply, markAnchors]
+  · funext l
+    induction l using Fin.addCases with
+    | left j => simp [step, hq, Action.apply, markAnchors, Fin.addCases_left]
+    | right j => simp [step, hq, Action.apply, markAnchors, addCases_addNat]
+  · simp [step, hq, Action.apply, markAnchors, Fin.addCases_left]
+  · simp [step, hq, Action.apply, markAnchors, addCases_addNat]
+
+end MarkAnchors
+
+section Space
+
+/-- An instrumented run uses exactly twice the space of the original: each footprint head visits
+exactly the cells its partner visits. -/
+public lemma spaceUsed_instrument (tm : MultiTapeTM k Symbol State) (mark : Symbol)
+    (c : Cfg (k + k) Symbol State input) (τ : ℕ)
+    (halign : ∀ j : Fin k, c.workTapePos (j.addNat k) = c.workTapePos (j.castAdd k))
+    (hlive : ∀ m < τ, ((tm.instrument mark).runFrom c m).state ≠ none) :
+    (tm.instrument mark).spaceUsed c τ = 2 * tm.spaceUsed (projCfg c) τ := by
+  have hcast : ∀ (j : Fin k),
+      (tm.instrument mark).visitedByTapeHead c τ (j.castAdd k) =
+        tm.visitedByTapeHead (projCfg c) τ j := by
+    intro j
+    refine Finset.image_congr fun m hm => ?_
+    rw [runFrom_projCfg tm mark]
+    rfl
+  have hnat : ∀ (j : Fin k),
+      (tm.instrument mark).visitedByTapeHead c τ (j.addNat k) =
+        tm.visitedByTapeHead (projCfg c) τ j := by
+    intro j
+    refine Finset.image_congr fun m hm => ?_
+    have hm' : m ≤ τ := Nat.lt_succ_iff.mp (Finset.mem_range.mp hm)
+    rw [workTapePos_addNat_instrument c j (halign j) m fun r hr => hlive r (by omega),
+      runFrom_projCfg tm mark]
+    rfl
+  rw [spaceUsed, spaceUsed, Fin.sum_univ_add, two_mul]
+  congr 1
+  · exact Finset.sum_congr rfl fun j _ => congrArg Finset.card (hcast j)
+  · refine Finset.sum_congr rfl fun j _ => congrArg Finset.card ?_
+    -- natAdd vs addNat spelling
+    rw [Fin.natAdd_eq_addNat]
+    exact hnat j
+end Space
+
+
 end Turing.MultiTapeTM
