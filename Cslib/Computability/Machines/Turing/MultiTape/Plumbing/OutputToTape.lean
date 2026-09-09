@@ -7,6 +7,7 @@ Authors: Christian Reitwiessner, Samuel Schlesinger
 module
 
 public import Mathlib.Algebra.BigOperators.Fin
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.StepLemmas
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsTapes
 
 /-!
