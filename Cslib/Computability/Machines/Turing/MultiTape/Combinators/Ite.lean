@@ -36,9 +36,10 @@ splices in one `cond` per case.
 
 ## Bounds
 
-Bounds here are deliberately relaxed to a single combined shape, `c * (… + 1)`, collecting the six
-input bounds and the input length: nothing downstream depends on the conditional family being tight
-(`loop` and `comp` do not use it), and the construction spends constant factors freely.
+Bounds here are deliberately relaxed to a single combined shape, `c * (… + 1)`, collecting the
+shared time and space bounds and the input length: nothing downstream depends on the conditional
+family being tight (`loop` and `comp` do not use it), and the construction spends constant factors
+freely.
 
 ## Main results
 
@@ -78,13 +79,13 @@ before the branch and emitting tape `o` (`computableInTimeAndSpace_of_transforms
 the case analysis. Bounds are relaxed to the single combined shape `c * (… + 1)`; nothing
 downstream needs them tight. -/
 public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → β}
-    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {tc sc tif sif telse selse : α → ℕ}
-    (hsel : ComputableInTimeAndSpace sel encIn boolEnc tc sc)
-    (hif : ComputableInTimeAndSpace g encIn encOut tif sif)
-    (helse : ComputableInTimeAndSpace h encIn encOut telse selse) :
+    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {t s : α → ℕ}
+    (hsel : ComputableInTimeAndSpace sel encIn boolEnc t s)
+    (hif : ComputableInTimeAndSpace g encIn encOut t s)
+    (helse : ComputableInTimeAndSpace h encIn encOut t s) :
     ∃ c, ComputableInTimeAndSpace (fun a => bif sel a then g a else h a) encIn encOut
-      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1))
-      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1)) := by
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)) := by
   classical
   -- the three function machines, placed on a shared layout by the general adapters
   obtain ⟨m_sel, c_sel, hsel'⟩ := exists_transformsTapes_ofComputableInput hsel
@@ -102,14 +103,14 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → �
   obtain ⟨S_h, hS_h, M_h, hM_h⟩ :=
     helse' k o {c} (by simpa using hoc) (by simp only [Finset.card_singleton]; omega)
   have := hS_sel; have := hS_g; have := hS_h
-  have hleg : ∀ a, (encOut (g a)).length ≤ tif a := hif.length_encOut_le
-  have hleh : ∀ a, (encOut (h a)).length ≤ telse a := helse.length_encOut_le
+  have hleg : ∀ a, (encOut (g a)).length ≤ t a := hif.length_encOut_le
+  have hleh : ∀ a, (encOut (h a)).length ≤ t a := helse.length_encOut_le
   -- arm 1: run `g`, guarded by `sel a = true`, its result identified with the case analysis
   have h₁ : ∀ a, TransformsTapes M_g
       (fun input ws => (input = encIn a ∧ ∀ l, l ∉ ({c} : Finset (Fin k)) → ws l = [])
         ∧ sel a = true)
       (fun _ ws ws' => ws' = Function.update ws o (encOut (bif sel a then g a else h a)))
-      (c_g * (tif a + 1)) (c_g * (sif a + (encOut (g a)).length + 1) + k) := by
+      (c_g * (t a + 1)) (c_g * (s a + (encOut (g a)).length + 1) + k) := by
     intro a
     refine (hM_g a).imp (fun _ _ hP => hP.1) (fun _ _ ws' hP hQ => ?_) le_rfl le_rfl
     rw [hQ]; simp only [hP.2, Bool.cond_true]
@@ -118,7 +119,7 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → �
       (fun input ws => (input = encIn a ∧ ∀ l, l ∉ ({c} : Finset (Fin k)) → ws l = [])
         ∧ sel a = false)
       (fun _ ws ws' => ws' = Function.update ws o (encOut (bif sel a then g a else h a)))
-      (c_h * (telse a + 1)) (c_h * (selse a + (encOut (h a)).length + 1) + k) := by
+      (c_h * (t a + 1)) (c_h * (s a + (encOut (h a)).length + 1) + k) := by
     intro a
     refine (hM_h a).imp (fun _ _ hP => hP.1) (fun _ _ ws' hP hQ => ?_) le_rfl le_rfl
     rw [hQ]; simp only [hP.2, Bool.cond_false]
@@ -130,19 +131,19 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → �
       (P₂ := fun a input ws => (input = encIn a ∧ ∀ l, l ∉ ({c} : Finset (Fin k)) → ws l = [])
         ∧ sel a = false)
       (Q := fun a _ ws ws' => ws' = Function.update ws o (encOut (bif sel a then g a else h a)))
-      (t₁ := fun a => c_g * (tif a + 1))
-      (s₁ := fun a => c_g * (sif a + (encOut (g a)).length + 1) + k)
-      (t₂ := fun a => c_h * (telse a + 1))
-      (s₂ := fun a => c_h * (selse a + (encOut (h a)).length + 1) + k) h₁ h₂
+      (t₁ := fun a => c_g * (t a + 1))
+      (s₁ := fun a => c_g * (s a + (encOut (g a)).length + 1) + k)
+      (t₂ := fun a => c_h * (t a + 1))
+      (s₂ := fun a => c_h * (s a + (encOut (h a)).length + 1) + k) h₁ h₂
   have := hS_br
   -- run the selector, then the branch, as a single tape transformer emitting `o`
   have hMc : ∀ a, TransformsTapes (M_sel.seq M_br)
       (fun input ws => input = encIn a ∧ ∀ l, ws l = [])
       (fun _ _ ws' => ws' o = encOut (bif sel a then g a else h a))
-      (c_sel * (tc a + 1) + (max (c_g * (tif a + 1)) (c_h * (telse a + 1)) + 1))
-      (c_sel * (sc a + (boolEnc (sel a)).length + 1) + k +
-        (max (c_g * (sif a + (encOut (g a)).length + 1) + k)
-             (c_h * (selse a + (encOut (h a)).length + 1) + k) + k)) := by
+      (c_sel * (t a + 1) + (max (c_g * (t a + 1)) (c_h * (t a + 1)) + 1))
+      (c_sel * (s a + (boolEnc (sel a)).length + 1) + k +
+        (max (c_g * (s a + (encOut (g a)).length + 1) + k)
+             (c_h * (s a + (encOut (h a)).length + 1) + k) + k)) := by
     intro a
     refine (transformsTapes_seq (hM_sel a) (hM_br a) ?_).imp ?_ ?_ le_rfl le_rfl
     · -- handoff: after the selector, the branch precondition holds
@@ -170,35 +171,35 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → �
     computableInTimeAndSpace_of_transformsTapes (gg := fun a => bif sel a then g a else h a) o hMc
   refine ⟨c₀ * (2 * c_sel + c_g + c_h + 3 * k + 3), hc₀.mono (fun a => ?_) (fun a => ?_)⟩
   · -- time
-    set U := tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1 with hU
+    set U := t a + s a + (encIn a).length + 1 with hU
     have hlen : (encOut (bif sel a then g a else h a)).length ≤ U := by
       have := hleg a; have := hleh a
       cases sel a <;> simp only [Bool.cond_true, Bool.cond_false] <;> omega
     rw [Nat.mul_assoc]
     refine Nat.mul_le_mul_left c₀ ?_
-    have e_sel : c_sel * (tc a + 1) ≤ c_sel * U := Nat.mul_le_mul_left _ (by omega)
-    have e_g : c_g * (tif a + 1) ≤ c_g * U := Nat.mul_le_mul_left _ (by omega)
-    have e_h : c_h * (telse a + 1) ≤ c_h * U := Nat.mul_le_mul_left _ (by omega)
+    have e_sel : c_sel * (t a + 1) ≤ c_sel * U := Nat.mul_le_mul_left _ (by omega)
+    have e_g : c_g * (t a + 1) ≤ c_g * U := Nat.mul_le_mul_left _ (by omega)
+    have e_h : c_h * (t a + 1) ≤ c_h * U := Nat.mul_le_mul_left _ (by omega)
     have hexp : (2 * c_sel + c_g + c_h + 3 * k + 3) * U
         = 2 * (c_sel * U) + c_g * U + c_h * U + 3 * (k * U) + 3 * U := by
       rw [Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.mul_assoc, Nat.mul_assoc]
     omega
   · -- space
-    set U := tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1 with hU
+    set U := t a + s a + (encIn a).length + 1 with hU
     have hlen : (encOut (bif sel a then g a else h a)).length ≤ U := by
       have := hleg a; have := hleh a
       cases sel a <;> simp only [Bool.cond_true, Bool.cond_false] <;> omega
     rw [Nat.mul_assoc]
     refine Nat.mul_le_mul_left c₀ ?_
     have hkU : k ≤ k * U := Nat.le_mul_of_pos_right k (by omega)
-    have e_sel : c_sel * (sc a + (boolEnc (sel a)).length + 1) ≤ 2 * (c_sel * U) := by
+    have e_sel : c_sel * (s a + (boolEnc (sel a)).length + 1) ≤ 2 * (c_sel * U) := by
       have h1 : (boolEnc (sel a)).length = 1 := by simp
-      calc c_sel * (sc a + (boolEnc (sel a)).length + 1)
+      calc c_sel * (s a + (boolEnc (sel a)).length + 1)
           ≤ c_sel * (2 * U) := Nat.mul_le_mul_left _ (by rw [h1]; omega)
         _ = 2 * (c_sel * U) := by rw [Nat.mul_left_comm]
-    have e_g : c_g * (sif a + (encOut (g a)).length + 1) ≤ c_g * U :=
+    have e_g : c_g * (s a + (encOut (g a)).length + 1) ≤ c_g * U :=
       Nat.mul_le_mul_left _ (by have := hleg a; omega)
-    have e_h : c_h * (selse a + (encOut (h a)).length + 1) ≤ c_h * U :=
+    have e_h : c_h * (s a + (encOut (h a)).length + 1) ≤ c_h * U :=
       Nat.mul_le_mul_left _ (by have := hleh a; omega)
     have hexp : (2 * c_sel + c_g + c_h + 3 * k + 3) * U
         = 2 * (c_sel * U) + c_g * U + c_h * U + 3 * (k * U) + 3 * U := by
@@ -242,16 +243,30 @@ private lemma cond_norm {sel : α → Bool} {g h : α → β} {encOut : β ↪ L
   obtain ⟨c1, h1⟩ := hsel
   obtain ⟨c2, h2⟩ := hg
   obtain ⟨c3, h3⟩ := hh
-  obtain ⟨C, hC⟩ := computableInTimeAndSpace_cond h1 h2 h3
-  refine ⟨C * (2 * c1 + 2 * c2 + 2 * c3 + 2), hC.mono (fun a => ?_) (fun a => ?_)⟩ <;>
+  set C₀ := c1 + c2 + c3 with hC₀
+  -- weaken the three inputs to the common bound `C₀ * (t + s + L + 1)`
+  have hmono : ∀ (c' : ℕ), c' ≤ C₀ → ∀ a,
+      c' * (t a + s a + (encIn a).length + 1) ≤ C₀ * (t a + s a + (encIn a).length + 1) :=
+    fun _ hc' a => Nat.mul_le_mul_right _ hc'
+  have h1' : ComputableInTimeAndSpace sel encIn boolEnc
+      (fun a => C₀ * (t a + s a + (encIn a).length + 1))
+      (fun a => C₀ * (t a + s a + (encIn a).length + 1)) :=
+    h1.mono (hmono c1 (by omega)) (hmono c1 (by omega))
+  have h2' : ComputableInTimeAndSpace g encIn encOut
+      (fun a => C₀ * (t a + s a + (encIn a).length + 1))
+      (fun a => C₀ * (t a + s a + (encIn a).length + 1)) :=
+    h2.mono (hmono c2 (by omega)) (hmono c2 (by omega))
+  have h3' : ComputableInTimeAndSpace h encIn encOut
+      (fun a => C₀ * (t a + s a + (encIn a).length + 1))
+      (fun a => C₀ * (t a + s a + (encIn a).length + 1)) :=
+    h3.mono (hmono c3 (by omega)) (hmono c3 (by omega))
+  obtain ⟨C, hC⟩ := computableInTimeAndSpace_cond h1' h2' h3'
+  refine ⟨C * (2 * C₀ + 1), hC.mono (fun a => ?_) (fun a => ?_)⟩ <;>
     · rw [Nat.mul_assoc]
       refine Nat.mul_le_mul_left C ?_
-      have hexp : (2 * c1 + 2 * c2 + 2 * c3 + 2) * (t a + s a + (encIn a).length + 1) =
-          2 * (c1 * (t a + s a + (encIn a).length + 1)) +
-          2 * (c2 * (t a + s a + (encIn a).length + 1)) +
-          2 * (c3 * (t a + s a + (encIn a).length + 1)) +
-          2 * (t a + s a + (encIn a).length + 1) := by
-        rw [Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.mul_assoc, Nat.mul_assoc, Nat.mul_assoc]
+      have hexp : (2 * C₀ + 1) * (t a + s a + (encIn a).length + 1) =
+          2 * (C₀ * (t a + s a + (encIn a).length + 1)) + (t a + s a + (encIn a).length + 1) := by
+        rw [Nat.add_mul, Nat.mul_assoc, Nat.one_mul]
       omega
 
 /-- The single-bit test `decide (sel a = i₀)`, in the normalised shape. Composing the scrutinee with
@@ -405,13 +420,13 @@ decides it. This is `computableInTimeAndSpace_cond` read through `decide`: the `
 of `ite` carries no computational content, so all that is needed of the predicate is that its
 Boolean test is computable to `boolEnc`. -/
 public theorem computableInTimeAndSpace_ite {p : α → Prop} [DecidablePred p] {g h : α → β}
-    {encOut : β ↪ List Bool} {tc sc tif sif telse selse : α → ℕ}
-    (hp : ComputableInTimeAndSpace (fun a => decide (p a)) encIn boolEnc tc sc)
-    (hif : ComputableInTimeAndSpace g encIn encOut tif sif)
-    (helse : ComputableInTimeAndSpace h encIn encOut telse selse) :
+    {encOut : β ↪ List Bool} {t s : α → ℕ}
+    (hp : ComputableInTimeAndSpace (fun a => decide (p a)) encIn boolEnc t s)
+    (hif : ComputableInTimeAndSpace g encIn encOut t s)
+    (helse : ComputableInTimeAndSpace h encIn encOut t s) :
     ∃ c, ComputableInTimeAndSpace (fun a => if p a then g a else h a) encIn encOut
-      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1))
-      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1)) := by
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)) := by
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_cond hp hif helse
   refine ⟨c, ?_⟩
   have hfun : (fun a => bif decide (p a) then g a else h a) =
@@ -425,15 +440,15 @@ computable as it stands. What is asked instead is a computable *total* function 
 branch where that branch is taken. -/
 public theorem computableInTimeAndSpace_dite {p : α → Prop} [DecidablePred p]
     {_if : (a : α) → p a → β} {_else : (a : α) → ¬ p a → β} {If Else : α → β}
-    {encOut : β ↪ List Bool} {tc sc tif sif telse selse : α → ℕ}
+    {encOut : β ↪ List Bool} {t s : α → ℕ}
     (hIf : ∀ a (h : p a), If a = _if a h)
     (hElse : ∀ a (h : ¬ p a), Else a = _else a h)
-    (hp : ComputableInTimeAndSpace (fun a => decide (p a)) encIn boolEnc tc sc)
-    (hif : ComputableInTimeAndSpace If encIn encOut tif sif)
-    (helse : ComputableInTimeAndSpace Else encIn encOut telse selse) :
+    (hp : ComputableInTimeAndSpace (fun a => decide (p a)) encIn boolEnc t s)
+    (hif : ComputableInTimeAndSpace If encIn encOut t s)
+    (helse : ComputableInTimeAndSpace Else encIn encOut t s) :
     ∃ c, ComputableInTimeAndSpace (fun a => dite (p a) (_if a) (_else a)) encIn encOut
-      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1))
-      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1)) := by
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)) := by
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_ite (p := p) hp hif helse
   refine ⟨c, ?_⟩
   have hfun : (fun a => if p a then If a else Else a) =
