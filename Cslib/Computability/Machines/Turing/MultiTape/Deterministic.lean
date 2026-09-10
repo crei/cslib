@@ -267,6 +267,44 @@ lemma step_output (cfg : Cfg k Symbol State input) :
   unfold step outputSymbol Action.apply
   cases cfg.state <;> simp
 
+/-- The input head strays at most `t` positions from where it started in `t` steps. -/
+lemma inputPos_runFrom_le (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) (t : ℕ) :
+    ((tm.runFrom cfg t).inputPos : ℕ) ≤ (cfg.inputPos : ℕ) + t := by
+  induction t with
+  | zero => simp
+  | succ t ih =>
+    rw [runFrom_succ_eq_step']
+    by_cases hq : (tm.runFrom cfg t).state = none
+    · rw [step_of_halt hq]
+      omega
+    · obtain ⟨q, hq⟩ := Option.ne_none_iff_exists'.mp hq
+      have h : ((tm.step (tm.runFrom cfg t)).inputPos : ℕ) ≤
+          ((tm.runFrom cfg t).inputPos : ℕ) + 1 := by
+        simp only [step, hq, Action.apply]
+        exact val_moveInputPos_le _ _
+      omega
+
+/-- Nothing changes after the machine has halted. -/
+lemma runFrom_eq_of_halt
+    (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) {τ t : ℕ} (hle : τ ≤ t)
+    (hhalt : (tm.runFrom cfg τ).state = none) :
+    tm.runFrom cfg t = tm.runFrom cfg τ := by
+  conv_lhs => rw [← Nat.sub_add_cancel hle, Nat.add_comm]
+  rw [runFrom_add, runFrom_of_halt _ hhalt]
+
+/-- Every halted run has a first halting time no later than the supplied one. -/
+lemma exists_minimal_halting_time
+    (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) (t : ℕ)
+    (hhalt : (tm.runFrom cfg t).state = none) :
+    ∃ u ≤ t, (tm.runFrom cfg u).state = none ∧ ∀ s < u, (tm.runFrom cfg s).state ≠ none := by
+  classical
+  have hex : ∃ n, (tm.runFrom cfg n).state = none := ⟨t, hhalt⟩
+  exact ⟨Nat.find hex, Nat.find_min' hex hhalt, Nat.find_spec hex,
+    fun s hs => Nat.find_min hex hs⟩
+
 /-- The output does not change after the machine has halted. -/
 lemma runFrom_output_eq_of_halt
     (tm : MultiTapeTM k Symbol State)
@@ -331,6 +369,31 @@ theorem ComputableInTimeAndSpace.mono {α β : Type*}
     ComputableInTimeAndSpace f encIn encOut t' s' := by
   obtain ⟨k, State, hfinite, tm, htm⟩ := h
   exact ⟨k, State, hfinite, tm, htm.mono ht hs⟩
+
+theorem length_output_runFrom_le (tm : MultiTapeTM k Symbol State)
+    (cfg : Cfg k Symbol State input) (t : ℕ) :
+    (tm.runFrom cfg t).output.length ≤ cfg.output.length + t := by
+  induction t with
+  | zero => simp
+  | succ t ih =>
+    rw [runFrom_succ_eq_step', step_output, List.length_append]
+    have : (tm.outputSymbol (tm.runFrom cfg t)).toList.length ≤ 1 := by
+      cases tm.outputSymbol (tm.runFrom cfg t) <;> simp
+    omega
+
+/-- A machine emits at most one symbol per step, so the encoded result of a computation is no
+longer than its time bound. This is the only bound available on the length of an intermediate
+result: a machine can produce an output much longer than the space it uses. -/
+theorem ComputableInTimeAndSpace.length_encOut_le {α β : Type*}
+    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {f : α → β} {t s : α → ℕ}
+    (h : ComputableInTimeAndSpace f encIn encOut t s) (a : α) :
+    (encOut (f a)).length ≤ t a := by
+  obtain ⟨k, State, _, tm, htm⟩ := h
+  obtain ⟨t', ht', s', _, _, hout, _⟩ := htm a
+  have hlen := length_output_runFrom_le tm (tm.initCfg (encIn a)) t'
+  rw [hout] at hlen
+  have h0 : (tm.initCfg (encIn a)).output.length = 0 := rfl
+  omega
 
 open Classical in
 /-- The Boolean indicator function of a set. -/

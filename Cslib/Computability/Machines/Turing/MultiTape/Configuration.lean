@@ -81,6 +81,14 @@ structure Cfg (k : ℕ) (Symbol State : Type*) (input : List Symbol) where
   output : List Symbol
 deriving Inhabited
 
+/-- Two configurations with no work tapes are equal when their state, input head and output
+agree. -/
+lemma Cfg.ext_zero_tapes {Symbol State : Type*} {input : List Symbol}
+    {cfg₁ cfg₂ : Cfg 0 Symbol State input} (state : cfg₁.state = cfg₂.state)
+    (inputPos : cfg₁.inputPos = cfg₂.inputPos) (output : cfg₁.output = cfg₂.output) :
+    cfg₁ = cfg₂ :=
+  Cfg.ext state inputPos (funext fun i => i.elim0) (funext fun i => i.elim0) output
+
 /-- Attempt to move the input tape head.
 The machine can only read one empty cell outside of the input,
 any attempted movement beyond that results in no movement.
@@ -128,11 +136,44 @@ lemma moveInputPos_pos_of_ne_right {n : ℕ} (p : Fin (n + 2)) (h : p.val ≠ n 
   · simp
     omega
 
+/-- The input head moves by at most one position. -/
+lemma val_moveInputPos_le {n : ℕ} (pos : Fin (n + 2)) (m : SignType) :
+    (moveInputPos pos m).val ≤ pos.val + 1 := by
+  simp only [moveInputPos]
+  by_cases h : (((pos.val : ℤ) + m.cast).toNat) < n + 2
+  · rw [dite_eq_left h]
+    rcases m <;> (simp only [SignType.cast]; omega)
+  · rw [dite_eq_right h]
+    have := pos.isLt
+    rcases m <;> (simp only [SignType.cast] at h; omega)
+
+/-- The value of the input head after a move, as a clamped integer. `omega`-friendly. -/
+lemma val_moveInputPos_eq {n : ℕ} (pos : Fin (n + 2)) (m : SignType) :
+    ((moveInputPos pos m).val : ℤ) = min ((n : ℤ) + 1) (max 0 ((pos.val : ℤ) + (m.cast : ℤ))) := by
+  simp only [moveInputPos]
+  have hmc : (m.cast : ℤ) = -1 ∨ (m.cast : ℤ) = 0 ∨ (m.cast : ℤ) = 1 := by
+    rcases m with _ | _ | _ <;> simp [SignType.cast]
+  by_cases h : (((pos.val : ℤ) + (m.cast : ℤ)).toNat) < n + 2
+  · rw [dite_eq_left h]
+    have := pos.isLt
+    push_cast
+    omega
+  · rw [dite_eq_right h]
+    have := pos.isLt
+    push_cast
+    omega
+
 /-- The symbol currently under the input tape head. -/
 def Cfg.inputSymbol (cfg : Cfg k Symbol State input) : Option Symbol :=
   if h₁ : cfg.inputPos = 0 then none
   else if h₂ : cfg.inputPos = input.length + 1 then none
   else input[cfg.inputPos.val - 1]'(by grind)
+
+/-- At either boundary of the input, the head reads a blank. -/
+lemma inputSymbol_eq_none_of_boundary {cfg : Cfg k Symbol State input}
+    (h : cfg.inputPos.val = 0 ∨ cfg.inputPos.val = input.length + 1) :
+    cfg.inputSymbol = none := by
+  grind [Cfg.inputSymbol]
 
 @[simp]
 lemma inputSymbolInner {cfg : Cfg k Symbol State input} (p : ℕ)
@@ -147,6 +188,19 @@ def Cfg.workTapeSymbols (cfg : Cfg k Symbol State input) (i : Fin k) : Option Sy
 
 /-- A configuration is halted when it has no state to continue from. -/
 abbrev Cfg.Halted (cfg : Cfg k Symbol State input) : Prop := cfg.state = none
+
+/-- The same configuration with a different output tape. -/
+@[simps] def Cfg.withOutput (c : Cfg k Symbol State input) (out : List Symbol) :
+    Cfg k Symbol State input :=
+  ⟨c.state, c.inputPos, c.workTapes, c.workTapePos, out⟩
+
+/-- Remap the (optional) state of a configuration through `φ`, leaving the input head, the work
+tapes, the work-tape heads and the output alone. The control-flow combinators (`seq`, `branch`,
+`repeat`) embed a sub-machine's configurations into the combined machine by exactly such a state
+remap. -/
+@[simps] def Cfg.mapState {State' : Type*} (φ : Option State → Option State')
+    (c : Cfg k Symbol State input) : Cfg k Symbol State' input :=
+  ⟨φ c.state, c.inputPos, c.workTapes, c.workTapePos, c.output⟩
 
 /-- The initial configuration for a starting state and an input string. -/
 @[simp]
