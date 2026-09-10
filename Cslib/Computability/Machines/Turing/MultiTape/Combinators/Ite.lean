@@ -11,6 +11,9 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.AlmostCo
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Branch
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.InputBranch
 public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Adapters
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Concat
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.TakeDrop
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Id
 
 /-!
 # Complexity of a case analysis
@@ -219,7 +222,7 @@ public theorem computableInTimeAndSpace_iteFirstBit {g h : α → β}
       have h2 : tg a + 1 ≤ tg a + th a + 1 := by omega
       exact le_trans hu (le_trans h2 (Nat.le_mul_of_pos_left _ (by omega)))
     · -- space: `≤ s'g + 2K ≤ sg a + 2K`
-      show tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (sg a + sh a + 1)
+      change tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (sg a + sh a + 1)
       have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ sg a + 2 * K := by
         rw [initCfg_eq_wordsCfg]; exact le_trans hu₂sp (by omega)
       refine le_trans hle ?_
@@ -241,7 +244,7 @@ public theorem computableInTimeAndSpace_iteFirstBit {g h : α → β}
     refine ⟨u₂, ?_, tmd.spaceUsed (tmd.initCfg (encIn a)) u₂, ?_, ?_, ?_, ?_⟩
     · have : u₂ ≤ th a + 1 := by omega
       exact le_trans this (le_trans (by omega) (Nat.le_mul_of_pos_left _ (by omega)))
-    · show tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (sg a + sh a + 1)
+    · change tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (sg a + sh a + 1)
       have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ sh a + 2 * K := by
         rw [initCfg_eq_wordsCfg]; exact le_trans hu₂sp (by omega)
       refine le_trans hle ?_
@@ -256,127 +259,129 @@ public theorem computableInTimeAndSpace_iteFirstBit {g h : α → β}
     · rw [initCfg_eq_wordsCfg, hu₂out]; simp [hb]
     · rfl
 
+/-- **Normalised composition.** Composing a computable `id`-relabelling with a computable function,
+both in the normalised bound shape `c * (P a + 1)`, stays in that shape. The scratch encoding's
+length is bounded by `P a + 1`, and the composed result's length by the second function's bound, so
+every term that composition adds is already a multiple of `P a + 1`. -/
+private lemma norm_comp {γ' : Type*} {gg : α → γ'} {encX encY : α ↪ List Bool}
+    {encZ : γ' ↪ List Bool} {P : α → ℕ} {cf cg : ℕ}
+    (hf : ComputableInTimeAndSpace (id : α → α) encX encY
+      (fun a => cf * (P a + 1)) (fun a => cf * (P a + 1)))
+    (hg : ComputableInTimeAndSpace gg encY encZ
+      (fun a => cg * (P a + 1)) (fun a => cg * (P a + 1)))
+    (hY : ∀ a, (encY a).length ≤ P a + 1) :
+    ∃ c, ComputableInTimeAndSpace gg encX encZ
+      (fun a => c * (P a + 1)) (fun a => c * (P a + 1)) := by
+  obtain ⟨cc, hcc⟩ := computableInTimeAndSpace_comp hf hg
+  rw [show gg ∘ (id : α → α) = gg from rfl] at hcc
+  refine ⟨cc * (cf + 2 * cg + 2), hcc.mono (fun a => ?_) (fun a => ?_)⟩
+  · simp only [id_eq]
+    rw [Nat.mul_assoc]
+    refine Nat.mul_le_mul_left cc ?_
+    have hexp : (cf + 2 * cg + 2) * (P a + 1) =
+        cf * (P a + 1) + 2 * (cg * (P a + 1)) + 2 * (P a + 1) := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.mul_assoc]
+    have hY' := hY a
+    omega
+  · simp only [id_eq]
+    rw [Nat.mul_assoc]
+    refine Nat.mul_le_mul_left cc ?_
+    have hexp : (cf + 2 * cg + 2) * (P a + 1) =
+        cf * (P a + 1) + 2 * (cg * (P a + 1)) + 2 * (P a + 1) := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.mul_assoc]
+    have hY' := hY a
+    have hZ := hg.length_encOut_le a
+    omega
+
 /-- **Complexity of a two-way case analysis**, the recursor of `Bool`. If the scrutinee and both
-branches are computable, then so is the case analysis `bif sel a then g a else h a`, in time the
-test plus the larger branch and, crucially, space the test plus the larger branch — with no time
-term, because the branch taken emits straight to the output tape. The scrutinee is encoded by
-`boolEnc`, so the dispatch reads a single symbol. -/
+branches are computable, then so is the case analysis `bif sel a then g a else h a`.
+
+The construction is entirely at the function level, on top of the elementary atoms. The selector's
+bit is concatenated ahead of the input (`computableInTimeAndSpace_concat`) to form a tagged value
+whose encoding starts with `sel a`; the branch on that first bit
+(`computableInTimeAndSpace_iteFirstBit`) runs `g` or `h`, each first stripping the tag with `drop 1`
+(`computableInTimeAndSpace_drop`) and running its branch by composition; and the tagging is undone
+on the way in by one more composition. Bounds are relaxed to the single shape `c * (P a + 1)`, with
+`P` collecting the six input bounds and the input length — nothing downstream needs them tight. -/
 public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → β}
     {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {tc sc tif sif telse selse : α → ℕ}
     (hsel : ComputableInTimeAndSpace sel encIn boolEnc tc sc)
     (hif : ComputableInTimeAndSpace g encIn encOut tif sif)
     (helse : ComputableInTimeAndSpace h encIn encOut telse selse) :
     ∃ c, ComputableInTimeAndSpace (fun a => bif sel a then g a else h a) encIn encOut
-      (fun a => c * (tc a + max (tif a) (telse a) + 1))
-      (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
+      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1))
+      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1)) := by
   classical
-  obtain ⟨m_c, c_c, Hc⟩ := exists_transformsTapes_ofComputableInput hsel
-  obtain ⟨kg, Sg, hSg, tmg, Hg⟩ := hif
-  obtain ⟨kh, Sh, hSh, tmh, Hh⟩ := helse
-  set K := m_c + kg + kh + 1 with hK
-  -- tape 0 holds the scrutinee bit; the branch machines live on tapes disjoint from it
-  have hK0 : 0 < K := by omega
-  let T_c : Fin K := ⟨0, hK0⟩
-  let e_g : Fin kg ↪ Fin K :=
-    ⟨fun j => ⟨1 + j.val, by have := j.isLt; omega⟩,
-      fun a b hab => Fin.ext (by have := congrArg Fin.val hab; simpa using this)⟩
-  let e_h : Fin kh ↪ Fin K :=
-    ⟨fun j => ⟨1 + kg + j.val, by have := j.isLt; omega⟩,
-      fun a b hab => Fin.ext (by have := congrArg Fin.val hab; simpa using this)⟩
-  have hne_g : ∀ j, e_g j ≠ T_c := fun j => Fin.ne_of_val_ne (by change 1 + j.val ≠ 0; omega)
-  have hne_h : ∀ j, e_h j ≠ T_c := fun j => Fin.ne_of_val_ne (by change 1 + kg + j.val ≠ 0; omega)
-  -- the scrutinee transformer, leaving `[sel a]` on tape `T_c`
-  obtain ⟨Sc, hSc, tmc, Hc_spec⟩ := Hc K T_c ∅ (by simp) (by simp only [Finset.card_empty]; omega)
-  -- the streaming dispatch between the two (embedded) branch machines
-  obtain ⟨Sd, hSd, tmd, Hd⟩ :=
-    exists_branch_run T_c true (extendTapes tmg e_g) (extendTapes tmh e_h)
-  -- build with the raw additive bounds, then renormalise once
-  have main : ComputableInTimeAndSpace (fun a => bif sel a then g a else h a) encIn encOut
-      (fun a => c_c * (tc a + 1) + (max (tif a) (telse a) + 1))
-      (fun a => c_c * (sc a + 1 + 1) + K + (max (sif a) (selse a) + 2 * K)) := by
-    refine ⟨K, Sc ⊕ Sd, inferInstance, tmc.seq tmd, fun a => ?_⟩
-    set start := (tmc.seq tmd).initCfg (encIn a) with hstart
-    have hstart_words : start = wordsCfg (encIn a) (some (tmc.seq tmd).q₀) (fun _ => []) [] := by
-      rw [hstart, initCfg_eq_wordsCfg]
-    -- phase one: the scrutinee transformer leaves `[sel a]` on `T_c`, blank elsewhere
-    obtain ⟨τ, hτ, ws', hrun1, hQ1, hsp1⟩ :=
-      Hc_spec a (encIn a) (fun _ => []) [] ⟨rfl, fun l _ => rfl⟩
-    have hlen : (boolEnc (sel a)).length = 1 := rfl
-    rw [hlen] at hsp1
-    have hc1eq : tmc.runFrom (start.withState (some tmc.q₀)) τ =
-        wordsCfg (encIn a) none ws' [] := by rw [hstart_words]; exact hrun1
-    obtain ⟨τ', hτ'le, hτ'halt, hτ'act⟩ :=
-      exists_minimal_halting_time tmc (start.withState (some tmc.q₀)) τ (by rw [hc1eq]; rfl)
-    have hc1eq' : tmc.runFrom (start.withState (some tmc.q₀)) τ' = wordsCfg (encIn a) none ws' [] :=
-      (runFrom_eq_of_halt tmc _ hτ'le hτ'halt).symm.trans hc1eq
-    have hblank : ∀ l, l ≠ T_c → ws' l = [] := by
-      intro l hl; rw [hQ1, Function.update_of_ne hl]
-    have hTc_head : (ws' T_c).head? = some (sel a) := by
-      rw [hQ1, Function.update_self]; rfl
-    have hstartws : start.withState (some tmc.q₀) =
-        wordsCfg (encIn a) (some tmc.q₀) (fun _ => []) [] := by rw [hstart_words]; rfl
-    have hsp1' : tmc.spaceUsed (start.withState (some tmc.q₀)) τ' ≤ c_c * (sc a + 1 + 1) + K := by
-      rw [hstartws]; exact le_trans (spaceUsed_mono tmc _ hτ'le) hsp1
-    -- phase two: reduce to running the chosen arm to completion
-    suffices H : ∀ u₂ : ℕ, u₂ ≤ max (tif a) (telse a) + 1 →
-        (tmd.runFrom (wordsCfg (encIn a) (some tmd.q₀) ws' []) u₂).state = none →
-        (∀ m < u₂, (tmd.runFrom (wordsCfg (encIn a) (some tmd.q₀) ws' []) m).state ≠ none) →
-        (tmd.runFrom (wordsCfg (encIn a) (some tmd.q₀) ws' []) u₂).output =
-          encOut (bif sel a then g a else h a) →
-        tmd.spaceUsed (wordsCfg (encIn a) (some tmd.q₀) ws' []) u₂ ≤ max (sif a) (selse a) + 2 * K →
-        ∃ t' ≤ c_c * (tc a + 1) + (max (tif a) (telse a) + 1),
-          ∃ s' ≤ c_c * (sc a + 1 + 1) + K + (max (sif a) (selse a) + 2 * K),
-          ComputesInTimeAndSpace (tmc.seq tmd) (encIn a)
-            (encOut (bif sel a then g a else h a)) t' s' by
-      cases hb : sel a with
-      | false =>
-        obtain ⟨t'h, ht'hle, s'h, hs'hle, hhstate, hhout, hhsp⟩ := Hh a
-        have hhead : (ws' T_c).head? ≠ some true := by rw [hTc_head, hb]; simp
-        obtain ⟨u₂, hu₂le, hu₂halt, hu₂act, hu₂out, hu₂sp⟩ :=
-          exists_arm_run (fun j => hblank (e_h j) (hne_h j)) ((Hd (encIn a) ws' [] t'h).2 hhead)
-            hhstate hhout (le_trans hhsp.le (le_trans hs'hle (le_max_right (sif a) (selse a))))
-        exact H u₂ (by have := le_max_right (tif a) (telse a); omega) hu₂halt hu₂act
-          (by rw [hb]; exact hu₂out) hu₂sp
-      | true =>
-        obtain ⟨t'g, ht'gle, s'g, hs'gle, hgstate, hgout, hgsp⟩ := Hg a
-        have hhead : (ws' T_c).head? = some true := by rw [hTc_head, hb]
-        obtain ⟨u₂, hu₂le, hu₂halt, hu₂act, hu₂out, hu₂sp⟩ :=
-          exists_arm_run (fun j => hblank (e_g j) (hne_g j)) ((Hd (encIn a) ws' [] t'g).1 hhead)
-            hgstate hgout (le_trans hgsp.le (le_trans hs'gle (le_max_left (sif a) (selse a))))
-        exact H u₂ (by have := le_max_left (tif a) (telse a); omega) hu₂halt hu₂act
-          (by rw [hb]; exact hu₂out) hu₂sp
-    intro u₂ hu₂ hu₂halt hu₂act hu₂out hu₂sp
-    obtain ⟨hseq_run, hseq_act, hseq_sp⟩ :=
-      seq_spec (tm₁ := tmc) (tm₂ := tmd) (c := start) (by rw [hstart_words]; rfl)
-        hc1eq' rfl hτ'act hsp1' rfl hu₂halt hu₂act hu₂sp
-    refine ⟨τ' + u₂, by omega, (tmc.seq tmd).spaceUsed start (τ' + u₂), hseq_sp, ?_, ?_, rfl⟩
-    · rw [hseq_run]; rfl
-    · rw [hseq_run]; exact hu₂out
-  -- renormalise the additive bounds into the stated multiplicative shape
-  refine ⟨2 * c_c + 3 * K + 2, main.mono (fun a => ?_) (fun a => ?_)⟩
-  · -- time
-    have e1 : c_c * (tc a + 1) ≤ c_c * (tc a + max (tif a) (telse a) + 1) :=
-      Nat.mul_le_mul_left c_c (by omega)
-    have e2 : c_c * (tc a + max (tif a) (telse a) + 1) + (tc a + max (tif a) (telse a) + 1) =
-        (c_c + 1) * (tc a + max (tif a) (telse a) + 1) := (Nat.succ_mul c_c _).symm
-    have e3 : (c_c + 1) * (tc a + max (tif a) (telse a) + 1) ≤
-        (2 * c_c + 3 * K + 2) * (tc a + max (tif a) (telse a) + 1) :=
-      Nat.mul_le_mul_right _ (by omega)
-    omega
-  · -- space
-    set mS := max (sif a) (selse a) with hmS
-    set MS := sc a + mS + 1 with hMS
-    have P1 : c_c * (sc a + 1 + 1) ≤ 2 * (c_c * MS) := by
-      have h2 : c_c * (sc a + 1 + 1) ≤ c_c * (MS + 1) := Nat.mul_le_mul_left c_c (by omega)
-      have h3 : c_c * (MS + 1) = c_c * MS + c_c := Nat.mul_succ c_c MS
-      have h4 : c_c ≤ c_c * MS := Nat.le_mul_of_pos_right c_c (by omega)
-      omega
-    have P3 : 3 * K ≤ 3 * (K * MS) := by
-      have : K ≤ K * MS := Nat.le_mul_of_pos_right K (by omega)
-      omega
-    have expand : (2 * c_c + 3 * K + 2) * MS = 2 * (c_c * MS) + 3 * (K * MS) + 2 * MS := by
-      rw [Nat.add_mul, Nat.add_mul, Nat.mul_assoc, Nat.mul_assoc]
-    omega
+  set P : α → ℕ :=
+    fun a => tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length with hP
+  -- the tagged encoding: the selector bit in front of the input
+  let encTag : α ↪ List Bool :=
+    ⟨fun a => sel a :: encIn a, fun a b hab => by
+      simp only [List.cons.injEq] at hab; exact encIn.injective hab.2⟩
+  have hencTag : ∀ a, encTag a = sel a :: encIn a := fun a => rfl
+  -- pointwise facts about `P`
+  have hLin : ∀ a, (encIn a).length ≤ P a := fun a => by simp only [hP]; omega
+  have hLtag : ∀ a, (encTag a).length ≤ P a + 1 := fun a => by
+    rw [hencTag]; simp only [List.length_cons]; have := hLin a; omega
+  -- normalise the three inputs and the identity into the `c * (P a + 1)` shape
+  have hsel_n : ComputableInTimeAndSpace sel encIn boolEnc
+      (fun a => 1 * (P a + 1)) (fun a => 1 * (P a + 1)) :=
+    hsel.mono (fun a => by simp only [hP]; omega) (fun a => by simp only [hP]; omega)
+  have hif_n : ComputableInTimeAndSpace g encIn encOut
+      (fun a => 1 * (P a + 1)) (fun a => 1 * (P a + 1)) :=
+    hif.mono (fun a => by simp only [hP]; omega) (fun a => by simp only [hP]; omega)
+  have helse_n : ComputableInTimeAndSpace h encIn encOut
+      (fun a => 1 * (P a + 1)) (fun a => 1 * (P a + 1)) :=
+    helse.mono (fun a => by simp only [hP]; omega) (fun a => by simp only [hP]; omega)
+  have hid_n : ComputableInTimeAndSpace (id : α → α) encIn encIn
+      (fun a => 1 * (P a + 1)) (fun a => 1 * (P a + 1)) :=
+    (computableInTimeAndSpace_id (enc := encIn)).mono
+      (fun a => by have := hLin a; omega) (fun a => by omega)
+  -- tag: `id : encIn → encTag`, via concatenation of the selector bit and the input
+  obtain ⟨ct, htag⟩ := computableInTimeAndSpace_concat
+    (encD := encTag) (f := sel) (g := (id : α → α)) (h := (id : α → α))
+    (fun a => by rw [hencTag]; rfl) hsel_n hid_n
+  have htag_n : ComputableInTimeAndSpace (id : α → α) encIn encTag
+      (fun a => (ct * 3) * (P a + 1)) (fun a => (ct * 3) * (P a + 1)) := by
+    refine htag.mono (fun a => ?_) (fun a => ?_) <;>
+      · rw [Nat.mul_assoc]; refine Nat.mul_le_mul_left ct ?_
+        have h3 : (3 : ℕ) * (P a + 1) = (P a + 1) + (P a + 1) + (P a + 1) := by
+          rw [Nat.succ_mul, Nat.succ_mul, Nat.one_mul]
+        omega
+  -- untag: `id : encTag → encIn`, dropping the tag bit
+  have huntag_n : ComputableInTimeAndSpace (id : α → α) encTag encIn
+      (fun a => 2 * (P a + 1)) (fun a => 2 * (P a + 1)) := by
+    refine (computableInTimeAndSpace_drop (encFrom := encTag) (encTo := encIn) 1
+      (fun a => by rw [hencTag]; rfl)).mono (fun a => ?_) (fun a => ?_)
+    · have := hLtag a; omega
+    · omega
+  -- each branch on the tagged input: strip the tag, then run the branch
+  obtain ⟨cg', hg'⟩ :=
+    norm_comp (P := P) huntag_n hif_n (fun a => le_trans (hLin a) (Nat.le_succ _))
+  obtain ⟨ch', hh'⟩ :=
+    norm_comp (P := P) huntag_n helse_n (fun a => le_trans (hLin a) (Nat.le_succ _))
+  -- branch on the first (tag) bit of the tagged input
+  obtain ⟨ci, hite⟩ := computableInTimeAndSpace_iteFirstBit hg' hh'
+  have hite_n : ComputableInTimeAndSpace
+      (fun a => if (encTag a).head? = some true then g a else h a) encTag encOut
+      (fun a => (ci * (cg' + ch' + 1)) * (P a + 1))
+      (fun a => (ci * (cg' + ch' + 1)) * (P a + 1)) := by
+    refine hite.mono (fun a => ?_) (fun a => ?_) <;>
+      · rw [Nat.mul_assoc]; refine Nat.mul_le_mul_left ci ?_
+        have hexp : (cg' + ch' + 1) * (P a + 1) =
+            cg' * (P a + 1) + ch' * (P a + 1) + (P a + 1) := by
+          rw [Nat.add_mul, Nat.add_mul, Nat.one_mul]
+        omega
+  -- undo the tagging on the way in, then read off the case analysis
+  obtain ⟨cf, hfinal⟩ := norm_comp (P := P) htag_n hite_n hLtag
+  refine ⟨cf, ?_⟩
+  have hfun : (fun a => if (encTag a).head? = some true then g a else h a) =
+      fun a => bif sel a then g a else h a := by
+    funext a
+    rw [hencTag]
+    cases hb : sel a <;> simp
+  rw [hfun] at hfinal
+  exact hfinal
 
 /-! ### The finite case analysis
 
@@ -388,59 +393,56 @@ combining and the renormalisation, and the induction then reduces to routing the
 
 variable {t s : α → ℕ} {encIn : α ↪ List Bool}
 
-/-- A constant function, in the normalised bound shape. -/
+/-- A constant function, in the normalised bound shape `c * (t a + s a + (encIn a).length + 1)`. -/
 private lemma const_norm {encOut : β ↪ List Bool} (b : β) :
     ∃ c, ComputableInTimeAndSpace (fun _ : α => b) encIn encOut
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)) := by
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_of_const (encIn := encIn) (encOut := encOut) b
   exact ⟨c, hc.mono (fun a => Nat.le_mul_of_pos_right c (by omega)) (fun a => Nat.zero_le _)⟩
 
-/-- A two-way case analysis of three functions all given in the normalised bound shape stays in
-that shape: the `cond` bound `C * (tc + max tif telse + 1)` collapses because every argument is a
-constant times `t a + 1`. -/
+/-- A two-way case analysis of three functions all given in the normalised shape stays in it. The
+new `cond` bound mixes each argument's time *and* space bounds and adds the input length, but every
+one of those is a constant times `t a + s a + (encIn a).length + 1`, so the shape is preserved. -/
 private lemma cond_norm {sel : α → Bool} {g h : α → β} {encOut : β ↪ List Bool}
     (hsel : ∃ c, ComputableInTimeAndSpace sel encIn boolEnc
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)))
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)))
     (hg : ∃ c, ComputableInTimeAndSpace g encIn encOut
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)))
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)))
     (hh : ∃ c, ComputableInTimeAndSpace h encIn encOut
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1))) :
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1))) :
     ∃ c, ComputableInTimeAndSpace (fun a => bif sel a then g a else h a) encIn encOut
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)) := by
   obtain ⟨c1, h1⟩ := hsel
   obtain ⟨c2, h2⟩ := hg
   obtain ⟨c3, h3⟩ := hh
   obtain ⟨C, hC⟩ := computableInTimeAndSpace_cond h1 h2 h3
-  refine ⟨C * (c1 + max c2 c3 + 1), hC.mono (fun a => ?_) (fun a => ?_)⟩
-  · have hm : max (c2 * (t a + 1)) (c3 * (t a + 1)) ≤ max c2 c3 * (t a + 1) :=
-      max_le (Nat.mul_le_mul_right _ (le_max_left c2 c3))
-        (Nat.mul_le_mul_right _ (le_max_right c2 c3))
-    rw [Nat.mul_assoc]
-    refine Nat.mul_le_mul_left C ?_
-    have hd : (c1 + max c2 c3 + 1) * (t a + 1) =
-        c1 * (t a + 1) + max c2 c3 * (t a + 1) + (t a + 1) := by
-      rw [Nat.add_mul, Nat.add_mul, Nat.one_mul]
-    omega
-  · have hm : max (c2 * (s a + 1)) (c3 * (s a + 1)) ≤ max c2 c3 * (s a + 1) :=
-      max_le (Nat.mul_le_mul_right _ (le_max_left c2 c3))
-        (Nat.mul_le_mul_right _ (le_max_right c2 c3))
-    rw [Nat.mul_assoc]
-    refine Nat.mul_le_mul_left C ?_
-    have hd : (c1 + max c2 c3 + 1) * (s a + 1) =
-        c1 * (s a + 1) + max c2 c3 * (s a + 1) + (s a + 1) := by
-      rw [Nat.add_mul, Nat.add_mul, Nat.one_mul]
-    omega
+  refine ⟨C * (2 * c1 + 2 * c2 + 2 * c3 + 2), hC.mono (fun a => ?_) (fun a => ?_)⟩ <;>
+    · rw [Nat.mul_assoc]
+      refine Nat.mul_le_mul_left C ?_
+      have hexp : (2 * c1 + 2 * c2 + 2 * c3 + 2) * (t a + s a + (encIn a).length + 1) =
+          2 * (c1 * (t a + s a + (encIn a).length + 1)) +
+          2 * (c2 * (t a + s a + (encIn a).length + 1)) +
+          2 * (c3 * (t a + s a + (encIn a).length + 1)) +
+          2 * (t a + s a + (encIn a).length + 1) := by
+        rw [Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.mul_assoc, Nat.mul_assoc, Nat.mul_assoc]
+      omega
 
-/-- The single-bit test `decide (sel a = i₀)`, in the normalised bound shape. Composing the
-scrutinee with the almost-constant test `· = i₀` is a `computableInTimeAndSpace_comp`; the extra
-terms it introduces — the constant test cost and the encoded scrutinee's length — are absorbed
-because the scrutinee's encoded length is bounded by the constant `L`. -/
+/-- The single-bit test `decide (sel a = i₀)`, in the normalised shape. Composing the scrutinee with
+the almost-constant test `· = i₀` is a `computableInTimeAndSpace_comp`; the constant test cost and
+the encoded scrutinee's length are absorbed because the latter is bounded by the constant `L`. -/
 private lemma cond_of_sel {ι : Type} [DecidableEq ι] {sel : α → ι} {encι : ι ↪ List Bool}
     (i₀ : ι) (L : ℕ) (hL : ∀ a, (encι (sel a)).length ≤ L)
     (hsel : ∃ c, ComputableInTimeAndSpace sel encIn encι
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1))) :
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1))) :
     ∃ c, ComputableInTimeAndSpace (fun a => decide (sel a = i₀)) encIn boolEnc
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)) := by
   obtain ⟨c_sel, hsel'⟩ := hsel
   obtain ⟨cψ, hψ⟩ := computableInTimeAndSpace_of_exists_finite_ne
     (f := fun i => decide (i = i₀)) (encIn := encι) (encOut := boolEnc)
@@ -452,36 +454,38 @@ private lemma cond_of_sel {ι : Type} [DecidableEq ι] {sel : α → ι} {encι 
   · rw [Nat.mul_assoc]
     refine Nat.mul_le_mul_left cC ?_
     have hL' := hL a
-    have hexp : (c_sel + cψ + L + 2) * (t a + 1) =
-        c_sel * (t a + 1) + cψ * (t a + 1) + L * (t a + 1) + 2 * (t a + 1) := by
+    have hexp : (c_sel + cψ + L + 2) * (t a + s a + (encIn a).length + 1) =
+        c_sel * (t a + s a + (encIn a).length + 1) + cψ * (t a + s a + (encIn a).length + 1) +
+        L * (t a + s a + (encIn a).length + 1) + 2 * (t a + s a + (encIn a).length + 1) := by
       rw [Nat.add_mul, Nat.add_mul, Nat.add_mul]
-    have h1 : cψ ≤ cψ * (t a + 1) := Nat.le_mul_of_pos_right _ (by omega)
-    have h2 : L ≤ L * (t a + 1) := Nat.le_mul_of_pos_right _ (by omega)
+    have h1 : cψ ≤ cψ * (t a + s a + (encIn a).length + 1) := Nat.le_mul_of_pos_right _ (by omega)
+    have h2 : L ≤ L * (t a + s a + (encIn a).length + 1) := Nat.le_mul_of_pos_right _ (by omega)
     omega
   · rw [Nat.mul_assoc]
     refine Nat.mul_le_mul_left cC ?_
     have hL' := hL a
     have hbl : (boolEnc (decide (sel a = i₀))).length = 1 := rfl
     rw [hbl]
-    have hexp : (c_sel + cψ + L + 2) * (s a + 1) =
-        c_sel * (s a + 1) + cψ * (s a + 1) + L * (s a + 1) + 2 * (s a + 1) := by
+    have hexp : (c_sel + cψ + L + 2) * (t a + s a + (encIn a).length + 1) =
+        c_sel * (t a + s a + (encIn a).length + 1) + cψ * (t a + s a + (encIn a).length + 1) +
+        L * (t a + s a + (encIn a).length + 1) + 2 * (t a + s a + (encIn a).length + 1) := by
       rw [Nat.add_mul, Nat.add_mul, Nat.add_mul]
-    have h2 : L ≤ L * (s a + 1) := Nat.le_mul_of_pos_right _ (by omega)
+    have h2 : L ≤ L * (t a + s a + (encIn a).length + 1) := Nat.le_mul_of_pos_right _ (by omega)
     omega
 
 /-- The engine of `computableInTimeAndSpace_match`: induction on a finite set `R` covering the
-scrutinee's values. Everything is carried in the normalised bound shape `c * (t a + 1)`,
-`c * (s a + 1)`. At `insert i₀ R'` the scrutinee is split by the test `sel a = i₀`: on `true` the
-branch is `br i₀`, on `false` the reselected scrutinee `sel'` lands in `R'` and the induction
-hypothesis applies. -/
+scrutinee's values, everything carried in the normalised shape `c * (t a + s a + (encIn a).length +
+1)`. At `insert i₀ R'` the scrutinee is split by the test `sel a = i₀`. -/
 private lemma match_aux {ι : Type} {br : ι → α → β}
     {encι : ι ↪ List Bool} {encOut : β ↪ List Bool} (R : Finset ι) :
     ∀ (sel : α → ι), (∀ a, sel a ∈ R) →
       (∀ i ∈ R, ComputableInTimeAndSpace (br i) encIn encOut t s) →
       (∃ c, ComputableInTimeAndSpace sel encIn encι
-        (fun a => c * (t a + 1)) (fun a => c * (s a + 1))) →
+        (fun a => c * (t a + s a + (encIn a).length + 1))
+        (fun a => c * (t a + s a + (encIn a).length + 1))) →
       ∃ c, ComputableInTimeAndSpace (fun a => br (sel a) a) encIn encOut
-        (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+        (fun a => c * (t a + s a + (encIn a).length + 1))
+        (fun a => c * (t a + s a + (encIn a).length + 1)) := by
   classical
   induction R using Finset.induction_on with
   | empty =>
@@ -512,7 +516,8 @@ private lemma match_aux {ι : Type} {br : ι → α → β}
       obtain ⟨cc, hcc⟩ := cond_of_sel i₀ _ hL hsel
       have hsel' : ∃ c, ComputableInTimeAndSpace
           (fun a => bif decide (sel a = i₀) then d else sel a) encIn encι
-          (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
+          (fun a => c * (t a + s a + (encIn a).length + 1))
+          (fun a => c * (t a + s a + (encIn a).length + 1)) :=
         cond_norm ⟨cc, hcc⟩ (const_norm d) hsel
       have hmem' : ∀ a, (fun a => bif decide (sel a = i₀) then d else sel a) a ∈ R' := by
         intro a
@@ -562,7 +567,8 @@ public theorem computableInTimeAndSpace_match {ι : Type}
     (hsel : ComputableInTimeAndSpace sel encIn encι t s)
     (hbr : ∀ i ∈ Set.range sel, ComputableInTimeAndSpace (br i) encIn encOut t s) :
     ∃ c, ComputableInTimeAndSpace f encIn encOut
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+      (fun a => c * (t a + s a + (encIn a).length + 1))
+      (fun a => c * (t a + s a + (encIn a).length + 1)) := by
   classical
   obtain ⟨c, hc⟩ := match_aux hfin.toFinset sel
     (fun a => hfin.mem_toFinset.mpr (Set.mem_range_self a))
@@ -582,8 +588,8 @@ public theorem computableInTimeAndSpace_ite {p : α → Prop} [DecidablePred p] 
     (hif : ComputableInTimeAndSpace g encIn encOut tif sif)
     (helse : ComputableInTimeAndSpace h encIn encOut telse selse) :
     ∃ c, ComputableInTimeAndSpace (fun a => if p a then g a else h a) encIn encOut
-      (fun a => c * (tc a + max (tif a) (telse a) + 1))
-      (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
+      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1))
+      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1)) := by
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_cond hp hif helse
   refine ⟨c, ?_⟩
   have hfun : (fun a => bif decide (p a) then g a else h a) =
@@ -604,8 +610,8 @@ public theorem computableInTimeAndSpace_dite {p : α → Prop} [DecidablePred p]
     (hif : ComputableInTimeAndSpace If encIn encOut tif sif)
     (helse : ComputableInTimeAndSpace Else encIn encOut telse selse) :
     ∃ c, ComputableInTimeAndSpace (fun a => dite (p a) (_if a) (_else a)) encIn encOut
-      (fun a => c * (tc a + max (tif a) (telse a) + 1))
-      (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
+      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1))
+      (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1)) := by
   obtain ⟨c, hc⟩ := computableInTimeAndSpace_ite (p := p) hp hif helse
   refine ⟨c, ?_⟩
   have hfun : (fun a => if p a then If a else Else a) =
