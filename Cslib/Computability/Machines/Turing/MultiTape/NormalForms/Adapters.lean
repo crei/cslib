@@ -395,13 +395,13 @@ public theorem computableInTimeAndSpace_of_transformsTapes {K : ℕ} {State : Ty
     (o : Fin K) {tm : MultiTapeTM K Bool State}
     {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {gg : α → β} {t s : α → ℕ}
     (hT : ∀ a, TransformsTapes tm (fun input ws => input = encIn a ∧ ∀ l, ws l = [])
-      (fun _ ws ws' => ws' = Function.update ws o (encOut (gg a))) (t a) (s a)) :
+      (fun _ _ ws' => ws' o = encOut (gg a)) (t a) (s a)) :
     ∃ c, ComputableInTimeAndSpace gg encIn encOut
-      (fun a => t a + (encOut (gg a)).length + 2)
+      (fun a => c * (t a + (encOut (gg a)).length + 1))
       (fun a => c * (s a + (encOut (gg a)).length + 1)) := by
   obtain ⟨SE, hSE, tmE, hE⟩ := exists_emitTape (Symbol := Bool) o
   have := hSE
-  refine ⟨K + 1, K, State ⊕ SE, inferInstance, tm.seq tmE, fun a => ?_⟩
+  refine ⟨K + 2, K, State ⊕ SE, inferInstance, tm.seq tmE, fun a => ?_⟩
   -- run the transformer, then emit tape `o`
   set start := (tm.seq tmE).initCfg (encIn a) with hstart
   have hstart_words : start = wordsCfg (encIn a) (some (tm.seq tmE).q₀) (fun _ => []) [] := by
@@ -422,7 +422,7 @@ public theorem computableInTimeAndSpace_of_transformsTapes {K : ℕ} {State : Ty
   have ho_tape : c₁.workTapes o = tapeOfList (encOut (gg a)) := by
     rw [hc1def]
     change tapeOfList (ws' o) = tapeOfList (encOut (gg a))
-    rw [hws', Function.update_self]
+    rw [hws']
   have ho_pos : c₁.workTapePos o = 0 := by rw [hc1def, wordsCfg_workTapePos]
   -- phase 2: emit tape `o` to the output
   obtain ⟨u₂, hu₂, h₂act, h₂run, h₂frame⟩ :=
@@ -446,17 +446,20 @@ public theorem computableInTimeAndSpace_of_transformsTapes {K : ℕ} {State : Ty
     seq_spec (tm₁ := tm) (tm₂ := tmE) (c := start) (by rw [hstart_words]; rfl)
       hc1eq' (by rw [hc1def]; rfl) hτ'act hsp1' h₂run rfl h₂act hsp2'
   refine ⟨τ' + u₂, ?_, (tm.seq tmE).spaceUsed start (τ' + u₂), ?_, ?_, ?_, rfl⟩
-  · -- time bound
-    change τ' + u₂ ≤ t a + (encOut (gg a)).length + 2
-    have : u₂ ≤ (encOut (gg a)).length + 2 := hu₂
+  · -- time bound: τ'+u₂ ≤ t a+|encOut|+2 ≤ (K+2)·(t a+|encOut|+1)
+    change τ' + u₂ ≤ (K + 2) * (t a + (encOut (gg a)).length + 1)
+    have hu : u₂ ≤ (encOut (gg a)).length + 2 := hu₂
+    have hτt : τ' ≤ t a := le_trans hτ'le hτ
+    have hprod2 : 2 * (t a + (encOut (gg a)).length + 1)
+        ≤ (K + 2) * (t a + (encOut (gg a)).length + 1) := Nat.mul_le_mul_right _ (by omega)
     omega
-  · -- space bound: `s a + (|encOut|+1+K) ≤ (K+1)·(s a + |encOut| + 1)`
-    change (tm.seq tmE).spaceUsed start (τ' + u₂) ≤ (K + 1) * (s a + (encOut (gg a)).length + 1)
+  · -- space bound: s a + (|encOut|+1+K) ≤ (K+2)·(s a + |encOut| + 1)
+    change (tm.seq tmE).spaceUsed start (τ' + u₂) ≤ (K + 2) * (s a + (encOut (gg a)).length + 1)
     refine le_trans hseq_sp ?_
     set S := s a + (encOut (gg a)).length + 1 with hSdef
-    have hexp : (K + 1) * S = S + K * S := by rw [Nat.add_mul, Nat.one_mul, Nat.add_comm]
     have hKS : K ≤ K * S := Nat.le_mul_of_pos_right K (by omega)
-    have : s a + ((encOut (gg a)).length + 1 + K) = S + K := by omega
+    have hexp : (K + 2) * S = K * S + S + S := by rw [Nat.add_mul]; omega
+    have hrw : s a + ((encOut (gg a)).length + 1 + K) = S + K := by omega
     omega
   · -- the run halts
     rw [hseq_run]; rfl
