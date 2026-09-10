@@ -38,7 +38,7 @@ variable {α β : Type*}
 /-- **A computable function, read from the input tape, as a tape transformer.** Started with the
 input on the real input tape and every work tape blank, the machine halts having written the
 encoded result to the last work tape, in linear time and in space linear in the result length. -/
-public theorem exists_transformsTapes_ofComputableInput
+public theorem exists_transformsTapes_ofComputableInput_fixed
     {enc : α ↪ List Bool} {encOut : β ↪ List Bool} {g : α → β} {t s : α → ℕ}
     (h : ComputableInTimeAndSpace g enc encOut t s) :
     ∃ (c K : ℕ) (o : Fin K) (State : Type) (_ : Finite State) (tm : MultiTapeTM K Bool State),
@@ -183,7 +183,7 @@ Built from `exists_transformsTapes_ofComputableInput`'s machine `M₀` (which re
 and leaves the result on a work tape): `inputFromTape M₀` redirects `M₀`'s input reading to the
 virtual tape, bracketed by two one-cell writes that place and remove the boundary flag `M₀`'s
 input redirection needs. -/
-public theorem exists_transformsTapes_ofComputable
+public theorem exists_transformsTapes_ofComputable_fixed
     {enc : α ↪ List Bool} {encOut : β ↪ List Bool} {g : α → β} {t s : α → ℕ}
     (h : ComputableInTimeAndSpace g enc encOut t s) :
     ∃ (c K : ℕ) (i o : Fin K) (State : Type) (_ : Finite State) (tm : MultiTapeTM K Bool State),
@@ -193,7 +193,7 @@ public theorem exists_transformsTapes_ofComputable
         (c * (t a + 1)) (c * (s a + (enc a).length + (encOut (g a)).length + 1) + K) := by
   classical
   -- The base machine `M₀` reads the *real* input tape and leaves `encOut (g a)` on work tape `o₀`.
-  obtain ⟨c_f, K₀, o₀, State₀, hfin₀, M₀, hM₀⟩ := exists_transformsTapes_ofComputableInput h
+  obtain ⟨c_f, K₀, o₀, State₀, hfin₀, M₀, hM₀⟩ := exists_transformsTapes_ofComputableInput_fixed h
   -- Two one-cell writers on the flag tape `⟨K₀ + 1, _⟩`: one places the boundary mark, one clears
   -- it. They bracket the redirected run of `M₀` and supply what its input redirection needs.
   obtain ⟨SM, hSMfin, setMark, hMark⟩ :=
@@ -533,6 +533,56 @@ public theorem transformsTapes_extendTapes {k k' : ℕ} {State : Type}
     rw [hstart]
     exact le_trans (spaceUsed_embed_le M e _ _ _ τ) (Nat.add_le_add_right hsp _)
 
+/-- **Reindexing preserves being a tape transformer (relaxed precondition).** Same as
+`transformsTapes_extendTapes`, but the precondition no longer requires the tapes outside `range e`
+to be blank: those tapes are simply carried through unchanged, as the postcondition records. -/
+public theorem transformsTapes_extendTapes' {k k' : ℕ} {State : Type}
+    (e : Fin k ↪ Fin k') {M : MultiTapeTM k Bool State}
+    {P : (input : List Bool) → (Fin k → List Bool) → Prop}
+    {Q : (input : List Bool) → (Fin k → List Bool) → (Fin k → List Bool) → Prop}
+    {t s : ℕ} (h : TransformsTapes M P Q t s) :
+    TransformsTapes (extendTapes M e)
+      (fun input ws => P input (fun j => ws (e j)))
+      (fun input ws ws' => Q input (fun j => ws (e j)) (fun j => ws' (e j)) ∧
+        ∀ l, (∀ j, e j ≠ l) → ws' l = ws l)
+      t (s + (k' - k)) := by
+  intro input ws out hP
+  -- the start config, viewed through the embedding
+  have hstart : wordsCfg input (some (extendTapes M e).q₀) ws out =
+      embed e (wordsCfg input (some M.q₀) (fun j => ws (e j)) out)
+        (fun l => tapeOfList (ws l)) (fun _ => 0) :=
+    wordsCfg_eq_embed e input (some M.q₀) ws out
+  -- run the inner machine
+  obtain ⟨τ, hτ, ws', hrun, hQ, hsp⟩ :=
+    h input (fun j => ws (e j)) out hP
+  refine ⟨τ, hτ, fun l => match partialInv e l with | some j => ws' j | none => ws l, ?_, ?_, ?_⟩
+  · -- the run: the embedded halting config is a `wordsCfg`
+    rw [hstart, runFrom_embed, hrun]
+    refine Cfg.ext rfl rfl ?_ ?_ rfl
+    · funext l z
+      change (embed e (wordsCfg input (none : Option State) ws' out)
+        (fun l => tapeOfList (ws l)) (fun _ => 0)).workTapes l z =
+        (wordsCfg input (none : Option State)
+          (fun l => match partialInv e l with | some j => ws' j | none => ws l) out).workTapes l z
+      rcases hpi : partialInv e l with _ | j
+      · simp [embed, hpi]
+      · simp [embed, hpi, wordsCfg_workTapes]
+    · funext l
+      change (embed e (wordsCfg input (none : Option State) ws' out)
+        (fun l => tapeOfList (ws l)) (fun _ => 0)).workTapePos l = (0 : ℤ)
+      rcases hpi : partialInv e l with _ | j <;> simp [embed, hpi]
+  · -- the postcondition
+    refine ⟨?_, ?_⟩
+    · have : (fun j => (fun l => match partialInv e l with | some j => ws' j | none => ws l) (e j))
+          = ws' := by
+        funext j; simp only [partialInv_embed]
+      rw [this]; exact hQ
+    · intro l hl
+      simp only [partialInv_eq_none e (fun ⟨j, hj⟩ => hl j hj)]
+  · -- the space
+    rw [hstart]
+    exact le_trans (spaceUsed_embed_le M e _ _ _ τ) (Nat.add_le_add_right hsp _)
+
 /-- **Complexity of a composition.** If `f` and `gg` are computable, so is `gg ∘ f`: run the
 machine for `f` (its result on a work tape), then the machine for `gg` reading that tape, then emit.
 The two machines are placed on a shared tape layout with the first's output tape identified with the
@@ -547,9 +597,10 @@ public theorem computableInTimeAndSpace_comp
       (fun a => c * (sf a + sg (f a) + (encB (f a)).length + (encC (gg (f a))).length + 1)) := by
   classical
   -- `M_f` reads the real input and leaves `encB (f a)` on its output tape `o_f`.
-  obtain ⟨c_f, K_f, o_f, S_f, hS_f, M_f, hM_f⟩ := exists_transformsTapes_ofComputableInput hf
+  obtain ⟨c_f, K_f, o_f, S_f, hS_f, M_f, hM_f⟩ := exists_transformsTapes_ofComputableInput_fixed hf
   -- `M_g` reads `encB x` from its input tape `i_g` and leaves `encC (gg x)` on `o_g`.
-  obtain ⟨c_g, K_g, i_g, o_g, S_g, hS_g, M_g, hio, hM_g⟩ := exists_transformsTapes_ofComputable hg
+  obtain ⟨c_g, K_g, i_g, o_g, S_g, hS_g, M_g, hio, hM_g⟩ :=
+    exists_transformsTapes_ofComputable_fixed hg
   have hfin_f := hS_f
   have hfin_g := hS_g
   -- The length of `gg`'s output is bounded by its running time.
@@ -786,5 +837,272 @@ public theorem computableInTimeAndSpace_comp
           (Nat.mul_assoc _ _ _).symm
       _ ≤ ((K_f + K_g + 1) * (c_f + c_g + 2 * K_f + 2 * K_g + 2) + c_f + c_g + 3) * PS :=
           Nat.mul_le_mul (by omega) (le_refl _)
+
+/-- **Placement embedding (two pins).** Given distinct canonical indices `i₀ ≠ o₀` in `Fin K` and
+distinct target indices `i ≠ o` in `Fin k` avoiding a set `keep`, with enough room
+(`K + keep.card ≤ k`), there is an embedding `Fin K ↪ Fin k` sending `i₀ ↦ i`, `o₀ ↦ o`, and every
+other index to a tape outside `insert i (insert o keep)`. -/
+private lemma exists_embed_placing {K k : ℕ} (i₀ o₀ : Fin K) (hio₀ : i₀ ≠ o₀)
+    (i o : Fin k) (keep : Finset (Fin k)) (hio : i ≠ o) (_hik : i ∉ keep) (_hok : o ∉ keep)
+    (hroom : K + keep.card ≤ k) :
+    ∃ e : Fin K ↪ Fin k, e i₀ = i ∧ e o₀ = o ∧
+      ∀ j, j ≠ i₀ → j ≠ o₀ → e j ∉ insert i (insert o keep) := by
+  classical
+  set forb : Finset (Fin k) := insert i (insert o keep) with hforb
+  set avail : Finset (Fin k) := Finset.univ \ forb with havail
+  have hforb_card : forb.card ≤ keep.card + 2 := by
+    have h1 : (insert o keep).card ≤ keep.card + 1 := Finset.card_insert_le _ _
+    have h2 : forb.card ≤ (insert o keep).card + 1 := by
+      rw [hforb]; exact Finset.card_insert_le _ _
+    omega
+  have havail_card : avail.card = k - forb.card := by
+    rw [havail, Finset.card_sdiff_of_subset (Finset.subset_univ _), Finset.card_univ,
+      Fintype.card_fin]
+  have hlhs : (Finset.univ \ {i₀, o₀} : Finset (Fin K)).card = K - 2 := by
+    rw [Finset.card_sdiff_of_subset (Finset.subset_univ _), Finset.card_univ, Fintype.card_fin,
+      Finset.card_pair_eq_two_iff.mpr hio₀]
+  have hcard_le : Fintype.card {x : Fin K // x ∈ (Finset.univ \ {i₀, o₀} : Finset (Fin K))}
+      ≤ Fintype.card {x : Fin k // x ∈ avail} := by
+    simp only [Fintype.card_coe]
+    rw [hlhs, havail_card]; omega
+  obtain ⟨g⟩ := Function.Embedding.nonempty_of_card_le hcard_le
+  have hmem : ∀ j : Fin K, j ≠ i₀ → j ≠ o₀ →
+      j ∈ (Finset.univ \ {i₀, o₀} : Finset (Fin K)) := by
+    intro j hj1 hj2
+    simp only [Finset.mem_sdiff, Finset.mem_univ, true_and, Finset.mem_insert,
+      Finset.mem_singleton, not_or]
+    exact ⟨hj1, hj2⟩
+  have hg_forb : ∀ y : {x : Fin K // x ∈ (Finset.univ \ {i₀, o₀} : Finset (Fin K))},
+      (g y).val ∉ forb := by
+    intro y
+    have hy : (g y).val ∈ Finset.univ \ forb := (g y).2
+    exact (Finset.mem_sdiff.mp hy).2
+  have hi_forb : i ∈ forb := by rw [hforb]; exact Finset.mem_insert_self _ _
+  have ho_forb : o ∈ forb := by
+    rw [hforb]; exact Finset.mem_insert_of_mem (Finset.mem_insert_self _ _)
+  have hg_ne_i : ∀ y, (g y).val ≠ i := fun y hcon => hg_forb y (by rw [hcon]; exact hi_forb)
+  have hg_ne_o : ∀ y, (g y).val ≠ o := fun y hcon => hg_forb y (by rw [hcon]; exact ho_forb)
+  set f : Fin K → Fin k := fun j =>
+    if hj : j ∈ (Finset.univ \ {i₀, o₀} : Finset (Fin K)) then (g ⟨j, hj⟩).val
+    else if j = i₀ then i else o with hf_def
+  have hmem_i₀ : i₀ ∉ (Finset.univ \ {i₀, o₀} : Finset (Fin K)) := by simp
+  have hmem_o₀ : o₀ ∉ (Finset.univ \ {i₀, o₀} : Finset (Fin K)) := by simp
+  have hfi₀ : f i₀ = i := by
+    rw [hf_def]; dsimp only; rw [dite_eq_right hmem_i₀]; exact ite_eq_left rfl
+  have hfo₀ : f o₀ = o := by
+    rw [hf_def]; dsimp only; rw [dite_eq_right hmem_o₀]; exact ite_eq_right (Ne.symm hio₀)
+  have hfother : ∀ j (hj : j ∈ (Finset.univ \ {i₀, o₀} : Finset (Fin K))),
+      f j = (g ⟨j, hj⟩).val := by
+    intro j hj; rw [hf_def]; dsimp only; rw [dite_eq_left hj]
+  have hf_inj : Function.Injective f := by
+    intro a b hab
+    by_cases ha : a ∈ (Finset.univ \ {i₀, o₀} : Finset (Fin K))
+    · by_cases hb : b ∈ (Finset.univ \ {i₀, o₀} : Finset (Fin K))
+      · rw [hfother a ha, hfother b hb] at hab
+        exact congrArg Subtype.val (g.injective (Subtype.ext hab))
+      · exfalso
+        rw [hfother a ha] at hab
+        have hb' : b = i₀ ∨ b = o₀ := by
+          by_contra hbc; rw [not_or] at hbc; exact hb (hmem b hbc.1 hbc.2)
+        rcases hb' with rfl | rfl
+        · rw [hfi₀] at hab; exact hg_ne_i _ hab
+        · rw [hfo₀] at hab; exact hg_ne_o _ hab
+    · by_cases hb : b ∈ (Finset.univ \ {i₀, o₀} : Finset (Fin K))
+      · exfalso
+        rw [hfother b hb] at hab
+        have ha' : a = i₀ ∨ a = o₀ := by
+          by_contra hac; rw [not_or] at hac; exact ha (hmem a hac.1 hac.2)
+        rcases ha' with rfl | rfl
+        · rw [hfi₀] at hab; exact hg_ne_i _ hab.symm
+        · rw [hfo₀] at hab; exact hg_ne_o _ hab.symm
+      · have ha' : a = i₀ ∨ a = o₀ := by
+          by_contra hac; rw [not_or] at hac; exact ha (hmem a hac.1 hac.2)
+        have hb' : b = i₀ ∨ b = o₀ := by
+          by_contra hbc; rw [not_or] at hbc; exact hb (hmem b hbc.1 hbc.2)
+        rcases ha' with rfl | rfl <;> rcases hb' with rfl | rfl
+        · rfl
+        · exfalso; rw [hfi₀, hfo₀] at hab; exact hio hab
+        · exfalso; rw [hfi₀, hfo₀] at hab; exact hio hab.symm
+        · rfl
+  refine ⟨⟨f, hf_inj⟩, hfi₀, hfo₀, ?_⟩
+  intro j hj1 hj2
+  change f j ∉ forb
+  rw [hfother j (hmem j hj1 hj2)]
+  exact hg_forb ⟨j, hmem j hj1 hj2⟩
+
+/-- **Placement embedding (one pin).** Like `exists_embed_placing`, but pinning a single index
+`o₀ ↦ o`, sending every other index outside `insert o keep`. -/
+private lemma exists_embed_placing_one {K k : ℕ} (o₀ : Fin K)
+    (o : Fin k) (keep : Finset (Fin k)) (_hok : o ∉ keep) (hroom : K + keep.card ≤ k) :
+    ∃ e : Fin K ↪ Fin k, e o₀ = o ∧ ∀ j, j ≠ o₀ → e j ∉ insert o keep := by
+  classical
+  set forb : Finset (Fin k) := insert o keep with hforb
+  set avail : Finset (Fin k) := Finset.univ \ forb with havail
+  have hforb_card : forb.card ≤ keep.card + 1 := by rw [hforb]; exact Finset.card_insert_le _ _
+  have havail_card : avail.card = k - forb.card := by
+    rw [havail, Finset.card_sdiff_of_subset (Finset.subset_univ _), Finset.card_univ,
+      Fintype.card_fin]
+  have hlhs : (Finset.univ \ {o₀} : Finset (Fin K)).card = K - 1 := by
+    rw [Finset.card_sdiff_of_subset (Finset.subset_univ _), Finset.card_univ, Fintype.card_fin,
+      Finset.card_singleton]
+  have hcard_le : Fintype.card {x : Fin K // x ∈ (Finset.univ \ {o₀} : Finset (Fin K))}
+      ≤ Fintype.card {x : Fin k // x ∈ avail} := by
+    simp only [Fintype.card_coe]
+    rw [hlhs, havail_card]; omega
+  obtain ⟨g⟩ := Function.Embedding.nonempty_of_card_le hcard_le
+  have hmem : ∀ j : Fin K, j ≠ o₀ → j ∈ (Finset.univ \ {o₀} : Finset (Fin K)) := by
+    intro j hj
+    simp only [Finset.mem_sdiff, Finset.mem_univ, true_and, Finset.mem_singleton]
+    exact hj
+  have hg_forb : ∀ y : {x : Fin K // x ∈ (Finset.univ \ {o₀} : Finset (Fin K))},
+      (g y).val ∉ forb := by
+    intro y
+    have hy : (g y).val ∈ Finset.univ \ forb := (g y).2
+    exact (Finset.mem_sdiff.mp hy).2
+  have ho_forb : o ∈ forb := by rw [hforb]; exact Finset.mem_insert_self _ _
+  have hg_ne_o : ∀ y, (g y).val ≠ o := fun y hcon => hg_forb y (by rw [hcon]; exact ho_forb)
+  set f : Fin K → Fin k := fun j =>
+    if hj : j ∈ (Finset.univ \ {o₀} : Finset (Fin K)) then (g ⟨j, hj⟩).val else o with hf_def
+  have hmem_o₀ : o₀ ∉ (Finset.univ \ {o₀} : Finset (Fin K)) := by simp
+  have hfo₀ : f o₀ = o := by rw [hf_def]; dsimp only; rw [dite_eq_right hmem_o₀]
+  have hfother : ∀ j (hj : j ∈ (Finset.univ \ {o₀} : Finset (Fin K))),
+      f j = (g ⟨j, hj⟩).val := by
+    intro j hj; rw [hf_def]; dsimp only; rw [dite_eq_left hj]
+  have hf_inj : Function.Injective f := by
+    intro a b hab
+    by_cases ha : a ∈ (Finset.univ \ {o₀} : Finset (Fin K))
+    · by_cases hb : b ∈ (Finset.univ \ {o₀} : Finset (Fin K))
+      · rw [hfother a ha, hfother b hb] at hab
+        exact congrArg Subtype.val (g.injective (Subtype.ext hab))
+      · exfalso
+        rw [hfother a ha] at hab
+        have hb' : b = o₀ := by by_contra hbc; exact hb (hmem b hbc)
+        rw [hb', hfo₀] at hab; exact hg_ne_o _ hab
+    · by_cases hb : b ∈ (Finset.univ \ {o₀} : Finset (Fin K))
+      · exfalso
+        rw [hfother b hb] at hab
+        have ha' : a = o₀ := by by_contra hac; exact ha (hmem a hac)
+        rw [ha', hfo₀] at hab; exact hg_ne_o _ hab.symm
+      · have ha' : a = o₀ := by by_contra hac; exact ha (hmem a hac)
+        have hb' : b = o₀ := by by_contra hbc; exact hb (hmem b hbc)
+        rw [ha', hb']
+  refine ⟨⟨f, hf_inj⟩, hfo₀, ?_⟩
+  intro j hj
+  change f j ∉ forb
+  rw [hfother j (hmem j hj)]
+  exact hg_forb ⟨j, hmem j hj⟩
+
+/-- **A computable function, read from a work tape, as a tape transformer (general layout).** Placed
+on any tape count `k` with a chosen input tape `i`, output tape `o` and a set `keep` of tapes to
+leave untouched, provided there is room for the machine's own tapes. -/
+public theorem exists_transformsTapes_ofComputable {α β : Type*} {enc : α ↪ List Bool}
+    {encOut : β ↪ List Bool} {g : α → β} {t s : α → ℕ}
+    (h : ComputableInTimeAndSpace g enc encOut t s) :
+    ∃ m c : ℕ, ∀ (k : ℕ) (i o : Fin k) (keep : Finset (Fin k)),
+      i ≠ o → i ∉ keep → o ∉ keep → m + 2 + keep.card ≤ k →
+      ∃ (State : Type) (_ : Finite State) (tm : MultiTapeTM k Bool State), ∀ a : α,
+        TransformsTapes tm
+          (fun _ ws => ws i = enc a ∧ ∀ l, l ≠ i → l ∉ keep → ws l = [])
+          (fun _ ws ws' => ws' = Function.update ws o (encOut (g a)))
+          (c * (t a + 1))
+          (c * (s a + (enc a).length + (encOut (g a)).length + 1) + k) := by
+  classical
+  obtain ⟨c, K, i₀, o₀, State₀, hfin₀, tm₀, hio₀, hcanon⟩ :=
+    exists_transformsTapes_ofComputable_fixed h
+  have hK2 : 2 ≤ K := by
+    by_contra hlt
+    exact hio₀ (Fin.ext (by have := i₀.isLt; have := o₀.isLt; omega))
+  refine ⟨K - 2, c, fun k i o keep hio hik hok hroom => ?_⟩
+  have hKk : K ≤ k := by omega
+  have hroom' : K + keep.card ≤ k := by omega
+  obtain ⟨e, hei, heo, hother⟩ :=
+    exists_embed_placing i₀ o₀ hio₀ i o keep hio hik hok hroom'
+  refine ⟨State₀, hfin₀, extendTapes tm₀ e, fun a => ?_⟩
+  refine (transformsTapes_extendTapes' e (hcanon a)).imp ?_ ?_ le_rfl ?_
+  · -- precondition: the general layout satisfies the embedded canonical precondition
+    rintro input ws ⟨hwi, hwblank⟩
+    refine ⟨?_, ?_⟩
+    · change ws (e i₀) = enc a
+      rw [hei]; exact hwi
+    · intro l' hl'
+      change ws (e l') = []
+      by_cases hlo : l' = o₀
+      · subst hlo; rw [heo]; exact hwblank o (Ne.symm hio) hok
+      · have hmem := hother l' hl' hlo
+        rw [Finset.mem_insert, not_or] at hmem
+        obtain ⟨hne_i, hmem2⟩ := hmem
+        rw [Finset.mem_insert, not_or] at hmem2
+        exact hwblank (e l') hne_i hmem2.2
+  · -- postcondition: read the update back through the embedding
+    rintro input ws ws' _ ⟨hQ1, hQ2⟩
+    funext l
+    by_cases hlo : l = o
+    · subst hlo
+      have hh := congrFun hQ1 o₀
+      simp only [heo, Function.update_self] at hh
+      rw [Function.update_self]; exact hh
+    · rw [Function.update_of_ne hlo]
+      by_cases hex : ∃ j, e j = l
+      · obtain ⟨j, rfl⟩ := hex
+        have hjo : j ≠ o₀ := by intro hj; apply hlo; rw [hj, heo]
+        have hh := congrFun hQ1 j
+        rw [Function.update_of_ne hjo] at hh
+        exact hh
+      · exact hQ2 l (fun j hj => hex ⟨j, hj⟩)
+  · -- space
+    omega
+
+/-- **A computable function, read from the input tape, as a tape transformer (general layout).**
+Placed on any tape count `k` with a chosen output tape `o` and a set `keep` of tapes to leave
+untouched, provided there is room for the machine's own tapes. -/
+public theorem exists_transformsTapes_ofComputableInput {α β : Type*} {enc : α ↪ List Bool}
+    {encOut : β ↪ List Bool} {g : α → β} {t s : α → ℕ}
+    (h : ComputableInTimeAndSpace g enc encOut t s) :
+    ∃ m c : ℕ, ∀ (k : ℕ) (o : Fin k) (keep : Finset (Fin k)),
+      o ∉ keep → m + 1 + keep.card ≤ k →
+      ∃ (State : Type) (_ : Finite State) (tm : MultiTapeTM k Bool State), ∀ a : α,
+        TransformsTapes tm
+          (fun input ws => input = enc a ∧ ∀ l, l ∉ keep → ws l = [])
+          (fun _ ws ws' => ws' = Function.update ws o (encOut (g a)))
+          (c * (t a + 1))
+          (c * (s a + (encOut (g a)).length + 1) + k) := by
+  classical
+  obtain ⟨c, K, o₀, State₀, hfin₀, tm₀, hcanon⟩ :=
+    exists_transformsTapes_ofComputableInput_fixed h
+  have hK1 : 1 ≤ K := by have := o₀.isLt; omega
+  refine ⟨K - 1, c, fun k o keep hok hroom => ?_⟩
+  have hKk : K ≤ k := by omega
+  have hroom' : K + keep.card ≤ k := by omega
+  obtain ⟨e, heo, hother⟩ := exists_embed_placing_one o₀ o keep hok hroom'
+  refine ⟨State₀, hfin₀, extendTapes tm₀ e, fun a => ?_⟩
+  refine (transformsTapes_extendTapes' e (hcanon a)).imp ?_ ?_ le_rfl ?_
+  · -- precondition
+    rintro input ws ⟨hinput, hwblank⟩
+    refine ⟨hinput, ?_⟩
+    intro l'
+    change ws (e l') = []
+    by_cases hlo : l' = o₀
+    · subst hlo; rw [heo]; exact hwblank o hok
+    · have hmem := hother l' hlo
+      rw [Finset.mem_insert, not_or] at hmem
+      exact hwblank (e l') hmem.2
+  · -- postcondition
+    rintro input ws ws' _ ⟨hQ1, hQ2⟩
+    funext l
+    by_cases hlo : l = o
+    · subst hlo
+      have hh := congrFun hQ1 o₀
+      simp only [heo, Function.update_self] at hh
+      rw [Function.update_self]; exact hh
+    · rw [Function.update_of_ne hlo]
+      by_cases hex : ∃ j, e j = l
+      · obtain ⟨j, rfl⟩ := hex
+        have hjo : j ≠ o₀ := by intro hj; apply hlo; rw [hj, heo]
+        have hh := congrFun hQ1 j
+        rw [Function.update_of_ne hjo] at hh
+        exact hh
+      · exact hQ2 l (fun j hj => hex ⟨j, hj⟩)
+  · -- space
+    omega
 
 end Turing.MultiTapeTM
