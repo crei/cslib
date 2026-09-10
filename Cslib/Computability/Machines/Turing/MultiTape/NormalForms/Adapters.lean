@@ -62,21 +62,7 @@ public theorem exists_transformsTapes_ofComputableInput_fixed
   obtain ⟨τ, hτ, htidyrun, htidysp⟩ := htidy a
   -- The encoded result is produced by the *original* machine in at most `t a` steps, so it is no
   -- longer than `t a` — a fact the tidy interface alone (which only bounds by `τ`) does not give.
-  have hw_len : (encOut (g a)).length ≤ t a := by
-    obtain ⟨kk, SS, hfinSS, tmm, hcomp⟩ := h
-    obtain ⟨t', ht', s', hs', hhaltm, houtm, hspm⟩ := hcomp a
-    have hlen : ∀ d, (tmm.runFrom (tmm.initCfg (enc a)) d).output.length ≤ d := by
-      intro d
-      induction d with
-      | zero => rw [runFrom_zero, initCfg_eq_wordsCfg]; simp
-      | succ d ih =>
-        rw [runFrom_succ_eq_step', step_output, List.length_append]
-        have h1 : (tmm.outputSymbol (tmm.runFrom (tmm.initCfg (enc a)) d)).toList.length ≤ 1 := by
-          cases tmm.outputSymbol (tmm.runFrom (tmm.initCfg (enc a)) d) <;> simp
-        omega
-    have hle := hlen t'
-    rw [houtm] at hle
-    omega
+  have hw_len : (encOut (g a)).length ≤ t a := h.length_encOut_le a
   -- Abbreviations: the encoded result `w`, the tidy halting configuration `X`, and the start.
   set w := encOut (g a) with hw_def
   set X := wordsCfg (enc a) none (fun _ => []) w with hX_def
