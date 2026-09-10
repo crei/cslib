@@ -9,52 +9,39 @@ module
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Comp
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.AlmostConstant
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Branch
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Sequential
 public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Adapters
-public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Concat
-public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.TakeDrop
-public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Id
 
 /-!
 # Complexity of a case analysis
 
-A case analysis chooses which of several machines to continue with. Everything here is built at the
-function level on a single machine-level atom — `computableInTimeAndSpace_iteFirstBit`, the branch
-on the input's first encoded bit — together with the reusable atoms
-`computableInTimeAndSpace_concat` (concatenate two outputs), `computableInTimeAndSpace_drop` (strip
-a prefix) and function composition.
+A case analysis chooses which of several machines to continue with. `cond` is built directly on the
+general tape-transformer machinery: the selector and the two branches enter the transformer
+interface through `exists_transformsTapes_ofComputableInput`, and `exists_transformsTapes_branch`
+dispatches on the selector's bit. `ite`, `dite` and the finite `match` are then read off `cond`.
 
-## The one machine atom, and why the branch not taken is never run
+## Why the branch not taken is never run
 
-`iteFirstBit` reads the first symbol of the input directly and, before it has run anything, jumps
-to `g`'s machine or `h`'s machine; that machine then reads the whole input in place and emits its
-result *straight to the real output tape*. Only one arm ever runs, and its result is never parked on
-a work tape — so there is no time term in the space bound, and nesting `n` conditionals runs `n`
-arms, not
-`2 ^ n`. This laziness is the content of a case analysis, and it cannot come from composing total
-functions (`cond ∘ (fun a => (c a, f a, g a))` would compute every branch), which is why one
-machine-level branch is unavoidable. It is the only one this file needs.
+The dispatch reads the selector bit that the selector machine has left on a work tape and, in one
+step, jumps to the `then`-arm or the `else`-arm; only that arm runs, and it emits its result
+*straight to the shared output tape*. Only one arm ever runs, and its result is never parked to be
+copied out — so nesting `n` conditionals runs `n` arms, not `2 ^ n`. This laziness is the content of
+a case analysis, and it cannot come from composing total functions (`cond ∘ (fun a => (c a, f a,
+g a))` would compute every branch), which is why one machine-level branch is unavoidable.
 
-## From the atom to `cond`, `ite`, `dite` and `match`
+## From `cond` to `ite`, `dite` and `match`
 
-`iteFirstBit` branches on the input's first bit; `cond sel g h` branches on `sel a`, which is not
-the input's first bit. The gap is closed entirely with the other atoms: the selector's bit is
-concatenated ahead of the input to form a tagged value whose encoding starts with `sel a`, the
-branch reads that bit, each arm strips the tag with `drop 1` before running its branch, and the
-tagging is undone on the way in by one composition. `ite` and `dite` are `cond` read through
-`decide`; the finite `match` is a `Finset` induction that splices in one `cond` per case.
+`ite` and `dite` are `cond` read through `decide`; the finite `match` is a `Finset` induction that
+splices in one `cond` per case.
 
 ## Bounds
 
-Bounds here are deliberately relaxed to a single shape, `c * (… + 1)`: nothing downstream depends on
-the conditional family being tight (`loop` and `comp` do not use it), and the function-level
-construction spends constant factors freely. The space bound still carries no *time* term, because
-the branch taken streams to the output; it does pick up the constant-factor and input-length slack
-that composition introduces.
+Bounds here are deliberately relaxed to a single combined shape, `c * (… + 1)`, collecting the six
+input bounds and the input length: nothing downstream depends on the conditional family being tight
+(`loop` and `comp` do not use it), and the construction spends constant factors freely.
 
 ## Main results
 
-* `Turing.MultiTapeTM.computableInTimeAndSpace_iteFirstBit`: the machine atom, the branch on the
-  input's first encoded bit.
 * `Turing.MultiTapeTM.computableInTimeAndSpace_match`: a case analysis on a scrutinee in a finite
   type. See `CslibTests.Complexity.Combinators` for worked examples.
 * `Turing.MultiTapeTM.computableInTimeAndSpace_cond`: the recursor of `Bool`.
@@ -76,202 +63,20 @@ public def boolEnc : Bool ↪ List Bool := ⟨fun b => [b], by intro a b h; simp
 
 @[simp] public lemma boolEnc_apply (b : Bool) : boolEnc b = [b] := rfl
 
-/-- A run of a machine placed by `extendTapes` on tapes that are blank on its range mirrors the
-run of the underlying machine, seen through the tape embedding. This is the decomposition of a
-word configuration into an embedded configuration: the tapes in the range carry the machine's own
-(here blank) words, the tapes outside it are carried through as extra tapes. -/
-private lemma wordsCfg_eq_embed_blank {k kr : ℕ} {Sr : Type}
-    (tmr : MultiTapeTM kr Bool Sr) (er : Fin kr ↪ Fin k) (input : List Bool)
-    (ws : Fin k → List Bool) (out : List Bool) (hblank : ∀ j, ws (er j) = []) :
-    wordsCfg input (some (extendTapes tmr er).q₀) ws out =
-      embed er (wordsCfg input (some tmr.q₀) (fun _ => []) out)
-        (fun l => tapeOfList (ws l)) (fun _ => 0) := by
-  change wordsCfg input (some tmr.q₀) ws out = _
-  rw [wordsCfg_eq_embed er input (some tmr.q₀) ws out,
-    show (fun j => ws (er j)) = (fun _ => []) from funext hblank]
-
-/-- **Phase two of the case analysis: run the chosen arm to completion.** Given the streaming
-dispatch's guarantee for one arm — that after the dispatch step the combined machine's output,
-halting and space are the embedded arm's — and the underlying arm machine's own guarantee that it
-halts with the encoded result, the dispatch halts with that result on the output tape, in one more
-step than the arm, using at most the arm's space plus twice the layout size. -/
-private lemma exists_arm_run {k kr : ℕ} {Sr Sd : Type}
-    {tmr : MultiTapeTM kr Bool Sr} {er : Fin kr ↪ Fin k}
-    {tmd : MultiTapeTM k Bool Sd} {input : List Bool} {ws' : Fin k → List Bool}
-    {O : List Bool} {τ_br s_br : ℕ}
-    (hblank : ∀ j, ws' (er j) = [])
-    (harm :
-      (tmd.runFrom (wordsCfg input (some tmd.q₀) ws' []) (τ_br + 1)).output =
-          ((extendTapes tmr er).runFrom
-            (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br).output ∧
-      ((tmd.runFrom (wordsCfg input (some tmd.q₀) ws' []) (τ_br + 1)).state = none ↔
-          ((extendTapes tmr er).runFrom
-            (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br).state = none) ∧
-      tmd.spaceUsed (wordsCfg input (some tmd.q₀) ws' []) (τ_br + 1) ≤
-          (extendTapes tmr er).spaceUsed
-            (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br + k)
-    (hhalt : (tmr.runFrom (tmr.initCfg input) τ_br).state = none)
-    (hout : (tmr.runFrom (tmr.initCfg input) τ_br).output = O)
-    (hsp : tmr.spaceUsed (tmr.initCfg input) τ_br ≤ s_br) :
-    ∃ u₂ ≤ τ_br + 1,
-      (tmd.runFrom (wordsCfg input (some tmd.q₀) ws' []) u₂).state = none ∧
-      (∀ m < u₂, (tmd.runFrom (wordsCfg input (some tmd.q₀) ws' []) m).state ≠ none) ∧
-      (tmd.runFrom (wordsCfg input (some tmd.q₀) ws' []) u₂).output = O ∧
-      tmd.spaceUsed (wordsCfg input (some tmd.q₀) ws' []) u₂ ≤ s_br + 2 * k := by
-  have hinit : tmr.initCfg input = wordsCfg input (some tmr.q₀) (fun _ => []) [] :=
-    initCfg_eq_wordsCfg tmr input
-  have hdecomp : (extendTapes tmr er).runFrom
-      (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br =
-      embed er (tmr.runFrom (wordsCfg input (some tmr.q₀) (fun _ => []) []) τ_br)
-        (fun l => tapeOfList (ws' l)) (fun _ => 0) := by
-    rw [wordsCfg_eq_embed_blank tmr er input ws' [] hblank, runFrom_embed]
-  -- the embedded arm's output and halting are the raw arm's
-  have hEout : ((extendTapes tmr er).runFrom
-      (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br).output = O := by
-    rw [hdecomp]
-    change (tmr.runFrom (wordsCfg input (some tmr.q₀) (fun _ => []) []) τ_br).output = O
-    rw [← hinit, hout]
-  have hEhalt : ((extendTapes tmr er).runFrom
-      (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br).state = none := by
-    rw [hdecomp]
-    change (tmr.runFrom (wordsCfg input (some tmr.q₀) (fun _ => []) []) τ_br).state = none
-    rw [← hinit, hhalt]
-  -- so the dispatch halts at `τ_br + 1` with the result
-  have hDhalt : (tmd.runFrom (wordsCfg input (some tmd.q₀) ws' []) (τ_br + 1)).state = none :=
-    harm.2.1.mpr hEhalt
-  have hDout : (tmd.runFrom (wordsCfg input (some tmd.q₀) ws' []) (τ_br + 1)).output = O :=
-    harm.1.trans hEout
-  -- the embedded arm's space is the raw arm's plus the extra tapes
-  have hEsp : (extendTapes tmr er).spaceUsed
-      (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br ≤ s_br + k := by
-    rw [wordsCfg_eq_embed_blank tmr er input ws' [] hblank]
-    refine le_trans (spaceUsed_embed_le tmr er _ _ _ τ_br) ?_
-    have h1 : tmr.spaceUsed (wordsCfg input (some tmr.q₀) (fun _ => []) []) τ_br ≤ s_br := by
-      rw [← hinit]; exact hsp
-    omega
-  have hDsp : tmd.spaceUsed (wordsCfg input (some tmd.q₀) ws' []) (τ_br + 1) ≤ s_br + 2 * k := by
-    refine le_trans harm.2.2 ?_; omega
-  -- the first halting time is no later, and output and space are inherited
-  obtain ⟨u₂, hu₂le, hu₂halt, hu₂act⟩ :=
-    exists_minimal_halting_time tmd (wordsCfg input (some tmd.q₀) ws' []) (τ_br + 1) hDhalt
-  refine ⟨u₂, hu₂le, hu₂halt, hu₂act, ?_, ?_⟩
-  · rw [← hDout]; exact (runFrom_output_eq_of_halt tmd _ hu₂le hu₂halt).symm
-  · exact le_trans (spaceUsed_mono tmd _ hu₂le) hDsp
-
-/-- **The elementary two-way branch on the input's first symbol.** If `g` and `h` are computable,
-then so is the function that runs `g` when the input's first encoded symbol is `some true` and `h`
-otherwise. The dispatch reads the input directly, so both arms then read the whole input in place
-and emit their result straight to the real output tape — no scrutinee is materialised, and there is
-no time term in the space bound.
-
-This is the atom on which the whole conditional family is rebuilt: `cond`, `ite`, `dite` and the
-finite `match` all reduce to it by tagging the input with a selector bit and stripping the tag in
-each arm. -/
-public theorem computableInTimeAndSpace_iteFirstBit {g h : α → β}
-    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {t s : α → ℕ}
-    (hg : ComputableInTimeAndSpace g encIn encOut t s)
-    (hh : ComputableInTimeAndSpace h encIn encOut t s) :
-    ∃ c, ComputableInTimeAndSpace
-      (fun a => if (encIn a).head? = some true then g a else h a) encIn encOut
-      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
-  classical
-  obtain ⟨kg, Sg, hSg, tmg, Hg⟩ := hg
-  obtain ⟨kh, Sh, hSh, tmh, Hh⟩ := hh
-  set K := kg + kh with hK
-  -- the two branch machines live on disjoint blocks of a shared `K`-tape layout
-  let e_g : Fin kg ↪ Fin K :=
-    ⟨fun j => ⟨j.val, by have := j.isLt; omega⟩,
-      fun a b hab => Fin.ext (by have := congrArg Fin.val hab; simpa using this)⟩
-  let e_h : Fin kh ↪ Fin K :=
-    ⟨fun j => ⟨kg + j.val, by have := j.isLt; omega⟩,
-      fun a b hab => Fin.ext (by have := congrArg Fin.val hab; simpa using this)⟩
-  -- the streaming input-dispatch between the two (embedded) branch machines
-  obtain ⟨Sd, hSd, tmd, Hd⟩ :=
-    exists_inputBranch_run true (extendTapes tmg e_g) (extendTapes tmh e_h)
-  refine ⟨2 * K + 1, K, Sd, hSd, tmd, fun a => ?_⟩
-  -- reduce to running the chosen arm to completion on all-blank work tapes
-  by_cases hb : (encIn a).head? = some true
-  · -- the input starts with `true`: run `g`'s machine
-    obtain ⟨t'g, ht'gle, s'g, hs'gle, hgstate, hgout, hgsp⟩ := Hg a
-    obtain ⟨u₂, hu₂le, hu₂halt, hu₂act, hu₂out, hu₂sp⟩ :=
-      exists_arm_run (er := e_g) (fun _ => rfl)
-        ((Hd (encIn a) (fun _ => []) [] t'g).1 hb) hgstate hgout hgsp.le
-    refine ⟨u₂, ?_, tmd.spaceUsed (tmd.initCfg (encIn a)) u₂, ?_, ?_, ?_, ?_⟩
-    · have hu : u₂ ≤ t a + 1 := by omega
-      exact le_trans hu (Nat.le_mul_of_pos_left _ (by omega))
-    · change tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (s a + 1)
-      have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ s a + 2 * K := by
-        rw [initCfg_eq_wordsCfg]; exact le_trans hu₂sp (by omega)
-      refine le_trans hle ?_
-      have hexp : (2 * K + 1) * (s a + 1) = (2 * K + 1) * (s a) + (2 * K + 1) := Nat.mul_succ _ _
-      have hge : s a ≤ (2 * K + 1) * (s a) := Nat.le_mul_of_pos_left _ (by omega)
-      omega
-    · rw [initCfg_eq_wordsCfg]; exact hu₂halt
-    · rw [initCfg_eq_wordsCfg, hu₂out]; simp [hb]
-    · rfl
-  · -- otherwise: run `h`'s machine
-    obtain ⟨t'h, ht'hle, s'h, hs'hle, hhstate, hhout, hhsp⟩ := Hh a
-    obtain ⟨u₂, hu₂le, hu₂halt, hu₂act, hu₂out, hu₂sp⟩ :=
-      exists_arm_run (er := e_h) (fun _ => rfl)
-        ((Hd (encIn a) (fun _ => []) [] t'h).2 hb) hhstate hhout hhsp.le
-    refine ⟨u₂, ?_, tmd.spaceUsed (tmd.initCfg (encIn a)) u₂, ?_, ?_, ?_, ?_⟩
-    · have hu : u₂ ≤ t a + 1 := by omega
-      exact le_trans hu (Nat.le_mul_of_pos_left _ (by omega))
-    · change tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (s a + 1)
-      have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ s a + 2 * K := by
-        rw [initCfg_eq_wordsCfg]; exact le_trans hu₂sp (by omega)
-      refine le_trans hle ?_
-      have hexp : (2 * K + 1) * (s a + 1) = (2 * K + 1) * (s a) + (2 * K + 1) := Nat.mul_succ _ _
-      have hge : s a ≤ (2 * K + 1) * (s a) := Nat.le_mul_of_pos_left _ (by omega)
-      omega
-    · rw [initCfg_eq_wordsCfg]; exact hu₂halt
-    · rw [initCfg_eq_wordsCfg, hu₂out]; simp [hb]
-    · rfl
-
-/-- **Normalised composition.** Composing a computable `id`-relabelling with a computable function,
-both in the normalised bound shape `c * (P a + 1)`, stays in that shape. The scratch encoding's
-length is bounded by `P a + 1`, and the composed result's length by the second function's bound, so
-every term that composition adds is already a multiple of `P a + 1`. -/
-private lemma norm_comp {γ' : Type*} {gg : α → γ'} {encX encY : α ↪ List Bool}
-    {encZ : γ' ↪ List Bool} {P : α → ℕ} {cf cg : ℕ}
-    (hf : ComputableInTimeAndSpace (id : α → α) encX encY
-      (fun a => cf * (P a + 1)) (fun a => cf * (P a + 1)))
-    (hg : ComputableInTimeAndSpace gg encY encZ
-      (fun a => cg * (P a + 1)) (fun a => cg * (P a + 1)))
-    (hY : ∀ a, (encY a).length ≤ P a + 1) :
-    ∃ c, ComputableInTimeAndSpace gg encX encZ
-      (fun a => c * (P a + 1)) (fun a => c * (P a + 1)) := by
-  obtain ⟨cc, hcc⟩ := computableInTimeAndSpace_comp hf hg
-  rw [show gg ∘ (id : α → α) = gg from rfl] at hcc
-  refine ⟨cc * (cf + 2 * cg + 2), hcc.mono (fun a => ?_) (fun a => ?_)⟩
-  · simp only [id_eq]
-    rw [Nat.mul_assoc]
-    refine Nat.mul_le_mul_left cc ?_
-    have hexp : (cf + 2 * cg + 2) * (P a + 1) =
-        cf * (P a + 1) + 2 * (cg * (P a + 1)) + 2 * (P a + 1) := by
-      rw [Nat.add_mul, Nat.add_mul, Nat.mul_assoc]
-    have hY' := hY a
-    omega
-  · simp only [id_eq]
-    rw [Nat.mul_assoc]
-    refine Nat.mul_le_mul_left cc ?_
-    have hexp : (cf + 2 * cg + 2) * (P a + 1) =
-        cf * (P a + 1) + 2 * (cg * (P a + 1)) + 2 * (P a + 1) := by
-      rw [Nat.add_mul, Nat.add_mul, Nat.mul_assoc]
-    have hY' := hY a
-    have hZ := hg.length_encOut_le a
-    omega
-
 /-- **Complexity of a two-way case analysis**, the recursor of `Bool`. If the scrutinee and both
 branches are computable, then so is the case analysis `bif sel a then g a else h a`.
 
-The construction is entirely at the function level, on top of the elementary atoms. The selector's
-bit is concatenated ahead of the input (`computableInTimeAndSpace_concat`) to form a tagged value
-whose encoding starts with `sel a`; the branch on that first bit
-(`computableInTimeAndSpace_iteFirstBit`) runs `g` or `h`, each first stripping the tag with `drop 1`
-(`computableInTimeAndSpace_drop`) and running its branch by composition; and the tagging is undone
-on the way in by one more composition. Bounds are relaxed to the single shape `c * (P a + 1)`, with
-`P` collecting the six input bounds and the input length — nothing downstream needs them tight. -/
+The construction reuses the general tape-transformer machinery. The selector, the `then`-branch
+and the `else`-branch are each placed on a shared work-tape layout by
+`exists_transformsTapes_ofComputableInput`: the selector leaves its single bit `boolEnc (sel a)` on
+tape `c`, and each branch reads the real input and leaves its encoded result on the shared output
+tape `o` (treating `c` as a tape to keep). `exists_transformsTapes_branch` on tape `c` then runs the
+`then`-branch when that bit is `true` and the `else`-branch otherwise — the two arms share the
+postcondition "`o` holds `encOut (bif sel a then g a else h a)`", each arm supplying the case
+(`sel a = true` / `sel a = false`) that identifies its result with it. Sequencing the selector
+before the branch and emitting tape `o` (`computableInTimeAndSpace_of_transformsTapes`) reads off
+the case analysis. Bounds are relaxed to the single combined shape `c * (… + 1)`; nothing
+downstream needs them tight. -/
 public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → β}
     {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {tc sc tif sif telse selse : α → ℕ}
     (hsel : ComputableInTimeAndSpace sel encIn boolEnc tc sc)
@@ -281,79 +86,124 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → �
       (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1))
       (fun a => c * (tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1)) := by
   classical
-  set P : α → ℕ :=
-    fun a => tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length with hP
-  -- the tagged encoding: the selector bit in front of the input
-  let encTag : α ↪ List Bool :=
-    ⟨fun a => sel a :: encIn a, fun a b hab => by
-      simp only [List.cons.injEq] at hab; exact encIn.injective hab.2⟩
-  have hencTag : ∀ a, encTag a = sel a :: encIn a := fun a => rfl
-  -- pointwise facts about `P`
-  have hLin : ∀ a, (encIn a).length ≤ P a := fun a => by simp only [hP]; omega
-  have hLtag : ∀ a, (encTag a).length ≤ P a + 1 := fun a => by
-    rw [hencTag]; simp only [List.length_cons]; have := hLin a; omega
-  -- normalise the three inputs and the identity into the `c * (P a + 1)` shape
-  have hsel_n : ComputableInTimeAndSpace sel encIn boolEnc
-      (fun a => 1 * (P a + 1)) (fun a => 1 * (P a + 1)) :=
-    hsel.mono (fun a => by simp only [hP]; omega) (fun a => by simp only [hP]; omega)
-  have hif_n : ComputableInTimeAndSpace g encIn encOut
-      (fun a => 1 * (P a + 1)) (fun a => 1 * (P a + 1)) :=
-    hif.mono (fun a => by simp only [hP]; omega) (fun a => by simp only [hP]; omega)
-  have helse_n : ComputableInTimeAndSpace h encIn encOut
-      (fun a => 1 * (P a + 1)) (fun a => 1 * (P a + 1)) :=
-    helse.mono (fun a => by simp only [hP]; omega) (fun a => by simp only [hP]; omega)
-  have hid_n : ComputableInTimeAndSpace (id : α → α) encIn encIn
-      (fun a => 1 * (P a + 1)) (fun a => 1 * (P a + 1)) :=
-    (computableInTimeAndSpace_id (enc := encIn)).mono
-      (fun a => by have := hLin a; omega) (fun a => by omega)
-  -- tag: `id : encIn → encTag`, via concatenation of the selector bit and the input
-  obtain ⟨ct, htag⟩ := computableInTimeAndSpace_concat
-    (encD := encTag) (f := sel) (g := (id : α → α)) (h := (id : α → α))
-    (fun a => by rw [hencTag]; rfl) hsel_n hid_n
-  have htag_n : ComputableInTimeAndSpace (id : α → α) encIn encTag
-      (fun a => (ct * 3) * (P a + 1)) (fun a => (ct * 3) * (P a + 1)) := by
-    refine htag.mono (fun a => ?_) (fun a => ?_) <;>
-      · rw [Nat.mul_assoc]; refine Nat.mul_le_mul_left ct ?_
-        have h3 : (3 : ℕ) * (P a + 1) = (P a + 1) + (P a + 1) + (P a + 1) := by
-          rw [Nat.succ_mul, Nat.succ_mul, Nat.one_mul]
-        omega
-  -- untag: `id : encTag → encIn`, dropping the tag bit
-  have huntag_n : ComputableInTimeAndSpace (id : α → α) encTag encIn
-      (fun a => 2 * (P a + 1)) (fun a => 2 * (P a + 1)) := by
-    refine (computableInTimeAndSpace_drop (encFrom := encTag) (encTo := encIn) 1
-      (fun a => by rw [hencTag]; rfl)).mono (fun a => ?_) (fun a => ?_)
-    · have := hLtag a; omega
-    · omega
-  -- each branch on the tagged input: strip the tag, then run the branch
-  obtain ⟨cg', hg'⟩ :=
-    norm_comp (P := P) huntag_n hif_n (fun a => le_trans (hLin a) (Nat.le_succ _))
-  obtain ⟨ch', hh'⟩ :=
-    norm_comp (P := P) huntag_n helse_n (fun a => le_trans (hLin a) (Nat.le_succ _))
-  -- branch on the first (tag) bit of the tagged input
-  obtain ⟨ci, hite⟩ := computableInTimeAndSpace_iteFirstBit
-    (hg'.mono (fun a => Nat.mul_le_mul (Nat.le_add_right cg' ch') le_rfl)
-      (fun a => Nat.mul_le_mul (Nat.le_add_right cg' ch') le_rfl))
-    (hh'.mono (fun a => Nat.mul_le_mul (Nat.le_add_left ch' cg') le_rfl)
-      (fun a => Nat.mul_le_mul (Nat.le_add_left ch' cg') le_rfl))
-  have hite_n : ComputableInTimeAndSpace
-      (fun a => if (encTag a).head? = some true then g a else h a) encTag encOut
-      (fun a => (ci * (cg' + ch' + 1)) * (P a + 1))
-      (fun a => (ci * (cg' + ch' + 1)) * (P a + 1)) := by
-    refine hite.mono (fun a => ?_) (fun a => ?_) <;>
-      · rw [Nat.mul_assoc]; refine Nat.mul_le_mul_left ci ?_
-        have hexp : (cg' + ch' + 1) * (P a + 1) = (cg' + ch') * (P a + 1) + (P a + 1) := by
-          rw [Nat.add_mul, Nat.one_mul]
-        omega
-  -- undo the tagging on the way in, then read off the case analysis
-  obtain ⟨cf, hfinal⟩ := norm_comp (P := P) htag_n hite_n hLtag
-  refine ⟨cf, ?_⟩
-  have hfun : (fun a => if (encTag a).head? = some true then g a else h a) =
-      fun a => bif sel a then g a else h a := by
-    funext a
-    rw [hencTag]
-    cases hb : sel a <;> simp
-  rw [hfun] at hfinal
-  exact hfinal
+  -- the three function machines, placed on a shared layout by the general adapters
+  obtain ⟨m_sel, c_sel, hsel'⟩ := exists_transformsTapes_ofComputableInput hsel
+  obtain ⟨m_g, c_g, hif'⟩ := exists_transformsTapes_ofComputableInput hif
+  obtain ⟨m_h, c_h, helse'⟩ := exists_transformsTapes_ofComputableInput helse
+  set k := m_sel + m_g + m_h + 3 with hk
+  let c : Fin k := ⟨0, by omega⟩
+  let o : Fin k := ⟨1, by omega⟩
+  have hoc : o ≠ c := by apply Fin.ne_of_val_ne; simp
+  -- `M_sel` writes the selector bit to tape `c`; `M_g`/`M_h` read the input, keep `c`, write to `o`
+  obtain ⟨S_sel, hS_sel, M_sel, hM_sel⟩ :=
+    hsel' k c ∅ (by simp) (by simp only [Finset.card_empty]; omega)
+  obtain ⟨S_g, hS_g, M_g, hM_g⟩ :=
+    hif' k o {c} (by simpa using hoc) (by simp only [Finset.card_singleton]; omega)
+  obtain ⟨S_h, hS_h, M_h, hM_h⟩ :=
+    helse' k o {c} (by simpa using hoc) (by simp only [Finset.card_singleton]; omega)
+  have := hS_sel; have := hS_g; have := hS_h
+  have hleg : ∀ a, (encOut (g a)).length ≤ tif a := hif.length_encOut_le
+  have hleh : ∀ a, (encOut (h a)).length ≤ telse a := helse.length_encOut_le
+  -- arm 1: run `g`, guarded by `sel a = true`, its result identified with the case analysis
+  have h₁ : ∀ a, TransformsTapes M_g
+      (fun input ws => (input = encIn a ∧ ∀ l, l ∉ ({c} : Finset (Fin k)) → ws l = [])
+        ∧ sel a = true)
+      (fun _ ws ws' => ws' = Function.update ws o (encOut (bif sel a then g a else h a)))
+      (c_g * (tif a + 1)) (c_g * (sif a + (encOut (g a)).length + 1) + k) := by
+    intro a
+    refine (hM_g a).imp (fun _ _ hP => hP.1) (fun _ _ ws' hP hQ => ?_) le_rfl le_rfl
+    rw [hQ]; simp only [hP.2, Bool.cond_true]
+  -- arm 2: run `h`, guarded by `sel a = false`
+  have h₂ : ∀ a, TransformsTapes M_h
+      (fun input ws => (input = encIn a ∧ ∀ l, l ∉ ({c} : Finset (Fin k)) → ws l = [])
+        ∧ sel a = false)
+      (fun _ ws ws' => ws' = Function.update ws o (encOut (bif sel a then g a else h a)))
+      (c_h * (telse a + 1)) (c_h * (selse a + (encOut (h a)).length + 1) + k) := by
+    intro a
+    refine (hM_h a).imp (fun _ _ hP => hP.1) (fun _ _ ws' hP hQ => ?_) le_rfl le_rfl
+    rw [hQ]; simp only [hP.2, Bool.cond_false]
+  -- branch on the selector bit on tape `c`
+  obtain ⟨S_br, hS_br, M_br, hM_br⟩ :=
+    exists_transformsTapes_branch (J := α) c true
+      (P₁ := fun a input ws => (input = encIn a ∧ ∀ l, l ∉ ({c} : Finset (Fin k)) → ws l = [])
+        ∧ sel a = true)
+      (P₂ := fun a input ws => (input = encIn a ∧ ∀ l, l ∉ ({c} : Finset (Fin k)) → ws l = [])
+        ∧ sel a = false)
+      (Q := fun a _ ws ws' => ws' = Function.update ws o (encOut (bif sel a then g a else h a)))
+      (t₁ := fun a => c_g * (tif a + 1))
+      (s₁ := fun a => c_g * (sif a + (encOut (g a)).length + 1) + k)
+      (t₂ := fun a => c_h * (telse a + 1))
+      (s₂ := fun a => c_h * (selse a + (encOut (h a)).length + 1) + k) h₁ h₂
+  have := hS_br
+  -- run the selector, then the branch, as a single tape transformer emitting `o`
+  have hMc : ∀ a, TransformsTapes (M_sel.seq M_br)
+      (fun input ws => input = encIn a ∧ ∀ l, ws l = [])
+      (fun _ _ ws' => ws' o = encOut (bif sel a then g a else h a))
+      (c_sel * (tc a + 1) + (max (c_g * (tif a + 1)) (c_h * (telse a + 1)) + 1))
+      (c_sel * (sc a + (boolEnc (sel a)).length + 1) + k +
+        (max (c_g * (sif a + (encOut (g a)).length + 1) + k)
+             (c_h * (selse a + (encOut (h a)).length + 1) + k) + k)) := by
+    intro a
+    refine (transformsTapes_seq (hM_sel a) (hM_br a) ?_).imp ?_ ?_ le_rfl le_rfl
+    · -- handoff: after the selector, the branch precondition holds
+      rintro _ ws ws' ⟨rfl, hblank⟩ hQsel
+      have hchead : (ws' c).head? = some (sel a) := by rw [hQsel, Function.update_self]; simp
+      have hbl : ∀ l, l ∉ ({c} : Finset (Fin k)) → ws' l = [] := fun l hl => by
+        rw [hQsel, Function.update_of_ne (by simpa using hl)]; exact hblank l (by simp)
+      split
+      · rename_i hcond
+        rw [hchead] at hcond
+        exact ⟨⟨rfl, hbl⟩, Option.some.inj hcond⟩
+      · rename_i hcond
+        rw [hchead] at hcond
+        refine ⟨⟨rfl, hbl⟩, ?_⟩
+        rw [← Bool.not_eq_true]
+        exact fun h => hcond (by rw [h])
+    · -- an all-blank input satisfies the selector's precondition
+      rintro _ ws ⟨rfl, hblank⟩
+      exact ⟨rfl, fun l _ => hblank l⟩
+    · -- read the result off the output tape
+      rintro _ ws ws'' _ ⟨ws', _, hQbr⟩
+      rw [hQbr, Function.update_self]
+  -- emit tape `o`, turning the transformer into a computation
+  obtain ⟨c₀, hc₀⟩ :=
+    computableInTimeAndSpace_of_transformsTapes (gg := fun a => bif sel a then g a else h a) o hMc
+  refine ⟨c₀ * (2 * c_sel + c_g + c_h + 3 * k + 3), hc₀.mono (fun a => ?_) (fun a => ?_)⟩
+  · -- time
+    set U := tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1 with hU
+    have hlen : (encOut (bif sel a then g a else h a)).length ≤ U := by
+      have := hleg a; have := hleh a
+      cases sel a <;> simp only [Bool.cond_true, Bool.cond_false] <;> omega
+    rw [Nat.mul_assoc]
+    refine Nat.mul_le_mul_left c₀ ?_
+    have e_sel : c_sel * (tc a + 1) ≤ c_sel * U := Nat.mul_le_mul_left _ (by omega)
+    have e_g : c_g * (tif a + 1) ≤ c_g * U := Nat.mul_le_mul_left _ (by omega)
+    have e_h : c_h * (telse a + 1) ≤ c_h * U := Nat.mul_le_mul_left _ (by omega)
+    have hexp : (2 * c_sel + c_g + c_h + 3 * k + 3) * U
+        = 2 * (c_sel * U) + c_g * U + c_h * U + 3 * (k * U) + 3 * U := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.mul_assoc, Nat.mul_assoc]
+    omega
+  · -- space
+    set U := tc a + sc a + tif a + sif a + telse a + selse a + (encIn a).length + 1 with hU
+    have hlen : (encOut (bif sel a then g a else h a)).length ≤ U := by
+      have := hleg a; have := hleh a
+      cases sel a <;> simp only [Bool.cond_true, Bool.cond_false] <;> omega
+    rw [Nat.mul_assoc]
+    refine Nat.mul_le_mul_left c₀ ?_
+    have hkU : k ≤ k * U := Nat.le_mul_of_pos_right k (by omega)
+    have e_sel : c_sel * (sc a + (boolEnc (sel a)).length + 1) ≤ 2 * (c_sel * U) := by
+      have h1 : (boolEnc (sel a)).length = 1 := by simp
+      calc c_sel * (sc a + (boolEnc (sel a)).length + 1)
+          ≤ c_sel * (2 * U) := Nat.mul_le_mul_left _ (by rw [h1]; omega)
+        _ = 2 * (c_sel * U) := by rw [Nat.mul_left_comm]
+    have e_g : c_g * (sif a + (encOut (g a)).length + 1) ≤ c_g * U :=
+      Nat.mul_le_mul_left _ (by have := hleg a; omega)
+    have e_h : c_h * (selse a + (encOut (h a)).length + 1) ≤ c_h * U :=
+      Nat.mul_le_mul_left _ (by have := hleh a; omega)
+    have hexp : (2 * c_sel + c_g + c_h + 3 * k + 3) * U
+        = 2 * (c_sel * U) + c_g * U + c_h * U + 3 * (k * U) + 3 * U := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.add_mul, Nat.mul_assoc, Nat.mul_assoc]
+    omega
 
 /-! ### The finite case analysis
 
