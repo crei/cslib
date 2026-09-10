@@ -20,7 +20,7 @@ cases, it emits the corresponding output one symbol at a time.
 
 This result also holds for functions whose domain is already finite.
 
-## Main Results
+## Main results
 
 * `computableInTimeAndSpace_of_finite`: Every function on a finite type is computable in
     constant time and zero space, relative to any encoding.

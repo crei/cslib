@@ -33,6 +33,11 @@ outside-in towards the anchor.
 ## Main definitions
 
 * `Turing.MultiTapeTM.TidyComputes`: the machine computes the function and halts tidily.
+
+## Main results
+
+* `Turing.MultiTapeTM.exists_tidy`: every computable function has a tidy machine, at a
+  constant-factor cost in time and space.
 -/
 
 namespace Turing.MultiTapeTM

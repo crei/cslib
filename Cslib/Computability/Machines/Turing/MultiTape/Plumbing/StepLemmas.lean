@@ -25,7 +25,7 @@ min_def, max_def]; split_ifs <;> omega` closes them (`SignType` casts to `ℤ` a
 `simp`-reducible in Mathlib). The redirection machines are the customers.
 -/
 
-@[expose] public section
+public section
 
 namespace Turing
 

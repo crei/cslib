@@ -67,7 +67,7 @@ public lemma projCfg_workTapeSymbols (c : Cfg (k + k) Symbol State input) (j : F
 
 /-- The projection is a step-semiconjugation: the instrumented machine acts on everything except
 the footprints exactly as the original does. -/
-public lemma step_projCfg (tm : MultiTapeTM k Symbol State) (mark : Symbol)
+private lemma step_projCfg (tm : MultiTapeTM k Symbol State) (mark : Symbol)
     (c : Cfg (k + k) Symbol State input) :
     tm.step (projCfg c) = projCfg ((tm.instrument mark).step c) := by
   cases hq : c.state with

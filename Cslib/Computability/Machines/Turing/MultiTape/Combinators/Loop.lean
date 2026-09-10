@@ -33,8 +33,8 @@ loop
 ```
 
 This is the form in which the loop is implemented by a machine, since it needs only one machine for
-the whole loop body. The usual `while` loop, with a separate condition and body, is derived from it
-in `Cslib.Computability.Machines.Turing.MultiTape.Combinators.While`.
+the whole loop body. The usual `while` loop, with a separate condition and body, is the special case
+obtained by fusing the condition into the body.
 
 ## Main definitions
 

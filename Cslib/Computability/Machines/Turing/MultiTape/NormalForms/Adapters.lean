@@ -27,6 +27,17 @@ interface expects.
 `exists_transformsTapes_ofComputableInput` is the resulting adapter for a function read from the
 real input tape. The output tape is the last of `k₀ + 1` work tapes, where `k₀` is the tidy
 machine's tape count.
+
+## Main results
+
+* `Turing.MultiTapeTM.exists_transformsTapes_ofComputableInput`: evaluate a computable function,
+  reading its argument from the real input tape, as a tape transformer on any large-enough layout.
+* `Turing.MultiTapeTM.exists_transformsTapes_ofComputable`: the same, reading the argument from a
+  work tape.
+* `Turing.MultiTapeTM.computableInTimeAndSpace_of_transformsTapes`: turn a tape transformer whose
+  result lands on one work tape back into a computable function, by emitting that tape.
+* `Turing.MultiTapeTM.transformsTapes_extendTapes`: a tape transformer stays one after its tapes are
+  reindexed into a larger layout.
 -/
 
 @[expose] public section
@@ -38,7 +49,7 @@ variable {α β : Type*}
 /-- **A computable function, read from the input tape, as a tape transformer.** Started with the
 input on the real input tape and every work tape blank, the machine halts having written the
 encoded result to the last work tape, in linear time and in space linear in the result length. -/
-public theorem exists_transformsTapes_ofComputableInput_fixed
+private theorem exists_transformsTapes_ofComputableInput_fixed
     {enc : α ↪ List Bool} {encOut : β ↪ List Bool} {g : α → β} {t s : α → ℕ}
     (h : ComputableInTimeAndSpace g enc encOut t s) :
     ∃ (c K : ℕ) (o : Fin K) (State : Type) (_ : Finite State) (tm : MultiTapeTM K Bool State),
@@ -169,7 +180,7 @@ Built from `exists_transformsTapes_ofComputableInput`'s machine `M₀` (which re
 and leaves the result on a work tape): `inputFromTape M₀` redirects `M₀`'s input reading to the
 virtual tape, bracketed by two one-cell writes that place and remove the boundary flag `M₀`'s
 input redirection needs. -/
-public theorem exists_transformsTapes_ofComputable_fixed
+private theorem exists_transformsTapes_ofComputable_fixed
     {enc : α ↪ List Bool} {encOut : β ↪ List Bool} {g : α → β} {t s : α → ℕ}
     (h : ComputableInTimeAndSpace g enc encOut t s) :
     ∃ (c K : ℕ) (i o : Fin K) (State : Type) (_ : Finite State) (tm : MultiTapeTM K Bool State),
