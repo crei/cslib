@@ -171,10 +171,10 @@ machine has halted with the head of tape `i` back at position `0`. -/
 lemma runFrom_full {w : List Symbol} (hw : W i = tapeOfList w) :
     (rewindTape i).runFrom (cfg input i (some .start) ip W WP out (w.length : ℤ)) (w.length + 2) =
       cfg input i none ip W WP out 0 := by
-  have hstep1 : (rewindTape i).runFrom (cfg input i (some .start) ip W WP out (w.length : ℤ)) 1 =
+  have hstep1 : (rewindTape i).runFrom
+      (cfg input i (some .start) ip W WP out (w.length : ℤ)) 1 =
       cfg input i (some .scan) ip W WP out ((w.length : ℤ) - 1) := by
-    rw [runFrom_succ_eq_step', runFrom_zero]
-    exact step_start
+    rw [runFrom_succ_eq_step', runFrom_zero]; exact step_start
   have hscanEnd : (rewindTape i).runFrom
       (cfg input i (some .start) ip W WP out (w.length : ℤ)) (1 + w.length) =
       cfg input i (some .scan) ip W WP out (-1) := by
@@ -202,21 +202,15 @@ lemma runFrom_pos_range {w : List Symbol} (hw : W i = tapeOfList w) (m : ℕ)
   rcases Nat.lt_or_ge m 1 with h0 | h1
   · obtain rfl : m = 0 := by omega
     rw [runFrom_zero]
-    constructor
-    · simp only [cfg, Function.update_self]; omega
-    · simp only [cfg, Function.update_self]; omega
+    constructor <;> simp only [cfg, Function.update_self] <;> omega
   rcases Nat.lt_or_ge m (w.length + 2) with hlt | hge
   · -- scanning: head at `w.length - m`
     obtain ⟨d, hd, rfl⟩ : ∃ d, d ≤ w.length ∧ m = 1 + d := ⟨m - 1, by omega, by omega⟩
     rw [runFrom_add, hstep1, runFrom_scan hw d hd]
-    constructor
-    · simp only [cfg, Function.update_self]; omega
-    · simp only [cfg, Function.update_self]; omega
+    constructor <;> simp only [cfg, Function.update_self] <;> omega
   · obtain rfl : m = w.length + 2 := by omega
     rw [runFrom_full hw]
-    constructor
-    · simp only [cfg, Function.update_self]; omega
-    · simp only [cfg, Function.update_self]; omega
+    constructor <;> simp only [cfg, Function.update_self] <;> omega
 
 /-- No action of the machine writes to a work tape. -/
 lemma tr_write_none (q : RewindTapeState) (inp : Option Symbol) (work : Fin K → Option Symbol)

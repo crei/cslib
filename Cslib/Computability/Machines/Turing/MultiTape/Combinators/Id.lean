@@ -45,12 +45,6 @@ def cfg (input : List Symbol) (q : Option Unit) (p : Fin (input.length + 2))
     (out : List Symbol) : Cfg 0 Symbol Unit input :=
   ⟨q, p, fun _ _ => none, fun _ => 0, out⟩
 
-/-- With no work tapes, configurations are equal as soon as the state, the input position and the
-output agree. -/
-lemma cfg_ext {c₁ c₂ : Cfg 0 Symbol Unit input} (hstate : c₁.state = c₂.state)
-    (hpos : c₁.inputPos = c₂.inputPos) (hout : c₁.output = c₂.output) : c₁ = c₂ :=
-  Cfg.ext hstate hpos (funext fun i => i.elim0) (funext fun i => i.elim0) hout
-
 /-- Over an input symbol, the copy machine emits it and moves right. -/
 lemma step_scan {n : ℕ} (hn : n < input.length) (out : List Symbol) :
     copy.step (cfg input (some ()) ⟨n + 1, by omega⟩ out) =
@@ -60,7 +54,7 @@ lemma step_scan {n : ℕ} (hn : n < input.length) (out : List Symbol) :
   unfold step
   simp only [cfg] at hsym ⊢
   rw [hsym]
-  refine cfg_ext rfl ?_ rfl
+  refine Cfg.ext_zero_tapes rfl ?_ rfl
   apply Fin.ext
   simp [copy, Action.apply, moveInputPos]
   grind
@@ -75,7 +69,7 @@ lemma step_halt (out : List Symbol) :
   unfold step
   simp only [cfg] at hsym ⊢
   rw [hsym]
-  exact cfg_ext rfl (by simp [copy, Action.apply]) (by simp [copy, Action.apply])
+  exact Cfg.ext_zero_tapes rfl (by simp [copy, Action.apply]) (by simp [copy, Action.apply])
 
 /-- After `n ≤ input.length` steps, the copy machine has copied the first `n` input symbols to the
 output and its head is over the `n`-th cell of the input. -/
@@ -83,7 +77,7 @@ lemma runFrom_scan (n : ℕ) (hn : n ≤ input.length) :
     copy.runFrom (copy.initCfg input) n =
       cfg input (some ()) ⟨n + 1, by omega⟩ (input.take n) := by
   induction n with
-  | zero => exact cfg_ext rfl rfl rfl
+  | zero => exact Cfg.ext_zero_tapes rfl rfl rfl
   | succ n ih =>
     rw [runFrom_succ_eq_step', ih (by omega), step_scan (by omega)]
     have htake : input.take n ++ [input[n]] = input.take (n + 1) := by

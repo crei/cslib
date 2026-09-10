@@ -434,16 +434,6 @@ public theorem computableInTimeAndSpace_loopFunction
   -- ### Bounds for the individual machines
   -- Every length occurring in the bound of a machine of a round is bounded by `W * (s a + 1)`,
   -- hence its time by a constant times `t a + s a + 1` and its space by a constant times `s a + 1`.
-  have hWt : ∀ a n x, loopIterate body n a = some x →
-      (enc x).length ≤ W * (t a + s a + 1) ∧
-      (encOpt (body x)).length ≤ W * (t a + s a + 1) ∧
-      (encOpt (some x)).length ≤ W * (t a + s a + 1) ∧
-      cd * ((encOpt (some x)).length + 1) ≤ W * (t a + s a + 1) ∧
-      s x ≤ W * (t a + s a + 1) ∧ t x ≤ W * (t a + s a + 1) := by
-    intro a n x hx
-    obtain ⟨h1, h2, h3, h4, h5, h6⟩ := hWlen a n x hx
-    exact ⟨h1.trans (hvu a W), h2.trans (hvu a W), h3.trans (hvu a W), h4.trans (hvu a W),
-      h5.trans (hvu a W), h6⟩
   have hcW : ∀ (c : ℕ) (a : α), c ≤ W → c ≤ W * (t a + s a + 1) := fun c a hc =>
     hc.trans (Nat.le_mul_of_pos_right _ (by omega))
   have hcWv : ∀ (c : ℕ) (a : α), c ≤ W → c ≤ W * (s a + 1) := fun c a hc =>
@@ -457,16 +447,16 @@ public theorem computableInTimeAndSpace_loopFunction
     exact nat_bound₁ (hu1 a) (hcW 1 a hW1)
   obtain ⟨A3, hA3⟩ : ∃ c, ∀ a n x, loopIterate body n a = some x →
       cC1 * ((enc x).length + 1) ≤ c * (t a + s a + 1) :=
-    ⟨cC1 * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) (hWt a n x hx).1⟩
+    ⟨cC1 * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) ((hWlen a n x hx).1.trans (hvu a W))⟩
   obtain ⟨A4, hA4⟩ : ∃ c, ∀ a n x, loopIterate body n a = some x →
       cD * (cd * ((encOpt (some x)).length + 1) + 1) ≤ c * (t a + s a + 1) :=
-    ⟨cD * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) (hWt a n x hx).2.2.2.1⟩
+    ⟨cD * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) ((hWlen a n x hx).2.2.2.1.trans (hvu a W))⟩
   obtain ⟨A5, hA5⟩ : ∃ c, ∀ a n x, loopIterate body n a = some x →
       cC3 * ((encOpt (some x)).length + 1) ≤ c * (t a + s a + 1) :=
-    ⟨cC3 * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) (hWt a n x hx).2.2.1⟩
+    ⟨cC3 * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) ((hWlen a n x hx).2.2.1.trans (hvu a W))⟩
   obtain ⟨A6, hA6⟩ : ∃ c, ∀ a n x, loopIterate body n a = some x →
       cB * (t x + 1) ≤ c * (t a + s a + 1) :=
-    ⟨cB * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) (hWt a n x hx).2.2.2.2.2⟩
+    ⟨cB * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) (hWlen a n x hx).2.2.2.2.2⟩
   obtain ⟨A7, hA7⟩ : ∃ c, ∀ a n x, loopIterate body n a = some x →
       cI * (ci * ((enc x).length + 1) + 1) ≤ c * (t a + s a + 1) := by
     refine ⟨cI * (W + 1), fun a n x hx => nat_bound₁ (hu1 a) ?_⟩
@@ -671,7 +661,7 @@ public theorem computableInTimeAndSpace_loopFunction
         rcases hby : body y with _ | y'
         · exact absurd (by simp [hws, tapeWords_thd hT14 hT34, hby, hencBoolHead]) hflag
         · exact (hPCont a n ws').mpr ⟨y, y', hy, hby, hws⟩
-    · obtain ⟨w1, -, h2⟩ := hQ
+    · obtain ⟨_, -, h2⟩ := hQ
       exact h2
     · simp only [max_self]
       have e1 := hA1 a
@@ -741,7 +731,7 @@ public theorem computableInTimeAndSpace_loopFunction
         le_rfl le_rfl
     refine (transformsTapes_seq s1 s2 (fun _ _ _ _ h => h)).imp (fun _ _ h => h)
       (fun _ ws ws' hP hQ => ?_) ?_ ?_
-    · obtain ⟨w1, -, h2⟩ := hQ
+    · obtain ⟨_, -, h2⟩ := hQ
       exact h2
     · calc _ ≤ A7 * (t a + s a + 1) + A6 * (t a + s a + 1) :=
             Nat.add_le_add (hA7 a 0 a rfl) (hA6 a 0 a rfl)
@@ -760,7 +750,7 @@ public theorem computableInTimeAndSpace_loopFunction
     intro a
     refine (transformsTapes_seq (hPro a) (hMLoop a) (fun _ _ _ _ h => h)).imp (fun _ _ h => h)
       (fun _ ws ws' hP hQ => ?_) le_rfl le_rfl
-    obtain ⟨w1, -, h2⟩ := hQ
+    obtain ⟨_, -, h2⟩ := hQ
     exact h2
   obtain ⟨c₀, hc₀⟩ := computableInTimeAndSpace_of_transformsTapes T1 hMain
   -- ### The final bounds

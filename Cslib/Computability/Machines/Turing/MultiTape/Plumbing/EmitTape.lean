@@ -156,14 +156,10 @@ lemma runFrom_pos_range {w : List Symbol} (hw : W i = tapeOfList w) (m : ℕ)
   rcases Nat.lt_or_ge m (w.length + 1) with hlt | hge
   · have hml : m ≤ w.length := by omega
     rw [runFrom_scan hw m hml]
-    constructor
-    · simp only [cfg, Function.update_self]; omega
-    · simp only [cfg, Function.update_self]; omega
+    constructor <;> simp only [cfg, Function.update_self] <;> omega
   · obtain rfl : m = w.length + 1 := by omega
     rw [runFrom_full hw]
-    constructor
-    · simp only [cfg, Function.update_self]; omega
-    · simp only [cfg, Function.update_self]; omega
+    constructor <;> simp only [cfg, Function.update_self] <;> omega
 
 /-- No action of the machine writes to a work tape. -/
 lemma tr_write_none (q : Unit) (inp : Option Symbol) (work : Fin K → Option Symbol) (l : Fin K) :
@@ -380,17 +376,11 @@ lemma runFrom_pos_range (m : ℕ) (hm : m ≤ 2) :
       ((setCell i v).runFrom (cfg input i (some .go) ip W WP out 0) m).workTapePos i ≤ 0 := by
   rcases m with _ | _ | _ | m
   · rw [runFrom_zero]
-    constructor
-    · simp only [cfg, Function.update_self]; omega
-    · simp only [cfg, Function.update_self]; omega
+    constructor <;> simp only [cfg, Function.update_self] <;> omega
   · rw [runFrom_one]
-    constructor
-    · simp only [cfg, Function.update_self]; omega
-    · simp only [cfg, Function.update_self]; omega
+    constructor <;> simp only [cfg, Function.update_self] <;> omega
   · rw [runFrom_two]
-    constructor
-    · simp only [cfg, Function.update_self]; omega
-    · simp only [cfg, Function.update_self]; omega
+    constructor <;> simp only [cfg, Function.update_self] <;> omega
   · exact absurd hm (by omega)
 
 /-- No action of the machine moves the input head. -/

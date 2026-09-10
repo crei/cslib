@@ -306,14 +306,8 @@ public theorem exists_tidy {α β : Type*} {encIn : α ↪ List Bool} {encOut : 
     (((tmA.seq ((tm₀.instrument false).seq (tmC.seq (tmD.seq tmE)))).initCfg
       (encIn a)).withState (some tmA.q₀)) rfl
   -- the interval data, in usable form
-  have hL0' : ∀ j, L j ≤ 0 := by
-    intro j
-    have := hL0 j
-    simpa [Cfg.init] using this
-  have h0R' : ∀ j, 0 ≤ R j := by
-    intro j
-    have := h0R j
-    simpa [Cfg.init] using this
+  have hL0' : ∀ j, L j ≤ 0 := fun j => by simpa [Cfg.init] using hL0 j
+  have h0R' : ∀ j, 0 ≤ R j := fun j => by simpa [Cfg.init] using h0R j
   -- phases D and E, from any configuration with the right fields
   have hDE : ∀ (c : Cfg (k₀ + k₀) Bool (SD ⊕ SE) (encIn a)),
       c.state = some (tmD.seq tmE).q₀ →

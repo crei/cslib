@@ -471,61 +471,11 @@ private lemma wordsCfg_eq_embed {k k' : ℕ} {State : Type} (e : Fin k ↪ Fin k
   · funext l
     change (0 : ℤ) = _
     rcases hpi : partialInv e l with _ | j <;> simp [embed, hpi]
-
 /-- **Reindexing preserves being a tape transformer.** If `M` transforms tapes along `P`/`Q`, then
 `extendTapes M e` transforms them on the tapes selected by `e`, leaving the tapes outside the range
-of `e` untouched, in the same time and space plus one cell per added tape. -/
+of `e` carried through unchanged (as the postcondition records), in the same time and space plus one
+cell per added tape. -/
 public theorem transformsTapes_extendTapes {k k' : ℕ} {State : Type}
-    (e : Fin k ↪ Fin k') {M : MultiTapeTM k Bool State}
-    {P : (input : List Bool) → (Fin k → List Bool) → Prop}
-    {Q : (input : List Bool) → (Fin k → List Bool) → (Fin k → List Bool) → Prop}
-    {t s : ℕ} (h : TransformsTapes M P Q t s) :
-    TransformsTapes (extendTapes M e)
-      (fun input ws => P input (fun j => ws (e j)) ∧ ∀ l, (∀ j, e j ≠ l) → ws l = [])
-      (fun input ws ws' => Q input (fun j => ws (e j)) (fun j => ws' (e j)) ∧
-        ∀ l, (∀ j, e j ≠ l) → ws' l = ws l)
-      t (s + (k' - k)) := by
-  intro input ws out ⟨hP, hextra⟩
-  -- the start config, viewed through the embedding
-  have hstart : wordsCfg input (some (extendTapes M e).q₀) ws out =
-      embed e (wordsCfg input (some M.q₀) (fun j => ws (e j)) out)
-        (fun l => tapeOfList (ws l)) (fun _ => 0) :=
-    wordsCfg_eq_embed e input (some M.q₀) ws out
-  -- run the inner machine
-  obtain ⟨τ, hτ, ws', hrun, hQ, hsp⟩ :=
-    h input (fun j => ws (e j)) out hP
-  refine ⟨τ, hτ, fun l => match partialInv e l with | some j => ws' j | none => ws l, ?_, ?_, ?_⟩
-  · -- the run: the embedded halting config is a `wordsCfg`
-    rw [hstart, runFrom_embed, hrun]
-    refine Cfg.ext rfl rfl ?_ ?_ rfl
-    · funext l z
-      change (embed e (wordsCfg input (none : Option State) ws' out)
-        (fun l => tapeOfList (ws l)) (fun _ => 0)).workTapes l z =
-        (wordsCfg input (none : Option State)
-          (fun l => match partialInv e l with | some j => ws' j | none => ws l) out).workTapes l z
-      rcases hpi : partialInv e l with _ | j
-      · simp [embed, hpi]
-      · simp [embed, hpi, wordsCfg_workTapes]
-    · funext l
-      change (embed e (wordsCfg input (none : Option State) ws' out)
-        (fun l => tapeOfList (ws l)) (fun _ => 0)).workTapePos l = (0 : ℤ)
-      rcases hpi : partialInv e l with _ | j <;> simp [embed, hpi]
-  · -- the postcondition
-    refine ⟨?_, ?_⟩
-    · have : (fun j => (fun l => match partialInv e l with | some j => ws' j | none => ws l) (e j))
-          = ws' := by
-        funext j; simp only [partialInv_embed]
-      rw [this]; exact hQ
-    · intro l hl
-      simp only [partialInv_eq_none e (fun ⟨j, hj⟩ => hl j hj)]
-  · -- the space
-    rw [hstart]
-    exact le_trans (spaceUsed_embed_le M e _ _ _ τ) (Nat.add_le_add_right hsp _)
-
-/-- **Reindexing preserves being a tape transformer (relaxed precondition).** Same as
-`transformsTapes_extendTapes`, but the precondition no longer requires the tapes outside `range e`
-to be blank: those tapes are simply carried through unchanged, as the postcondition records. -/
-public theorem transformsTapes_extendTapes' {k k' : ℕ} {State : Type}
     (e : Fin k ↪ Fin k') {M : MultiTapeTM k Bool State}
     {P : (input : List Bool) → (Fin k → List Bool) → Prop}
     {Q : (input : List Bool) → (Fin k → List Bool) → (Fin k → List Bool) → Prop}
@@ -571,6 +521,30 @@ public theorem transformsTapes_extendTapes' {k k' : ℕ} {State : Type}
   · -- the space
     rw [hstart]
     exact le_trans (spaceUsed_embed_le M e _ _ _ τ) (Nat.add_le_add_right hsp _)
+
+/-- Reading a `Function.update` back through an embedding: if the words on the tapes selected by `e`
+form `Function.update … o₀ v` and every tape outside the range of `e` is unchanged, then the whole
+vector is `Function.update … o v`, where `o = e o₀`. -/
+private lemma update_of_embed_update {K k : ℕ} (e : Fin K ↪ Fin k)
+    (o₀ : Fin K) (o : Fin k) (heo : e o₀ = o)
+    (ws ws' : Fin k → List Bool) (v : List Bool)
+    (hQ1 : (fun j => ws' (e j)) = Function.update (fun j => ws (e j)) o₀ v)
+    (hQ2 : ∀ l, (∀ j, e j ≠ l) → ws' l = ws l) :
+    ws' = Function.update ws o v := by
+  funext l
+  by_cases hlo : l = o
+  · subst hlo
+    have hh := congrFun hQ1 o₀
+    simp only [heo, Function.update_self] at hh
+    rw [Function.update_self]; exact hh
+  · rw [Function.update_of_ne hlo]
+    by_cases hex : ∃ j, e j = l
+    · obtain ⟨j, rfl⟩ := hex
+      have hjo : j ≠ o₀ := by intro hj; apply hlo; rw [hj, heo]
+      have hh := congrFun hQ1 j
+      rw [Function.update_of_ne hjo] at hh
+      exact hh
+    · exact hQ2 l (fun j hj => hex ⟨j, hj⟩)
 
 /-- **Placement embedding (two pins).** Given distinct canonical indices `i₀ ≠ o₀` in `Fin K` and
 distinct target indices `i ≠ o` in `Fin k` avoiding a set `keep`, with enough room
@@ -752,7 +726,7 @@ public theorem exists_transformsTapes_ofComputable {α β : Type*} {enc : α ↪
   obtain ⟨e, hei, heo, hother⟩ :=
     exists_embed_placing i₀ o₀ hio₀ i o keep hio hik hok hroom'
   refine ⟨State₀, hfin₀, extendTapes tm₀ e, fun a => ?_⟩
-  refine (transformsTapes_extendTapes' e (hcanon a)).imp ?_ ?_ le_rfl ?_
+  refine (transformsTapes_extendTapes e (hcanon a)).imp ?_ ?_ le_rfl ?_
   · -- precondition: the general layout satisfies the embedded canonical precondition
     rintro input ws ⟨hwi, hwblank⟩
     refine ⟨?_, ?_⟩
@@ -769,20 +743,7 @@ public theorem exists_transformsTapes_ofComputable {α β : Type*} {enc : α ↪
         exact hwblank (e l') hne_i hmem2.2
   · -- postcondition: read the update back through the embedding
     rintro input ws ws' _ ⟨hQ1, hQ2⟩
-    funext l
-    by_cases hlo : l = o
-    · subst hlo
-      have hh := congrFun hQ1 o₀
-      simp only [heo, Function.update_self] at hh
-      rw [Function.update_self]; exact hh
-    · rw [Function.update_of_ne hlo]
-      by_cases hex : ∃ j, e j = l
-      · obtain ⟨j, rfl⟩ := hex
-        have hjo : j ≠ o₀ := by intro hj; apply hlo; rw [hj, heo]
-        have hh := congrFun hQ1 j
-        rw [Function.update_of_ne hjo] at hh
-        exact hh
-      · exact hQ2 l (fun j hj => hex ⟨j, hj⟩)
+    exact update_of_embed_update e o₀ o heo ws ws' _ hQ1 hQ2
   · -- space
     omega
 
@@ -809,7 +770,7 @@ public theorem exists_transformsTapes_ofComputableInput {α β : Type*} {enc : �
   have hroom' : K + keep.card ≤ k := by omega
   obtain ⟨e, heo, hother⟩ := exists_embed_placing_one o₀ o keep hok hroom'
   refine ⟨State₀, hfin₀, extendTapes tm₀ e, fun a => ?_⟩
-  refine (transformsTapes_extendTapes' e (hcanon a)).imp ?_ ?_ le_rfl ?_
+  refine (transformsTapes_extendTapes e (hcanon a)).imp ?_ ?_ le_rfl ?_
   · -- precondition
     rintro input ws ⟨hinput, hwblank⟩
     refine ⟨hinput, ?_⟩
@@ -822,20 +783,7 @@ public theorem exists_transformsTapes_ofComputableInput {α β : Type*} {enc : �
       exact hwblank (e l') hmem.2
   · -- postcondition
     rintro input ws ws' _ ⟨hQ1, hQ2⟩
-    funext l
-    by_cases hlo : l = o
-    · subst hlo
-      have hh := congrFun hQ1 o₀
-      simp only [heo, Function.update_self] at hh
-      rw [Function.update_self]; exact hh
-    · rw [Function.update_of_ne hlo]
-      by_cases hex : ∃ j, e j = l
-      · obtain ⟨j, rfl⟩ := hex
-        have hjo : j ≠ o₀ := by intro hj; apply hlo; rw [hj, heo]
-        have hh := congrFun hQ1 j
-        rw [Function.update_of_ne hjo] at hh
-        exact hh
-      · exact hQ2 l (fun j hj => hex ⟨j, hj⟩)
+    exact update_of_embed_update e o₀ o heo ws ws' _ hQ1 hQ2
   · -- space
     omega
 
