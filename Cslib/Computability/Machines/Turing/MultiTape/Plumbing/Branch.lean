@@ -66,13 +66,11 @@ variable {i : Fin k} {x : Bool} {tm₁ : MultiTapeTM k Bool S₁} {tm₂ : Multi
 /-- A configuration of `tm₁`, embedded into the branching machine: a halted state stays halted, a
 live state is carried by `Sum.inl`. -/
 private def leftCfg (cfg : Cfg k Bool S₁ input) : Cfg k Bool (Option (S₁ ⊕ S₂)) input :=
-  ⟨cfg.state.map (fun s => (some (Sum.inl s) : Option (S₁ ⊕ S₂))), cfg.inputPos, cfg.workTapes,
-    cfg.workTapePos, cfg.output⟩
+  cfg.mapState (Option.map (fun s => (some (Sum.inl s) : Option (S₁ ⊕ S₂))))
 
 /-- A configuration of `tm₂`, embedded into the branching machine. -/
 private def rightCfg (cfg : Cfg k Bool S₂ input) : Cfg k Bool (Option (S₁ ⊕ S₂)) input :=
-  ⟨cfg.state.map (fun s => (some (Sum.inr s) : Option (S₁ ⊕ S₂))), cfg.inputPos, cfg.workTapes,
-    cfg.workTapePos, cfg.output⟩
+  cfg.mapState (Option.map (fun s => (some (Sum.inr s) : Option (S₁ ⊕ S₂))))
 
 @[simp]
 private lemma workTapePos_leftCfg (cfg : Cfg k Bool S₁ input) :
@@ -132,8 +130,8 @@ private lemma step_start_left (ws : Fin k → List Bool) (out : List Bool)
       some none := rfl
   rw [step_apply_of_state hstate]
   refine Cfg.ext ?_ ?_ ?_ ?_ ?_ <;>
-    simp [branch, Cfg.workTapeSymbols, tapeOfList_zero, h, leftCfg, wordsCfg, Action.apply,
-      SignType.cast]
+    simp [branch, Cfg.workTapeSymbols, tapeOfList_zero, h, leftCfg, Cfg.mapState, wordsCfg,
+      Action.apply, SignType.cast]
 
 /-- The dispatch step when the symbol under tape `i` is not `some x`: it lands on `tm₂`'s initial
 configuration, embedded on the right. -/
@@ -145,8 +143,8 @@ private lemma step_start_right (ws : Fin k → List Bool) (out : List Bool)
       some none := rfl
   rw [step_apply_of_state hstate]
   refine Cfg.ext ?_ ?_ ?_ ?_ ?_ <;>
-    simp [branch, Cfg.workTapeSymbols, tapeOfList_zero, h, rightCfg, wordsCfg, Action.apply,
-      SignType.cast]
+    simp [branch, Cfg.workTapeSymbols, tapeOfList_zero, h, rightCfg, Cfg.mapState, wordsCfg,
+      Action.apply, SignType.cast]
 
 /-- The full run when the symbol under tape `i` is `some x`: after the dispatch step the machine
 mirrors `tm₁` step for step, so `τ + 1` steps of the branching machine are one dispatch step

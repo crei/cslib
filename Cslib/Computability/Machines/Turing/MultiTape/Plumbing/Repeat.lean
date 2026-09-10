@@ -70,7 +70,7 @@ variable {i : Fin k} {x : Bool} {tm : MultiTapeTM k Bool State₀}
 check state `Sum.inr ()`, a live state is carried by `Sum.inl`.  Under this map the machine mirrors
 `tm` step for step while `tm` is live, and lands on the check state exactly when `tm` halts. -/
 private def leftCfg (cfg : Cfg k Bool State₀ input) : Cfg k Bool (State₀ ⊕ Unit) input :=
-  ⟨some (cfg.state.elim (.inr ()) .inl), cfg.inputPos, cfg.workTapes, cfg.workTapePos, cfg.output⟩
+  cfg.mapState (fun st => some (st.elim (.inr ()) .inl))
 
 @[simp]
 private lemma workTapePos_leftCfg (cfg : Cfg k Bool State₀ input) :
@@ -84,7 +84,8 @@ private lemma leftCfg_wordsCfg (q : Option State₀) (ws : Fin k → List Bool) 
 private lemma step_leftCfg (cfg : Cfg k Bool State₀ input) (h : cfg.state ≠ none) :
     (repeatTM i x tm).step (leftCfg cfg) = leftCfg (tm.step cfg) := by
   obtain ⟨q, hq⟩ := Option.ne_none_iff_exists'.mp h
-  have h1 : (leftCfg cfg).state = some (Sum.inl q : State₀ ⊕ Unit) := by simp [leftCfg, hq]
+  have h1 : (leftCfg cfg).state = some (Sum.inl q : State₀ ⊕ Unit) := by
+    simp [leftCfg, Cfg.mapState, hq]
   simp only [step, h1, hq]
   rfl
 

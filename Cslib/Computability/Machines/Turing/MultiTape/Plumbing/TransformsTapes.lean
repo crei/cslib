@@ -91,6 +91,12 @@ public def wordsCfg (input : List Symbol) (q : Option State)
     (ws : Fin k → List Symbol) (out : List Symbol) : Cfg k Symbol State input :=
   ⟨q, 1, fun i => tapeOfList (ws i), fun _ => 0, out⟩
 
+/-- Remapping the state of a `wordsCfg` remaps its state and leaves the words alone. -/
+@[simp]
+public lemma mapState_wordsCfg {State' : Type*} (φ : Option State → Option State')
+    (input : List Symbol) (q : Option State) (ws : Fin k → List Symbol) (out : List Symbol) :
+    (wordsCfg input q ws out).mapState φ = wordsCfg input (φ q) ws out := rfl
+
 /-- The initial configuration is the word configuration with blank tapes and no output. -/
 public lemma initCfg_eq_wordsCfg (tm : MultiTapeTM k Symbol State) (input : List Symbol) :
     tm.initCfg input = wordsCfg input (some tm.q₀) (fun _ => []) [] := by

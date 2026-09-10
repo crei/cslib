@@ -194,6 +194,14 @@ abbrev Cfg.Halted (cfg : Cfg k Symbol State input) : Prop := cfg.state = none
     Cfg k Symbol State input :=
   ⟨c.state, c.inputPos, c.workTapes, c.workTapePos, out⟩
 
+/-- Remap the (optional) state of a configuration through `φ`, leaving the input head, the work
+tapes, the work-tape heads and the output alone. The control-flow combinators (`seq`, `branch`,
+`repeat`) embed a sub-machine's configurations into the combined machine by exactly such a state
+remap. -/
+@[simps] def Cfg.mapState {State' : Type*} (φ : Option State → Option State')
+    (c : Cfg k Symbol State input) : Cfg k Symbol State' input :=
+  ⟨φ c.state, c.inputPos, c.workTapes, c.workTapePos, c.output⟩
+
 /-- The initial configuration for a starting state and an input string. -/
 @[simp]
 def Cfg.init (q₀ : State) (input : List Symbol) : Cfg k Symbol State input :=

@@ -56,20 +56,19 @@ the initial state of the second phase. Under this map, the whole first phase of 
 run of `tm₀`, *including* its halting step. -/
 @[expose] public def leftCfg (tm₁ : MultiTapeTM k Symbol State₁) (cfg : Cfg k Symbol State₀ input) :
     Cfg k Symbol (State₀ ⊕ State₁) input :=
-  ⟨some (cfg.state.elim (.inr tm₁.q₀) .inl), cfg.inputPos, cfg.workTapes, cfg.workTapePos,
-    cfg.output⟩
+  cfg.mapState (fun st => some (st.elim (.inr tm₁.q₀) .inl))
 
 /-- A configuration of the second phase. Under this map, the second phase of `seq` mirrors the
 run of `tm₁`. -/
 @[expose] public def rightCfg (cfg : Cfg k Symbol State₁ input) :
     Cfg k Symbol (State₀ ⊕ State₁) input :=
-  ⟨cfg.state.map .inr, cfg.inputPos, cfg.workTapes, cfg.workTapePos, cfg.output⟩
+  cfg.mapState (Option.map .inr)
 
 public lemma step_leftCfg (cfg : Cfg k Symbol State₀ input) (h : cfg.state ≠ none) :
     (tm₀.seq tm₁).step (leftCfg tm₁ cfg) = leftCfg tm₁ (tm₀.step cfg) := by
   obtain ⟨q, hq⟩ := Option.ne_none_iff_exists'.mp h
   have h1 : (leftCfg tm₁ cfg).state = some (Sum.inl q : State₀ ⊕ State₁) := by
-    simp [leftCfg, hq]
+    simp [leftCfg, Cfg.mapState, hq]
   simp only [step, h1, hq]
   rfl
 
@@ -77,7 +76,7 @@ public lemma step_rightCfg (cfg : Cfg k Symbol State₁ input) :
     (tm₀.seq tm₁).step (rightCfg cfg) = rightCfg (tm₁.step cfg) := by
   cases hq : cfg.state with
   | none =>
-    have h1 : (rightCfg (State₀ := State₀) cfg).state = none := by simp [rightCfg, hq]
+    have h1 : (rightCfg (State₀ := State₀) cfg).state = none := by simp [rightCfg, Cfg.mapState, hq]
     simp only [step, h1, hq]
   | some q =>
     have h1 : (rightCfg (State₀ := State₀) cfg).state = some (Sum.inr q : State₀ ⊕ State₁) := by
@@ -200,7 +199,7 @@ public lemma seq_spec {tm₁ : MultiTapeTM K Sym S₁} {tm₂ : MultiTapeTM K Sy
   have hmid : (tm₁.seq tm₂).runFrom c u₁ = rightCfg (c₁.withState (some tm₂.q₀)) := by
     rw [hleft u₁ le_rfl, h₁]
     refine Cfg.ext ?_ rfl rfl rfl rfl
-    simp [leftCfg, rightCfg, Cfg.withState, h₁halt]
+    simp [leftCfg, rightCfg, Cfg.mapState, Cfg.withState, h₁halt]
   have hright : ∀ m, (tm₁.seq tm₂).runFrom c (u₁ + m) =
       rightCfg (tm₂.runFrom (c₁.withState (some tm₂.q₀)) m) := by
     intro m
@@ -216,7 +215,7 @@ public lemma seq_spec {tm₁ : MultiTapeTM K Sym S₁} {tm₂ : MultiTapeTM K Sy
     · obtain ⟨m', rfl⟩ : ∃ m', m = u₁ + m' := ⟨m - u₁, by omega⟩
       rw [hright m']
       have h := h₂act m' (by omega)
-      simpa only [rightCfg, ne_eq, Option.map_eq_none_iff] using h
+      simpa only [rightCfg, Cfg.mapState_state, ne_eq, Option.map_eq_none_iff] using h
   · refine le_trans (spaceUsed_add_le _ _ _) (Nat.add_le_add ?_ ?_)
     · refine le_trans (le_of_eq (spaceUsed_eq_of_workTapePos _ _ u₁ fun m hm => ?_)) h₁sp
       rw [hleft m hm]
