@@ -18,65 +18,46 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Id
 /-!
 # Complexity of a case analysis
 
-A case analysis runs a machine that says which case holds and then continues with the machine for
-that case. This file has one primitive, `computableInTimeAndSpace_match`, which does exactly that
-for a scrutinee in an arbitrary finite type; `cond`, `ite` and `dite` are the instances at `Bool`.
+A case analysis chooses which of several machines to continue with. Everything here is built at the
+function level on a single machine-level atom — `computableInTimeAndSpace_iteFirstBit`, the branch
+on the input's first encoded bit — together with the reusable atoms
+`computableInTimeAndSpace_concat` (concatenate two outputs), `computableInTimeAndSpace_drop` (strip
+a prefix) and function composition.
 
-## Why the finite case is the primitive and not the binary one
+## The one machine atom, and why the branch not taken is never run
 
-Lean's `ite` is not primitive: `ite c t e` is `Decidable.casesOn`, the recursor of the two
-constructor inductive `Decidable c`, whose constructors carry only proofs. Since `Prop` is erased,
-the computational content of `ite` is exactly the recursor of `Bool`, and a `match` on a finite
-inductive type is that recursor nested once per constructor. So `Bool.rec` is the primitive of the
-*elaborator*.
+`iteFirstBit` reads the first symbol of the input directly and, before it has run anything, jumps
+to `g`'s machine or `h`'s machine; that machine then reads the whole input in place and emits its
+result *straight to the real output tape*. Only one arm ever runs, and its result is never parked on
+a work tape — so there is no time term in the space bound, and nesting `n` conditionals runs `n`
+arms, not
+`2 ^ n`. This laziness is the content of a case analysis, and it cannot come from composing total
+functions (`cond ∘ (fun a => (c a, f a, g a))` would compute every branch), which is why one
+machine-level branch is unavoidable. It is the only one this file needs.
 
-It is not the right primitive here, because a machine does not nest. Deciding among `n` cases is
-one machine reading a scrutinee of constant length and dispatching from its finite control, which
-is no harder than deciding among two; the nesting is a fiction that the machine never performs.
-Building the finite case analysis out of the binary one therefore does not decompose it into
-anything simpler — it only replays `n - 1` copies of the same argument, and each replay multiplies
-the constants, so the bounds have to be renormalised into a fixed shape at every step to make the
-induction go through. Taking the finite case as the primitive deletes all of that: what remains of
-the arithmetic is three weakenings.
+## From the atom to `cond`, `ite`, `dite` and `match`
 
-The two are equivalent up to constant factors in both directions, so there is no loss. Tests for
-individual cases, which is what the binary form consumes, and the tag itself, which is what this
-one consumes, are interderivable at constant cost: the tag gives every test by one composition
-with a function on a finite type, and the tests give the tag by running all `n` of them. There is
-consequently no reason to state both.
+`iteFirstBit` branches on the input's first bit; `cond sel g h` branches on `sel a`, which is not
+the input's first bit. The gap is closed entirely with the other atoms: the selector's bit is
+concatenated ahead of the input to form a tagged value whose encoding starts with `sel a`, the
+branch reads that bit, each arm strips the tag with `drop 1` before running its branch, and the
+tagging is undone on the way in by one composition. `ite` and `dite` are `cond` read through
+`decide`; the finite `match` is a `Finset` induction that splices in one `cond` per case.
 
-## Why this has to be a combinator
+## Bounds
 
-`cond` is a perfectly ordinary computable *function*: as a map `Bool × β × β → β` it reads a tag
-and streams out the component it selects, in linear time and no space. But that function does not
-give the case analysis, because
-
-```
-fun a => if c a then f a else g a  =  cond ∘ (fun a => (c a, f a, g a))
-```
-
-computes *both* `f a` and `g a`. That costs `tf + tg` instead of `max tf tg`, it stores both
-encoded results on work tapes, and — the real problem — nesting `n` conditionals evaluates `2 ^ n`
-branches instead of `n`. The content of a case analysis is that the branch not taken is never run,
-and that laziness is not expressible by composing total functions: the machine has to choose before
-it runs, which is why this is a combinator with a machine-level branch behind it and not a
-consequence of `computableInTimeAndSpace_comp`.
-
-## The streaming dispatch
-
-The space bound has no time term in it — a machine computing all the branches would have to park
-their encoded outputs on work tapes, and an output's length is bounded only by the time that
-produced it, so its space would be `s a + t a`. What buys the pure `s a` is that the branch taken
-emits its result *straight to the real output tape*, never parking it. That is why the branch is
-run by the streaming dispatch `exists_branch_run`, whose arm is allowed to emit, rather than by the
-output-preserving `computableInTimeAndSpace_of_transformsTapes`. The scrutinee, by contrast, ranges
-over finitely many values whose encodings have a constant bound on their length, so materialising
-it on a work tape costs only `O(1)` space; here it is a single symbol.
+Bounds here are deliberately relaxed to a single shape, `c * (… + 1)`: nothing downstream depends on
+the conditional family being tight (`loop` and `comp` do not use it), and the function-level
+construction spends constant factors freely. The space bound still carries no *time* term, because
+the branch taken streams to the output; it does pick up the constant-factor and input-length slack
+that composition introduces.
 
 ## Main results
 
-* `Turing.MultiTapeTM.computableInTimeAndSpace_match`: the primitive, a case analysis on a
-  scrutinee in a finite type. See `CslibTests.Complexity.Combinators` for worked examples.
+* `Turing.MultiTapeTM.computableInTimeAndSpace_iteFirstBit`: the machine atom, the branch on the
+  input's first encoded bit.
+* `Turing.MultiTapeTM.computableInTimeAndSpace_match`: a case analysis on a scrutinee in a finite
+  type. See `CslibTests.Complexity.Combinators` for worked examples.
 * `Turing.MultiTapeTM.computableInTimeAndSpace_cond`: the recursor of `Bool`.
 * `Turing.MultiTapeTM.computableInTimeAndSpace_ite`: Lean's `ite`, for a decidable predicate.
 * `Turing.MultiTapeTM.computableInTimeAndSpace_dite`: Lean's `dite`, whose branches are defined
