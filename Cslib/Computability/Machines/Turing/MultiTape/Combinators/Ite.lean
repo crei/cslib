@@ -95,23 +95,15 @@ public def boolEnc : Bool ↪ List Bool := ⟨fun b => [b], by intro a b h; simp
 run of the underlying machine, seen through the tape embedding. This is the decomposition of a
 word configuration into an embedded configuration: the tapes in the range carry the machine's own
 (here blank) words, the tapes outside it are carried through as extra tapes. -/
-private lemma wordsCfg_eq_embed {k kr : ℕ} {Sr : Type}
+private lemma wordsCfg_eq_embed_blank {k kr : ℕ} {Sr : Type}
     (tmr : MultiTapeTM kr Bool Sr) (er : Fin kr ↪ Fin k) (input : List Bool)
     (ws : Fin k → List Bool) (out : List Bool) (hblank : ∀ j, ws (er j) = []) :
     wordsCfg input (some (extendTapes tmr er).q₀) ws out =
       embed er (wordsCfg input (some tmr.q₀) (fun _ => []) out)
         (fun l => tapeOfList (ws l)) (fun _ => 0) := by
-  refine Cfg.ext rfl rfl ?_ ?_ rfl
-  · funext l
-    rcases hp : partialInv er l with _ | j
-    · simp only [embed, hp, wordsCfg]
-    · rw [← partialInv_eq_some er hp, embed_workTapes_embed]
-      simp only [wordsCfg, hblank j]
-  · funext l
-    rcases hp : partialInv er l with _ | j
-    · simp only [embed, hp, wordsCfg]
-    · rw [← partialInv_eq_some er hp, embed_workTapePos_embed]
-      simp only [wordsCfg]
+  change wordsCfg input (some tmr.q₀) ws out = _
+  rw [wordsCfg_eq_embed er input (some tmr.q₀) ws out,
+    show (fun j => ws (er j)) = (fun _ => []) from funext hblank]
 
 /-- **Phase two of the case analysis: run the chosen arm to completion.** Given the streaming
 dispatch's guarantee for one arm — that after the dispatch step the combined machine's output,
@@ -147,7 +139,7 @@ private lemma exists_arm_run {k kr : ℕ} {Sr Sd : Type}
       (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br =
       embed er (tmr.runFrom (wordsCfg input (some tmr.q₀) (fun _ => []) []) τ_br)
         (fun l => tapeOfList (ws' l)) (fun _ => 0) := by
-    rw [wordsCfg_eq_embed tmr er input ws' [] hblank, runFrom_embed]
+    rw [wordsCfg_eq_embed_blank tmr er input ws' [] hblank, runFrom_embed]
   -- the embedded arm's output and halting are the raw arm's
   have hEout : ((extendTapes tmr er).runFrom
       (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br).output = O := by
@@ -167,7 +159,7 @@ private lemma exists_arm_run {k kr : ℕ} {Sr Sd : Type}
   -- the embedded arm's space is the raw arm's plus the extra tapes
   have hEsp : (extendTapes tmr er).spaceUsed
       (wordsCfg input (some (extendTapes tmr er).q₀) ws' []) τ_br ≤ s_br + k := by
-    rw [wordsCfg_eq_embed tmr er input ws' [] hblank]
+    rw [wordsCfg_eq_embed_blank tmr er input ws' [] hblank]
     refine le_trans (spaceUsed_embed_le tmr er _ _ _ τ_br) ?_
     have h1 : tmr.spaceUsed (wordsCfg input (some tmr.q₀) (fun _ => []) []) τ_br ≤ s_br := by
       rw [← hinit]; exact hsp

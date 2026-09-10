@@ -468,7 +468,7 @@ public theorem computableInTimeAndSpace_of_transformsTapes {K : ℕ} {State : Ty
 
 /-- A `wordsCfg` over `k'` tapes, viewed as the `k`-tape `wordsCfg` on the tapes selected by `e`,
 embedded with the remaining tapes carrying the leftover words. -/
-private lemma wordsCfg_eq_embed {k k' : ℕ} {State : Type} (e : Fin k ↪ Fin k')
+public lemma wordsCfg_eq_embed {k k' : ℕ} {State : Type} (e : Fin k ↪ Fin k')
     (input : List Bool) (q : Option State) (ws : Fin k' → List Bool) (out : List Bool) :
     wordsCfg input q ws out =
       embed e (wordsCfg input q (fun j => ws (e j)) out)
