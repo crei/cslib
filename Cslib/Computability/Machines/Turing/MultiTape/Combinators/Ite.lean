@@ -9,6 +9,8 @@ module
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Comp
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.AlmostConstant
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Branch
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.InputBranch
+public import Cslib.Computability.Machines.Turing.MultiTape.NormalForms.Adapters
 
 /-!
 # Complexity of a case analysis
@@ -172,6 +174,87 @@ private lemma exists_arm_run {k kr : ℕ} {Sr Sd : Type}
   refine ⟨u₂, hu₂le, hu₂halt, hu₂act, ?_, ?_⟩
   · rw [← hDout]; exact (runFrom_output_eq_of_halt tmd _ hu₂le hu₂halt).symm
   · exact le_trans (spaceUsed_mono tmd _ hu₂le) hDsp
+
+/-- **The elementary two-way branch on the input's first symbol.** If `g` and `h` are computable,
+then so is the function that runs `g` when the input's first encoded symbol is `some true` and `h`
+otherwise. The dispatch reads the input directly, so both arms then read the whole input in place
+and emit their result straight to the real output tape — no scrutinee is materialised, and there is
+no time term in the space bound.
+
+This is the atom on which the whole conditional family is rebuilt: `cond`, `ite`, `dite` and the
+finite `match` all reduce to it by tagging the input with a selector bit and stripping the tag in
+each arm. -/
+public theorem computableInTimeAndSpace_iteFirstBit {g h : α → β}
+    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {tg sg th sh : α → ℕ}
+    (hg : ComputableInTimeAndSpace g encIn encOut tg sg)
+    (hh : ComputableInTimeAndSpace h encIn encOut th sh) :
+    ∃ c, ComputableInTimeAndSpace
+      (fun a => if (encIn a).head? = some true then g a else h a) encIn encOut
+      (fun a => c * (tg a + th a + 1)) (fun a => c * (sg a + sh a + 1)) := by
+  classical
+  obtain ⟨kg, Sg, hSg, tmg, Hg⟩ := hg
+  obtain ⟨kh, Sh, hSh, tmh, Hh⟩ := hh
+  set K := kg + kh with hK
+  -- the two branch machines live on disjoint blocks of a shared `K`-tape layout
+  let e_g : Fin kg ↪ Fin K :=
+    ⟨fun j => ⟨j.val, by have := j.isLt; omega⟩,
+      fun a b hab => Fin.ext (by have := congrArg Fin.val hab; simpa using this)⟩
+  let e_h : Fin kh ↪ Fin K :=
+    ⟨fun j => ⟨kg + j.val, by have := j.isLt; omega⟩,
+      fun a b hab => Fin.ext (by have := congrArg Fin.val hab; simpa using this)⟩
+  -- the streaming input-dispatch between the two (embedded) branch machines
+  obtain ⟨Sd, hSd, tmd, Hd⟩ :=
+    exists_inputBranch_run true (extendTapes tmg e_g) (extendTapes tmh e_h)
+  refine ⟨2 * K + 1, K, Sd, hSd, tmd, fun a => ?_⟩
+  -- reduce to running the chosen arm to completion on all-blank work tapes
+  by_cases hb : (encIn a).head? = some true
+  · -- the input starts with `true`: run `g`'s machine
+    obtain ⟨t'g, ht'gle, s'g, hs'gle, hgstate, hgout, hgsp⟩ := Hg a
+    obtain ⟨u₂, hu₂le, hu₂halt, hu₂act, hu₂out, hu₂sp⟩ :=
+      exists_arm_run (er := e_g) (fun _ => rfl)
+        ((Hd (encIn a) (fun _ => []) [] t'g).1 hb) hgstate hgout hgsp.le
+    refine ⟨u₂, ?_, tmd.spaceUsed (tmd.initCfg (encIn a)) u₂, ?_, ?_, ?_, ?_⟩
+    · -- time: `u₂ ≤ t'g + 1 ≤ tg a + 1`
+      have hu : u₂ ≤ tg a + 1 := by omega
+      have h2 : tg a + 1 ≤ tg a + th a + 1 := by omega
+      exact le_trans hu (le_trans h2 (Nat.le_mul_of_pos_left _ (by omega)))
+    · -- space: `≤ s'g + 2K ≤ sg a + 2K`
+      show tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (sg a + sh a + 1)
+      have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ sg a + 2 * K := by
+        rw [initCfg_eq_wordsCfg]; exact le_trans hu₂sp (by omega)
+      refine le_trans hle ?_
+      have hexp : (2 * K + 1) * (sg a + sh a + 1) =
+          (2 * K + 1) * (sg a + sh a) + (2 * K + 1) := Nat.mul_succ _ _
+      have hge : sg a ≤ (2 * K + 1) * (sg a + sh a) := by
+        have h2 : sg a + sh a ≤ (2 * K + 1) * (sg a + sh a) :=
+          Nat.le_mul_of_pos_left _ (by omega)
+        omega
+      omega
+    · rw [initCfg_eq_wordsCfg]; exact hu₂halt
+    · rw [initCfg_eq_wordsCfg, hu₂out]; simp [hb]
+    · rfl
+  · -- otherwise: run `h`'s machine
+    obtain ⟨t'h, ht'hle, s'h, hs'hle, hhstate, hhout, hhsp⟩ := Hh a
+    obtain ⟨u₂, hu₂le, hu₂halt, hu₂act, hu₂out, hu₂sp⟩ :=
+      exists_arm_run (er := e_h) (fun _ => rfl)
+        ((Hd (encIn a) (fun _ => []) [] t'h).2 hb) hhstate hhout hhsp.le
+    refine ⟨u₂, ?_, tmd.spaceUsed (tmd.initCfg (encIn a)) u₂, ?_, ?_, ?_, ?_⟩
+    · have : u₂ ≤ th a + 1 := by omega
+      exact le_trans this (le_trans (by omega) (Nat.le_mul_of_pos_left _ (by omega)))
+    · show tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (sg a + sh a + 1)
+      have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ sh a + 2 * K := by
+        rw [initCfg_eq_wordsCfg]; exact le_trans hu₂sp (by omega)
+      refine le_trans hle ?_
+      have hexp : (2 * K + 1) * (sg a + sh a + 1) =
+          (2 * K + 1) * (sg a + sh a) + (2 * K + 1) := Nat.mul_succ _ _
+      have hge : sh a ≤ (2 * K + 1) * (sg a + sh a) := by
+        have h2 : sg a + sh a ≤ (2 * K + 1) * (sg a + sh a) :=
+          Nat.le_mul_of_pos_left _ (by omega)
+        omega
+      omega
+    · rw [initCfg_eq_wordsCfg]; exact hu₂halt
+    · rw [initCfg_eq_wordsCfg, hu₂out]; simp [hb]
+    · rfl
 
 /-- **Complexity of a two-way case analysis**, the recursor of `Bool`. If the scrutinee and both
 branches are computable, then so is the case analysis `bif sel a then g a else h a`, in time the
