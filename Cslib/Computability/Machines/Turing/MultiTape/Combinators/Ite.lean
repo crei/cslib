@@ -168,12 +168,12 @@ This is the atom on which the whole conditional family is rebuilt: `cond`, `ite`
 finite `match` all reduce to it by tagging the input with a selector bit and stripping the tag in
 each arm. -/
 public theorem computableInTimeAndSpace_iteFirstBit {g h : α → β}
-    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {tg sg th sh : α → ℕ}
-    (hg : ComputableInTimeAndSpace g encIn encOut tg sg)
-    (hh : ComputableInTimeAndSpace h encIn encOut th sh) :
+    {encIn : α ↪ List Bool} {encOut : β ↪ List Bool} {t s : α → ℕ}
+    (hg : ComputableInTimeAndSpace g encIn encOut t s)
+    (hh : ComputableInTimeAndSpace h encIn encOut t s) :
     ∃ c, ComputableInTimeAndSpace
       (fun a => if (encIn a).head? = some true then g a else h a) encIn encOut
-      (fun a => c * (tg a + th a + 1)) (fun a => c * (sg a + sh a + 1)) := by
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
   classical
   obtain ⟨kg, Sg, hSg, tmg, Hg⟩ := hg
   obtain ⟨kh, Sh, hSh, tmh, Hh⟩ := hh
@@ -197,21 +197,14 @@ public theorem computableInTimeAndSpace_iteFirstBit {g h : α → β}
       exists_arm_run (er := e_g) (fun _ => rfl)
         ((Hd (encIn a) (fun _ => []) [] t'g).1 hb) hgstate hgout hgsp.le
     refine ⟨u₂, ?_, tmd.spaceUsed (tmd.initCfg (encIn a)) u₂, ?_, ?_, ?_, ?_⟩
-    · -- time: `u₂ ≤ t'g + 1 ≤ tg a + 1`
-      have hu : u₂ ≤ tg a + 1 := by omega
-      have h2 : tg a + 1 ≤ tg a + th a + 1 := by omega
-      exact le_trans hu (le_trans h2 (Nat.le_mul_of_pos_left _ (by omega)))
-    · -- space: `≤ s'g + 2K ≤ sg a + 2K`
-      change tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (sg a + sh a + 1)
-      have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ sg a + 2 * K := by
+    · have hu : u₂ ≤ t a + 1 := by omega
+      exact le_trans hu (Nat.le_mul_of_pos_left _ (by omega))
+    · change tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (s a + 1)
+      have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ s a + 2 * K := by
         rw [initCfg_eq_wordsCfg]; exact le_trans hu₂sp (by omega)
       refine le_trans hle ?_
-      have hexp : (2 * K + 1) * (sg a + sh a + 1) =
-          (2 * K + 1) * (sg a + sh a) + (2 * K + 1) := Nat.mul_succ _ _
-      have hge : sg a ≤ (2 * K + 1) * (sg a + sh a) := by
-        have h2 : sg a + sh a ≤ (2 * K + 1) * (sg a + sh a) :=
-          Nat.le_mul_of_pos_left _ (by omega)
-        omega
+      have hexp : (2 * K + 1) * (s a + 1) = (2 * K + 1) * (s a) + (2 * K + 1) := Nat.mul_succ _ _
+      have hge : s a ≤ (2 * K + 1) * (s a) := Nat.le_mul_of_pos_left _ (by omega)
       omega
     · rw [initCfg_eq_wordsCfg]; exact hu₂halt
     · rw [initCfg_eq_wordsCfg, hu₂out]; simp [hb]
@@ -222,18 +215,14 @@ public theorem computableInTimeAndSpace_iteFirstBit {g h : α → β}
       exists_arm_run (er := e_h) (fun _ => rfl)
         ((Hd (encIn a) (fun _ => []) [] t'h).2 hb) hhstate hhout hhsp.le
     refine ⟨u₂, ?_, tmd.spaceUsed (tmd.initCfg (encIn a)) u₂, ?_, ?_, ?_, ?_⟩
-    · have : u₂ ≤ th a + 1 := by omega
-      exact le_trans this (le_trans (by omega) (Nat.le_mul_of_pos_left _ (by omega)))
-    · change tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (sg a + sh a + 1)
-      have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ sh a + 2 * K := by
+    · have hu : u₂ ≤ t a + 1 := by omega
+      exact le_trans hu (Nat.le_mul_of_pos_left _ (by omega))
+    · change tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ (2 * K + 1) * (s a + 1)
+      have hle : tmd.spaceUsed (tmd.initCfg (encIn a)) u₂ ≤ s a + 2 * K := by
         rw [initCfg_eq_wordsCfg]; exact le_trans hu₂sp (by omega)
       refine le_trans hle ?_
-      have hexp : (2 * K + 1) * (sg a + sh a + 1) =
-          (2 * K + 1) * (sg a + sh a) + (2 * K + 1) := Nat.mul_succ _ _
-      have hge : sh a ≤ (2 * K + 1) * (sg a + sh a) := by
-        have h2 : sg a + sh a ≤ (2 * K + 1) * (sg a + sh a) :=
-          Nat.le_mul_of_pos_left _ (by omega)
-        omega
+      have hexp : (2 * K + 1) * (s a + 1) = (2 * K + 1) * (s a) + (2 * K + 1) := Nat.mul_succ _ _
+      have hge : s a ≤ (2 * K + 1) * (s a) := Nat.le_mul_of_pos_left _ (by omega)
       omega
     · rw [initCfg_eq_wordsCfg]; exact hu₂halt
     · rw [initCfg_eq_wordsCfg, hu₂out]; simp [hb]
@@ -341,16 +330,19 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → �
   obtain ⟨ch', hh'⟩ :=
     norm_comp (P := P) huntag_n helse_n (fun a => le_trans (hLin a) (Nat.le_succ _))
   -- branch on the first (tag) bit of the tagged input
-  obtain ⟨ci, hite⟩ := computableInTimeAndSpace_iteFirstBit hg' hh'
+  obtain ⟨ci, hite⟩ := computableInTimeAndSpace_iteFirstBit
+    (hg'.mono (fun a => Nat.mul_le_mul (Nat.le_add_right cg' ch') le_rfl)
+      (fun a => Nat.mul_le_mul (Nat.le_add_right cg' ch') le_rfl))
+    (hh'.mono (fun a => Nat.mul_le_mul (Nat.le_add_left ch' cg') le_rfl)
+      (fun a => Nat.mul_le_mul (Nat.le_add_left ch' cg') le_rfl))
   have hite_n : ComputableInTimeAndSpace
       (fun a => if (encTag a).head? = some true then g a else h a) encTag encOut
       (fun a => (ci * (cg' + ch' + 1)) * (P a + 1))
       (fun a => (ci * (cg' + ch' + 1)) * (P a + 1)) := by
     refine hite.mono (fun a => ?_) (fun a => ?_) <;>
       · rw [Nat.mul_assoc]; refine Nat.mul_le_mul_left ci ?_
-        have hexp : (cg' + ch' + 1) * (P a + 1) =
-            cg' * (P a + 1) + ch' * (P a + 1) + (P a + 1) := by
-          rw [Nat.add_mul, Nat.add_mul, Nat.one_mul]
+        have hexp : (cg' + ch' + 1) * (P a + 1) = (cg' + ch') * (P a + 1) + (P a + 1) := by
+          rw [Nat.add_mul, Nat.one_mul]
         omega
   -- undo the tagging on the way in, then read off the case analysis
   obtain ⟨cf, hfinal⟩ := norm_comp (P := P) htag_n hite_n hLtag
