@@ -118,7 +118,7 @@ dispatch's guarantee for one arm — that after the dispatch step the combined m
 halting and space are the embedded arm's — and the underlying arm machine's own guarantee that it
 halts with the encoded result, the dispatch halts with that result on the output tape, in one more
 step than the arm, using at most the arm's space plus twice the layout size. -/
-private lemma exists_arm_run {k kr : ℕ} {Sr Sd : Type} [Finite Sr]
+private lemma exists_arm_run {k kr : ℕ} {Sr Sd : Type}
     {tmr : MultiTapeTM kr Bool Sr} {er : Fin kr ↪ Fin k}
     {tmd : MultiTapeTM k Bool Sd} {input : List Bool} {ws' : Fin k → List Bool}
     {O : List Bool} {τ_br s_br : ℕ}
@@ -302,5 +302,243 @@ public theorem computableInTimeAndSpace_cond {sel : α → Bool} {g h : α → �
     have expand : (2 * c_c + 3 * K + 2) * MS = 2 * (c_c * MS) + 3 * (K * MS) + 2 * MS := by
       rw [Nat.add_mul, Nat.add_mul, Nat.mul_assoc, Nat.mul_assoc]
     omega
+
+/-! ### The finite case analysis
+
+The finite case analysis is built from `computableInTimeAndSpace_cond` by induction on a finite
+set covering the scrutinee's reachable values. Because each inductive step splices in one more
+`cond`, whose constants multiply, the bounds are renormalised at every step into the single fixed
+shape `fun a => c * (t a + 1)`, `fun a => c * (s a + 1)`; the following three helpers do the
+combining and the renormalisation, and the induction then reduces to routing the scrutinee. -/
+
+variable {t s : α → ℕ} {encIn : α ↪ List Bool}
+
+/-- A constant function, in the normalised bound shape. -/
+private lemma const_norm {encOut : β ↪ List Bool} (b : β) :
+    ∃ c, ComputableInTimeAndSpace (fun _ : α => b) encIn encOut
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_of_const (encIn := encIn) (encOut := encOut) b
+  exact ⟨c, hc.mono (fun a => Nat.le_mul_of_pos_right c (by omega)) (fun a => Nat.zero_le _)⟩
+
+/-- A two-way case analysis of three functions all given in the normalised bound shape stays in
+that shape: the `cond` bound `C * (tc + max tif telse + 1)` collapses because every argument is a
+constant times `t a + 1`. -/
+private lemma cond_norm {sel : α → Bool} {g h : α → β} {encOut : β ↪ List Bool}
+    (hsel : ∃ c, ComputableInTimeAndSpace sel encIn boolEnc
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)))
+    (hg : ∃ c, ComputableInTimeAndSpace g encIn encOut
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)))
+    (hh : ∃ c, ComputableInTimeAndSpace h encIn encOut
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1))) :
+    ∃ c, ComputableInTimeAndSpace (fun a => bif sel a then g a else h a) encIn encOut
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+  obtain ⟨c1, h1⟩ := hsel
+  obtain ⟨c2, h2⟩ := hg
+  obtain ⟨c3, h3⟩ := hh
+  obtain ⟨C, hC⟩ := computableInTimeAndSpace_cond h1 h2 h3
+  refine ⟨C * (c1 + max c2 c3 + 1), hC.mono (fun a => ?_) (fun a => ?_)⟩
+  · have hm : max (c2 * (t a + 1)) (c3 * (t a + 1)) ≤ max c2 c3 * (t a + 1) :=
+      max_le (Nat.mul_le_mul_right _ (le_max_left c2 c3))
+        (Nat.mul_le_mul_right _ (le_max_right c2 c3))
+    rw [Nat.mul_assoc]
+    refine Nat.mul_le_mul_left C ?_
+    have hd : (c1 + max c2 c3 + 1) * (t a + 1) =
+        c1 * (t a + 1) + max c2 c3 * (t a + 1) + (t a + 1) := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.one_mul]
+    omega
+  · have hm : max (c2 * (s a + 1)) (c3 * (s a + 1)) ≤ max c2 c3 * (s a + 1) :=
+      max_le (Nat.mul_le_mul_right _ (le_max_left c2 c3))
+        (Nat.mul_le_mul_right _ (le_max_right c2 c3))
+    rw [Nat.mul_assoc]
+    refine Nat.mul_le_mul_left C ?_
+    have hd : (c1 + max c2 c3 + 1) * (s a + 1) =
+        c1 * (s a + 1) + max c2 c3 * (s a + 1) + (s a + 1) := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.one_mul]
+    omega
+
+/-- The single-bit test `decide (sel a = i₀)`, in the normalised bound shape. Composing the
+scrutinee with the almost-constant test `· = i₀` is a `computableInTimeAndSpace_comp`; the extra
+terms it introduces — the constant test cost and the encoded scrutinee's length — are absorbed
+because the scrutinee's encoded length is bounded by the constant `L`. -/
+private lemma cond_of_sel {ι : Type} [DecidableEq ι] {sel : α → ι} {encι : ι ↪ List Bool}
+    (i₀ : ι) (L : ℕ) (hL : ∀ a, (encι (sel a)).length ≤ L)
+    (hsel : ∃ c, ComputableInTimeAndSpace sel encIn encι
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1))) :
+    ∃ c, ComputableInTimeAndSpace (fun a => decide (sel a = i₀)) encIn boolEnc
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+  obtain ⟨c_sel, hsel'⟩ := hsel
+  obtain ⟨cψ, hψ⟩ := computableInTimeAndSpace_of_exists_finite_ne
+    (f := fun i => decide (i = i₀)) (encIn := encι) (encOut := boolEnc)
+    ⟨false, by
+      have hset : {i : ι | (fun i => decide (i = i₀)) i ≠ false} = {i₀} := by ext i; simp
+      rw [hset]; exact Set.finite_singleton i₀⟩
+  obtain ⟨cC, hcomp⟩ := computableInTimeAndSpace_comp hsel' hψ
+  refine ⟨cC * (c_sel + cψ + L + 2), hcomp.mono (fun a => ?_) (fun a => ?_)⟩
+  · rw [Nat.mul_assoc]
+    refine Nat.mul_le_mul_left cC ?_
+    have hL' := hL a
+    have hexp : (c_sel + cψ + L + 2) * (t a + 1) =
+        c_sel * (t a + 1) + cψ * (t a + 1) + L * (t a + 1) + 2 * (t a + 1) := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.add_mul]
+    have h1 : cψ ≤ cψ * (t a + 1) := Nat.le_mul_of_pos_right _ (by omega)
+    have h2 : L ≤ L * (t a + 1) := Nat.le_mul_of_pos_right _ (by omega)
+    omega
+  · rw [Nat.mul_assoc]
+    refine Nat.mul_le_mul_left cC ?_
+    have hL' := hL a
+    have hbl : (boolEnc (decide (sel a = i₀))).length = 1 := rfl
+    rw [hbl]
+    have hexp : (c_sel + cψ + L + 2) * (s a + 1) =
+        c_sel * (s a + 1) + cψ * (s a + 1) + L * (s a + 1) + 2 * (s a + 1) := by
+      rw [Nat.add_mul, Nat.add_mul, Nat.add_mul]
+    have h2 : L ≤ L * (s a + 1) := Nat.le_mul_of_pos_right _ (by omega)
+    omega
+
+/-- The engine of `computableInTimeAndSpace_match`: induction on a finite set `R` covering the
+scrutinee's values. Everything is carried in the normalised bound shape `c * (t a + 1)`,
+`c * (s a + 1)`. At `insert i₀ R'` the scrutinee is split by the test `sel a = i₀`: on `true` the
+branch is `br i₀`, on `false` the reselected scrutinee `sel'` lands in `R'` and the induction
+hypothesis applies. -/
+private lemma match_aux {ι : Type} {br : ι → α → β}
+    {encι : ι ↪ List Bool} {encOut : β ↪ List Bool} (R : Finset ι) :
+    ∀ (sel : α → ι), (∀ a, sel a ∈ R) →
+      (∀ i ∈ R, ComputableInTimeAndSpace (br i) encIn encOut t s) →
+      (∃ c, ComputableInTimeAndSpace sel encIn encι
+        (fun a => c * (t a + 1)) (fun a => c * (s a + 1))) →
+      ∃ c, ComputableInTimeAndSpace (fun a => br (sel a) a) encIn encOut
+        (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+  classical
+  induction R using Finset.induction_on with
+  | empty =>
+    intro sel hmem _ _
+    have hemp : IsEmpty α := ⟨fun a => absurd (hmem a) (Finset.notMem_empty _)⟩
+    let : Fintype α := Fintype.ofIsEmpty
+    obtain ⟨c, hc⟩ :=
+      computableInTimeAndSpace_of_finite (encIn := encIn) (encOut := encOut) (fun a => br (sel a) a)
+    exact ⟨c, hc.mono (fun a => Nat.le_mul_of_pos_right c (by omega)) (fun a => Nat.zero_le _)⟩
+  | @insert i₀ R' hi₀ IH =>
+    intro sel hmem hbr hsel
+    by_cases hR'e : R' = ∅
+    · subst hR'e
+      have hall : ∀ a, sel a = i₀ := by
+        intro a
+        have hm := hmem a
+        rw [Finset.mem_insert] at hm
+        rcases hm with h | h
+        · exact h
+        · exact absurd h (Finset.notMem_empty _)
+      have heq : (fun a => br (sel a) a) = br i₀ := funext fun a => by rw [hall a]
+      rw [heq]
+      exact ⟨1, (hbr i₀ (Finset.mem_insert_self i₀ ∅)).mono
+        (fun a => by omega) (fun a => by omega)⟩
+    · obtain ⟨d, hd⟩ := Finset.nonempty_iff_ne_empty.mpr hR'e
+      have hL : ∀ a, (encι (sel a)).length ≤ (insert i₀ R').sup (fun i => (encι i).length) :=
+        fun a => Finset.le_sup (f := fun i => (encι i).length) (hmem a)
+      obtain ⟨cc, hcc⟩ := cond_of_sel i₀ _ hL hsel
+      have hsel' : ∃ c, ComputableInTimeAndSpace
+          (fun a => bif decide (sel a = i₀) then d else sel a) encIn encι
+          (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) :=
+        cond_norm ⟨cc, hcc⟩ (const_norm d) hsel
+      have hmem' : ∀ a, (fun a => bif decide (sel a = i₀) then d else sel a) a ∈ R' := by
+        intro a
+        by_cases h : sel a = i₀
+        · simpa [h] using hd
+        · have hm := hmem a
+          simp only [Finset.mem_insert, h, false_or] at hm
+          simpa [h] using hm
+      obtain ⟨cRec, hRec⟩ := IH (fun a => bif decide (sel a = i₀) then d else sel a)
+        hmem' (fun i hi => hbr i (Finset.mem_insert_of_mem hi)) hsel'
+      have hGeq : (fun a => br (sel a) a) =
+          (fun a => bif decide (sel a = i₀) then br i₀ a
+            else br (bif decide (sel a = i₀) then d else sel a) a) := by
+        funext a
+        by_cases h : sel a = i₀ <;> simp [h]
+      rw [hGeq]
+      exact cond_norm ⟨cc, hcc⟩
+        ⟨1, (hbr i₀ (Finset.mem_insert_self i₀ R')).mono (fun a => by omega) (fun a => by omega)⟩
+        ⟨cRec, hRec⟩
+
+/-- **Complexity of a case analysis on a finite type.** If the scrutinee and every branch are
+computable, then so is the case analysis. The machine runs the machine for `sel`, redirecting its
+output onto a work tape; since the scrutinee's range is finite there are only finitely many
+possible contents, all of constant length, so the finite control can tell them apart in constant
+time and continue with the machine for the branch that is taken, on the original input.
+
+What is asked of the scrutinee's type is not that it be finite but that only finitely many of its
+values be reachable, which is what the machine needs: finitely many possible contents of the work
+tape, of bounded length, for the control to tell apart. For a finite type that is `Set.toFinite _`.
+
+A single pair of bounds covers the scrutinee and every branch. The number of cases is a constant
+of the covering set and is absorbed into the constant factor. What expresses that only the branch
+taken is executed is that no time bound appears in the space bound: a machine computing every
+branch would have to park their encoded outputs, whose length is bounded only by the time that
+produced them, so its space would be `s a + t a`.
+
+A branch only has to *agree* with the function being computed where it is taken, which is what
+`hagree` says; what it does elsewhere is irrelevant, since it is never run there. `f` carries no
+information — it is `fun a => br (sel a) a` up to `funext` — but is kept because it is what a caller
+has: their goal is a `match`, not an application of the branch family. It is inferred from the
+goal, so apply this with `exact` or `refine` rather than `obtain`. -/
+public theorem computableInTimeAndSpace_match {ι : Type}
+    {sel : α → ι} {f : α → β} {br : ι → α → β}
+    {encι : ι ↪ List Bool} {encOut : β ↪ List Bool}
+    (hfin : (Set.range sel).Finite)
+    (hagree : ∀ a, br (sel a) a = f a)
+    (hsel : ComputableInTimeAndSpace sel encIn encι t s)
+    (hbr : ∀ i ∈ Set.range sel, ComputableInTimeAndSpace (br i) encIn encOut t s) :
+    ∃ c, ComputableInTimeAndSpace f encIn encOut
+      (fun a => c * (t a + 1)) (fun a => c * (s a + 1)) := by
+  classical
+  obtain ⟨c, hc⟩ := match_aux hfin.toFinset sel
+    (fun a => hfin.mem_toFinset.mpr (Set.mem_range_self a))
+    (fun i hi => hbr i (hfin.mem_toFinset.mp hi))
+    ⟨1, hsel.mono (fun a => by omega) (fun a => by omega)⟩
+  refine ⟨c, ?_⟩
+  have hf : (fun a => br (sel a) a) = f := funext hagree
+  rwa [hf] at hc
+
+/-- **Complexity of Lean's `ite`.** A conditional on a decidable predicate, given a machine that
+decides it. This is `computableInTimeAndSpace_cond` read through `decide`: the `Decidable` instance
+of `ite` carries no computational content, so all that is needed of the predicate is that its
+Boolean test is computable to `boolEnc`. -/
+public theorem computableInTimeAndSpace_ite {p : α → Prop} [DecidablePred p] {g h : α → β}
+    {encOut : β ↪ List Bool} {tc sc tif sif telse selse : α → ℕ}
+    (hp : ComputableInTimeAndSpace (fun a => decide (p a)) encIn boolEnc tc sc)
+    (hif : ComputableInTimeAndSpace g encIn encOut tif sif)
+    (helse : ComputableInTimeAndSpace h encIn encOut telse selse) :
+    ∃ c, ComputableInTimeAndSpace (fun a => if p a then g a else h a) encIn encOut
+      (fun a => c * (tc a + max (tif a) (telse a) + 1))
+      (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_cond hp hif helse
+  refine ⟨c, ?_⟩
+  have hfun : (fun a => bif decide (p a) then g a else h a) =
+      fun a => if p a then g a else h a := by
+    funext a; by_cases h : p a <;> simp [h]
+  rwa [hfun] at hc
+
+/-- **Complexity of Lean's `dite`.** The branches of a `dite` are not functions of the input alone:
+each is defined only under the hypothesis that its case holds, so neither can be asked to be
+computable as it stands. What is asked instead is a computable *total* function agreeing with the
+branch where that branch is taken. -/
+public theorem computableInTimeAndSpace_dite {p : α → Prop} [DecidablePred p]
+    {_if : (a : α) → p a → β} {_else : (a : α) → ¬ p a → β} {If Else : α → β}
+    {encOut : β ↪ List Bool} {tc sc tif sif telse selse : α → ℕ}
+    (hIf : ∀ a (h : p a), If a = _if a h)
+    (hElse : ∀ a (h : ¬ p a), Else a = _else a h)
+    (hp : ComputableInTimeAndSpace (fun a => decide (p a)) encIn boolEnc tc sc)
+    (hif : ComputableInTimeAndSpace If encIn encOut tif sif)
+    (helse : ComputableInTimeAndSpace Else encIn encOut telse selse) :
+    ∃ c, ComputableInTimeAndSpace (fun a => dite (p a) (_if a) (_else a)) encIn encOut
+      (fun a => c * (tc a + max (tif a) (telse a) + 1))
+      (fun a => c * (sc a + max (sif a) (selse a) + 1)) := by
+  obtain ⟨c, hc⟩ := computableInTimeAndSpace_ite (p := p) hp hif helse
+  refine ⟨c, ?_⟩
+  have hfun : (fun a => if p a then If a else Else a) =
+      fun a => dite (p a) (_if a) (_else a) := by
+    funext a
+    by_cases h : p a
+    · simp [h, hIf a h]
+    · simp [h, hElse a h]
+  rwa [hfun] at hc
 
 end Turing.MultiTapeTM

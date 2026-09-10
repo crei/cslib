@@ -57,6 +57,7 @@ public import Cslib.Computability.Languages.SafetyLiveness
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.AlmostConstant
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Comp
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Id
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Ite
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Loop
 public import Cslib.Computability.Machines.Turing.MultiTape.Configuration
 public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
