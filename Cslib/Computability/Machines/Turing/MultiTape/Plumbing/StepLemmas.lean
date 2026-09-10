@@ -62,11 +62,6 @@ public lemma step_apply_of_state (h : cfg.state = some q) :
     tm.step cfg = (tm.tr q cfg.inputSymbol cfg.workTapeSymbols).apply cfg := by
   rw [step, h]
 
-/-- The state after a live step. -/
-public lemma step_state_of_state (h : cfg.state = some q) :
-    (tm.step cfg).state = (tm.tr q cfg.inputSymbol cfg.workTapeSymbols).state := by
-  rw [step_apply_of_state h, Action.apply_state]
-
 /-- The input head after a live step. -/
 public lemma step_inputPos_of_state (h : cfg.state = some q) :
     (tm.step cfg).inputPos =

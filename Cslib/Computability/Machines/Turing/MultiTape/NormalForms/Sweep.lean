@@ -151,10 +151,6 @@ private def F : ℤ → Option Bool := fun z =>
 private def eraseAbove (T : ℤ → Option Bool) (q : ℤ) : ℤ → Option Bool := fun z =>
   if q < z then none else T z
 
-/-- A tape erased at `q` and above. -/
-private def eraseFrom (T : ℤ → Option Bool) (q : ℤ) : ℤ → Option Bool := fun z =>
-  if q ≤ z then none else T z
-
 /-- The footprint after the left sweep has reached position `q`: everything at `q + 1` and above
 erased except the anchor. -/
 private def eraseKeepAnchor (T : ℤ → Option Bool) (q : ℤ) : ℤ → Option Bool := fun z =>

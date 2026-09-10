@@ -45,12 +45,6 @@ variable {k : ℕ} {State₀ : Type*} {input : List Bool}
 
 namespace Repeat
 
-/-- The tape holding `xs` reads `xs.head?` at its start cell. -/
-private lemma tapeOfList_zero (xs : List Bool) : tapeOfList xs 0 = xs.head? := by
-  have h : (0 : ℤ) = ((0 : ℕ) : ℤ) := rfl
-  rw [h, tapeOfList_ofNat]
-  cases xs <;> rfl
-
 /-- The looping machine.  On a live state `Sum.inl q` it runs `tm`, but redirects `tm`'s halting
 transition to the fresh check state `Sum.inr ()`.  On the check state it reads the symbol under
 tape `i`'s head: if it is `some x` the machine halts, otherwise it restarts `tm` from its initial

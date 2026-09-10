@@ -89,34 +89,6 @@ lemma mem_visitedByTapeHead_of_workTapes_ne
     · rw [tm.step_workTapes_eq_of_ne _ j z hz] at h
       exact tm.visitedByTapeHead_mono cfg j (Nat.le_succ t) (ih h)
 
-/-- Every position visited by the head of tape `i` lies within `spaceUsedByTape … i` of the
-head's starting position. -/
-lemma natAbs_le_spaceUsedByTape_of_mem_visited
-    {i : Fin k}
-    {z : ℤ}
-    {t : ℕ}
-    (hz : z ∈ tm.visitedByTapeHead cfg t i) :
-    (z - cfg.workTapePos i).natAbs ≤ tm.spaceUsedByTape cfg t i := by
-  obtain ⟨t', ht', rfl⟩ := tm.mem_visitedByTapeHead.mp hz
-  have h1 := Finset.card_le_card
-    ((tm.uIcc_workTapePos_subset_visitedByTapeHead cfg i t').trans
-      (tm.visitedByTapeHead_mono cfg i (show t' ≤ t by omega)))
-  rw [Int.card_uIcc] at h1
-  unfold spaceUsedByTape
-  omega
-
-/-- Every non-blank cell on work tape `i` lies within `spaceUsedByTape … i t` of the origin. -/
-lemma content_natAbs_le_spaceUsedByTape
-    {i : Fin k}
-    (t : ℕ)
-    (z : ℤ)
-    (h : (tm.runFrom (tm.initCfg input) t).workTapes i z ≠ none) :
-    z.natAbs ≤ tm.spaceUsedByTape (tm.initCfg input) t i := by
-  -- The work tapes start out blank, so any non-blank cell has been visited by the head; the
-  -- initial head position is `0`, so the displacement bound is a bound on the position itself.
-  simpa using tm.natAbs_le_spaceUsedByTape_of_mem_visited
-    (tm.mem_visitedByTapeHead_of_workTapes_ne i t z h)
-
 /-- The number of cells touched by a single work tape grows by at most one each step. -/
 lemma spaceUsedByTape_le (cfg : Cfg k Symbol State input) (t : ℕ) (i : Fin k) :
     tm.spaceUsedByTape cfg t i ≤ t + 1 := by

@@ -73,6 +73,12 @@ public lemma tapeOfList_nil : tapeOfList ([] : List Symbol) = fun _ => none := b
   funext z
   cases z <;> simp
 
+/-- The cell at position `0` holds the first symbol of the word. -/
+public lemma tapeOfList_zero (xs : List Symbol) : tapeOfList xs 0 = xs.head? := by
+  have h : (0 : ℤ) = ((0 : ℕ) : ℤ) := rfl
+  rw [h, tapeOfList_ofNat]
+  cases xs <;> rfl
+
 /-- The same configuration in a different control state, possibly of a different state type. -/
 @[expose, simps] public def _root_.Turing.Cfg.withState (cfg : Cfg k Symbol State input)
     {State' : Type*} (q : Option State') : Cfg k Symbol State' input :=
@@ -148,18 +154,11 @@ public theorem exists_transformsTapes_nop (k : ℕ) (Symbol : Type*) :
   have hrun : (nop k Symbol).runFrom (wordsCfg input (some ()) ws out) 1 =
       wordsCfg input none ws out := by
     rw [runFrom_succ_eq_step', runFrom_zero, step_nop]
-  refine ⟨1, le_rfl, ws, hrun, rfl, ?_⟩
-  -- the heads never move, so each tape's visited set is contained in the single cell `0`
-  have hsub : ∀ i, (nop k Symbol).visitedByTapeHead (wordsCfg input (some ()) ws out) 1 i
-      ⊆ {0} := by
-    intro i z hz
-    obtain ⟨t', ht', rfl⟩ := mem_visitedByTapeHead.mp hz
-    rcases (by omega : t' = 0 ∨ t' = 1) with rfl | rfl
-    · simp
-    · simp [hrun]
-  refine le_trans ?_ (le_of_eq (by simp : (∑ _i : Fin k, 1) = k))
-  exact Finset.sum_le_sum fun i _ =>
-    (Finset.card_le_card (hsub i)).trans_eq (Finset.card_singleton 0)
+  -- the heads never move, so each tape touches only the single cell `0`
+  refine ⟨1, le_rfl, ws, hrun, rfl, spaceUsed_le_of_workTapePos_const _ 1 fun m hm => ?_⟩
+  rcases (by omega : m = 0 ∨ m = 1) with rfl | rfl
+  · rw [runFrom_zero]
+  · rw [hrun]; funext i; simp only [wordsCfg_workTapePos]
 
 end Nop
 

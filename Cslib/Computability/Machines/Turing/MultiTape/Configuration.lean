@@ -154,11 +154,11 @@ lemma val_moveInputPos_eq {n : ℕ} (pos : Fin (n + 2)) (m : SignType) :
   have hmc : (m.cast : ℤ) = -1 ∨ (m.cast : ℤ) = 0 ∨ (m.cast : ℤ) = 1 := by
     rcases m with _ | _ | _ <;> simp [SignType.cast]
   by_cases h : (((pos.val : ℤ) + (m.cast : ℤ)).toNat) < n + 2
-  · rw [dite_eq_left (by exact h)]
+  · rw [dite_eq_left h]
     have := pos.isLt
     push_cast
     omega
-  · rw [dite_eq_right (by exact h)]
+  · rw [dite_eq_right h]
     have := pos.isLt
     push_cast
     omega

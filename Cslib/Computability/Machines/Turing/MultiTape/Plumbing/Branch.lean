@@ -39,12 +39,6 @@ variable {k : ℕ} {S₁ S₂ : Type*} {input : List Bool}
 
 namespace Branch
 
-/-- The tape holding `xs` reads `xs.head?` at its start cell. -/
-private lemma tapeOfList_zero (xs : List Bool) : tapeOfList xs 0 = xs.head? := by
-  have h : (0 : ℤ) = ((0 : ℕ) : ℤ) := rfl
-  rw [h, tapeOfList_ofNat]
-  cases xs <;> rfl
-
 /-- The branching machine. State `none` is a fresh dispatch state: it reads the symbol under tape
 `i`'s head and, in one step that writes nothing and moves no head, jumps to `tm₁`'s initial state
 (if the symbol is `some x`) or `tm₂`'s (otherwise). Thereafter it mirrors the chosen machine, its

@@ -104,11 +104,6 @@ public lemma partialInv_eq_some (e : Fin k ↪ Fin k') {l : Fin k'} {j : Fin k}
   · rw [dite_eq_right hl] at h; exact absurd h (by simp)
 
 @[simp]
-public lemma embed_inputSymbol (e : Fin k ↪ Fin k') (cfg : Cfg k Symbol State input)
-    (extraTapes : Fin k' → ℤ → Option Symbol) (extraPos : Fin k' → ℤ) :
-    (embed e cfg extraTapes extraPos).inputSymbol = cfg.inputSymbol := rfl
-
-@[simp]
 public lemma embed_workTapes_embed (e : Fin k ↪ Fin k') (cfg : Cfg k Symbol State input)
     (extraTapes : Fin k' → ℤ → Option Symbol) (extraPos : Fin k' → ℤ) (j : Fin k) :
     (embed e cfg extraTapes extraPos).workTapes (e j) = cfg.workTapes j := by
@@ -148,14 +143,10 @@ public lemma step_embed (tm : MultiTapeTM k Symbol State) (e : Fin k ↪ Fin k')
     refine Cfg.ext rfl rfl ?_ ?_ rfl
     · funext l z
       simp only [Action.apply, embed]
-      cases partialInv e l with
-      | none => rfl
-      | some j => rfl
+      cases partialInv e l <;> rfl
     · funext l
       simp only [Action.apply, embed]
-      cases partialInv e l with
-      | none => simp
-      | some j => rfl
+      cases partialInv e l <;> simp
 
 /-- The reindexed run mirrors the original, with the extra tapes held fixed throughout. -/
 public lemma runFrom_embed (tm : MultiTapeTM k Symbol State) (e : Fin k ↪ Fin k')

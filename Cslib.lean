@@ -72,7 +72,6 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Clear
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.EmitTape
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ExtendTapes
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.InputFromTape
-public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.NeverOutputs
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.OutputToTape
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Repeat
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.RewindInput

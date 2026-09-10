@@ -118,21 +118,6 @@ public lemma workTapePos_leftCfg (cfg : Cfg k Symbol State₀ input) :
 public lemma workTapePos_rightCfg (cfg : Cfg k Symbol State₁ input) :
     (rightCfg (State₀ := State₀) cfg).workTapePos = cfg.workTapePos := rfl
 
-/-- **The run of `seq`, raw form.** Once the first machine has halted (at its first halting
-time), the composite continues as the second machine from the handoff configuration. This is the
-form used to chain phases whose intermediate configurations are not normalised; the
-`TransformsTapes`-level composition is `transformsTapes_seq`. -/
-public lemma runFrom_seq (cfg : Cfg k Symbol State₀ input) (u v : ℕ)
-    (hhalt : (tm₀.runFrom cfg u).state = none)
-    (hactive : ∀ m < u, (tm₀.runFrom cfg m).state ≠ none) :
-    (tm₀.seq tm₁).runFrom (leftCfg tm₁ cfg) (u + v) =
-      rightCfg (tm₁.runFrom ((tm₀.runFrom cfg u).withState (some tm₁.q₀)) v) := by
-  rw [runFrom_add, runFrom_leftCfg _ u hactive]
-  have h : leftCfg tm₁ (tm₀.runFrom cfg u) =
-      rightCfg ((tm₀.runFrom cfg u).withState (some tm₁.q₀)) := by
-    simp [leftCfg, rightCfg, Cfg.withState, hhalt]
-  rw [h, runFrom_rightCfg]
-
 end Sequential
 
 open Sequential in
