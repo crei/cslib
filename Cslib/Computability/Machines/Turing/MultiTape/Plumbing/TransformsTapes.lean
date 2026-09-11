@@ -12,22 +12,19 @@ public import Cslib.Computability.Machines.Turing.MultiTape.TapeLemmas
 # Machines as transformers of tape words
 
 The interface through which combinators use machines: a machine reads words from its work tapes
-and leaves words on them, and never touches the output. A combinator composing such machines talks
-about words only — never about individual cells, head positions or the set of tapes a machine has
-touched.
+and leaves words on them. A combinator composing such machines talks about words only, never about
+individual cells, head positions or the set of tapes a machine has touched.
 
 Configurations are described by *equalities*: `wordsCfg input q ws out` is the configuration whose
-work tape `i` holds exactly the word `ws i` — contents `tapeOfList (ws i)`, head at the start — with
+work tape `i` holds exactly the word `ws i` (contents `tapeOfList (ws i)`, head at the start), with
 the input head at the start of the input and output `out`. A specification
 `TransformsTapes tm P Q t s` says: started on word-holding tapes satisfying `P`, the machine halts
-within `t` steps *in a configuration of the same shape* — work tapes again holding words, input
-head back at the start, output untouched — with the new words related to the old ones by `Q`, and
-using at most `s` work-tape cells. Because the postcondition is a single configuration equality,
-specifications compose by rewriting: which tapes survived a step is read off the equation instead
-of being proved cell by cell.
-
-The description of a tape's contents as a function, `tapeOfList`, is due to Samuel Schlesinger
-(as `listTape` in leanprover/cslib#872).
+within `t` steps in the *normal form* `wordsCfg input none ws' out` (every head reset to its
+initial position, tapes blank outside their words, output untouched), with the new words related to
+the old ones by `Q` and using at most `s` work-tape cells. Requiring this normal form is what lets
+specifications compose by rewriting: the halting configuration of one machine is already a valid
+start for the next, so which words survived a step is read off the equation, not re-established cell
+by cell.
 
 ## Main definitions
 
@@ -43,24 +40,26 @@ The description of a tape's contents as a function, `tapeOfList`, is due to Samu
   machine of the interface and the check that the format is inhabited as intended.
 -/
 
+@[expose] public section
+
 namespace Turing.MultiTapeTM
 
 variable {k : ℕ} {Symbol State : Type*} {input : List Symbol}
 
 /-- A tape containing exactly the symbols of `xs` at positions `0, ..., xs.length - 1`. -/
-@[expose] public def tapeOfList (xs : List Symbol) : ℤ → Option Symbol
+def tapeOfList (xs : List Symbol) : ℤ → Option Symbol
   | .ofNat n => xs[n]?
   | .negSucc _ => none
 
 @[simp]
-public lemma tapeOfList_ofNat (xs : List Symbol) (n : ℕ) : tapeOfList xs n = xs[n]? := rfl
+lemma tapeOfList_ofNat (xs : List Symbol) (n : ℕ) : tapeOfList xs n = xs[n]? := rfl
 
 @[simp]
-public lemma tapeOfList_negSucc (xs : List Symbol) (n : ℕ) :
+lemma tapeOfList_negSucc (xs : List Symbol) (n : ℕ) :
     tapeOfList xs (.negSucc n) = none := rfl
 
 /-- Appending one symbol writes precisely the cell after the existing word. -/
-public lemma tapeOfList_append_single (xs : List Symbol) (x : Symbol) :
+lemma tapeOfList_append_single (xs : List Symbol) (x : Symbol) :
     tapeOfList (xs ++ [x]) = Function.update (tapeOfList xs) (xs.length : ℤ) (some x) := by
   funext z
   cases z with
@@ -69,36 +68,31 @@ public lemma tapeOfList_append_single (xs : List Symbol) (x : Symbol) :
 
 /-- The blank tape holds the empty word. -/
 @[simp]
-public lemma tapeOfList_nil : tapeOfList ([] : List Symbol) = fun _ => none := by
+lemma tapeOfList_nil : tapeOfList ([] : List Symbol) = fun _ => none := by
   funext z
   cases z <;> simp
 
 /-- The cell at position `0` holds the first symbol of the word. -/
-public lemma tapeOfList_zero (xs : List Symbol) : tapeOfList xs 0 = xs.head? := by
+lemma tapeOfList_zero (xs : List Symbol) : tapeOfList xs 0 = xs.head? := by
   have h : (0 : ℤ) = ((0 : ℕ) : ℤ) := rfl
   rw [h, tapeOfList_ofNat]
   cases xs <;> rfl
 
-/-- The same configuration in a different control state, possibly of a different state type. -/
-@[expose, simps] public def _root_.Turing.Cfg.withState (cfg : Cfg k Symbol State input)
-    {State' : Type*} (q : Option State') : Cfg k Symbol State' input :=
-  ⟨q, cfg.inputPos, cfg.workTapes, cfg.workTapePos, cfg.output⟩
-
 /-- The configuration whose work tape `i` holds exactly the word `ws i` with its head at the
 start, whose input head is at the start of the input, in state `q` with output `out`. -/
-@[expose, simps]
-public def wordsCfg (input : List Symbol) (q : Option State)
+@[simps]
+def wordsCfg (input : List Symbol) (q : Option State)
     (ws : Fin k → List Symbol) (out : List Symbol) : Cfg k Symbol State input :=
   ⟨q, 1, fun i => tapeOfList (ws i), fun _ => 0, out⟩
 
 /-- Remapping the state of a `wordsCfg` remaps its state and leaves the words alone. -/
 @[simp]
-public lemma mapState_wordsCfg {State' : Type*} (φ : Option State → Option State')
+lemma mapState_wordsCfg {State' : Type*} (φ : Option State → Option State')
     (input : List Symbol) (q : Option State) (ws : Fin k → List Symbol) (out : List Symbol) :
     (wordsCfg input q ws out).mapState φ = wordsCfg input (φ q) ws out := rfl
 
 /-- The initial configuration is the word configuration with blank tapes and no output. -/
-public lemma initCfg_eq_wordsCfg (tm : MultiTapeTM k Symbol State) (input : List Symbol) :
+lemma initCfg_eq_wordsCfg (tm : MultiTapeTM k Symbol State) (input : List Symbol) :
     tm.initCfg input = wordsCfg input (some tm.q₀) (fun _ => []) [] := by
   refine Cfg.ext rfl rfl ?_ rfl rfl
   funext i
@@ -106,14 +100,11 @@ public lemma initCfg_eq_wordsCfg (tm : MultiTapeTM k Symbol State) (input : List
 
 /-- `TransformsTapes tm P Q t s`: started in its initial state on tapes holding words `ws` that
 satisfy the precondition `P`, the machine halts after at most `t` steps in the configuration whose
-tapes hold words `ws'` with `Q input ws ws'`, with the input head back at the start and the output
-unchanged, having used at most `s` work-tape cells.
+tapes hold words `ws'` with `Q input ws ws'`, having used at most `s` work-tape cells.
 
-The postcondition is a single configuration equality, so a machine satisfying it has re-normalised
-everything: heads at the start, tapes blank outside their words, nothing written to the output.
 The bounds are numbers; a specification whose bounds depend on the data is a *family*
 `∀ j, TransformsTapes tm (P j) (Q j) (t j) (s j)` over one fixed machine. -/
-@[expose] public def TransformsTapes (tm : MultiTapeTM k Symbol State)
+def TransformsTapes (tm : MultiTapeTM k Symbol State)
     (P : (input : List Symbol) → (Fin k → List Symbol) → Prop)
     (Q : (input : List Symbol) → (Fin k → List Symbol) → (Fin k → List Symbol) → Prop)
     (t s : ℕ) : Prop :=
@@ -125,7 +116,7 @@ The bounds are numbers; a specification whose bounds depend on the data is a *fa
 
 /-- A `TransformsTapes` statement can be read with a stronger precondition, a weaker postcondition
 and larger bounds. -/
-public theorem TransformsTapes.imp {tm : MultiTapeTM k Symbol State}
+theorem TransformsTapes.imp {tm : MultiTapeTM k Symbol State}
     {P P' : (input : List Symbol) → (Fin k → List Symbol) → Prop}
     {Q Q' : (input : List Symbol) → (Fin k → List Symbol) → (Fin k → List Symbol) → Prop}
     {t s t' s' : ℕ} (h : TransformsTapes tm P Q t s)
@@ -150,10 +141,10 @@ private lemma step_nop (ws : Fin k → List Symbol) (out : List Symbol) :
   refine Cfg.ext rfl ?_ ?_ ?_ ?_ <;>
     simp [step, nop, Action.apply, wordsCfg, SignType.cast]
 
-/-- **The machine that does nothing.** It halts in one step, leaving every word as it was. Its
+/-- The machine that does nothing: it halts in one step, leaving every word as it was. Its
 heads never move, so it visits one cell per tape. This is the first machine of the interface: it
 checks that the specification format is inhabited exactly as intended. -/
-public theorem exists_transformsTapes_nop (k : ℕ) (Symbol : Type*) :
+theorem exists_transformsTapes_nop (k : ℕ) (Symbol : Type*) :
     ∃ (State : Type) (_ : Finite State) (tm : MultiTapeTM k Symbol State),
       TransformsTapes tm (fun _ _ => True) (fun _ ws ws' => ws' = ws) 1 k := by
   refine ⟨Unit, inferInstance, nop k Symbol, fun input ws out _ => ?_⟩

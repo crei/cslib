@@ -12,13 +12,12 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsT
 # Sequential composition of machines on shared tapes
 
 `seq tm₀ tm₁` behaves like `tm₀` until `tm₀` would halt, at which point it continues as `tm₁`,
-started in its initial state on the tapes as `tm₀` left them. The design is due to Samuel
-Schlesinger (leanprover/cslib#872): the state space is `State₀ ⊕ State₁`, and the *halting
-transition* of the first phase is mapped to the initial state of the second, so the handoff costs
-no extra step.
+started in its initial state on the tapes as `tm₀` left them. The state space is
+`State₀ ⊕ State₁`, and the *halting transition* of the first phase is mapped to the initial state
+of the second, so the handoff costs no extra step.
 
 At the specification level this is `transformsTapes_seq`: transformations compose, with the time
-and space bounds adding. The postcondition of `TransformsTapes` is what makes the proof direct —
+and space bounds adding. The postcondition of `TransformsTapes` is what makes the proof direct:
 the first machine halts in a full `wordsCfg`, which is exactly a starting configuration for the
 second.
 
@@ -28,6 +27,8 @@ second.
 * `Turing.MultiTapeTM.transformsTapes_seq`: transformations compose, bounds adding.
 -/
 
+@[expose] public section
+
 namespace Turing.MultiTapeTM
 
 variable {k : ℕ} {Symbol State₀ State₁ : Type*} {input : List Symbol}
@@ -35,7 +36,7 @@ variable {k : ℕ} {Symbol State₀ State₁ : Type*} {input : List Symbol}
 /-- The sequential composition of `tm₀` and `tm₁`: it behaves like `tm₀` until `tm₀` would halt,
 at which point it switches to the initial state of `tm₁` and behaves like `tm₁`. The switch is
 folded into the halting transition of `tm₀`, so it costs no step. -/
-@[expose] public def seq (tm₀ : MultiTapeTM k Symbol State₀) (tm₁ : MultiTapeTM k Symbol State₁) :
+def seq (tm₀ : MultiTapeTM k Symbol State₀) (tm₁ : MultiTapeTM k Symbol State₁) :
     MultiTapeTM k Symbol (State₀ ⊕ State₁) where
   q₀ := .inl tm₀.q₀
   tr q inp work :=
@@ -54,17 +55,17 @@ namespace Sequential
 /-- A configuration of the first phase: a configuration of `tm₀`, with a halted state mapped to
 the initial state of the second phase. Under this map, the whole first phase of `seq` mirrors the
 run of `tm₀`, *including* its halting step. -/
-@[expose] public def leftCfg (tm₁ : MultiTapeTM k Symbol State₁) (cfg : Cfg k Symbol State₀ input) :
+def leftCfg (tm₁ : MultiTapeTM k Symbol State₁) (cfg : Cfg k Symbol State₀ input) :
     Cfg k Symbol (State₀ ⊕ State₁) input :=
   cfg.mapState (fun st => some (st.elim (.inr tm₁.q₀) .inl))
 
 /-- A configuration of the second phase. Under this map, the second phase of `seq` mirrors the
 run of `tm₁`. -/
-@[expose] public def rightCfg (cfg : Cfg k Symbol State₁ input) :
+def rightCfg (cfg : Cfg k Symbol State₁ input) :
     Cfg k Symbol (State₀ ⊕ State₁) input :=
   cfg.mapState (Option.map .inr)
 
-public lemma step_leftCfg (cfg : Cfg k Symbol State₀ input) (h : cfg.state ≠ none) :
+lemma step_leftCfg (cfg : Cfg k Symbol State₀ input) (h : cfg.state ≠ none) :
     (tm₀.seq tm₁).step (leftCfg tm₁ cfg) = leftCfg tm₁ (tm₀.step cfg) := by
   obtain ⟨q, hq⟩ := Option.ne_none_iff_exists'.mp h
   have h1 : (leftCfg tm₁ cfg).state = some (Sum.inl q : State₀ ⊕ State₁) := by
@@ -72,7 +73,7 @@ public lemma step_leftCfg (cfg : Cfg k Symbol State₀ input) (h : cfg.state ≠
   simp only [step, h1, hq]
   rfl
 
-public lemma step_rightCfg (cfg : Cfg k Symbol State₁ input) :
+lemma step_rightCfg (cfg : Cfg k Symbol State₁ input) :
     (tm₀.seq tm₁).step (rightCfg cfg) = rightCfg (tm₁.step cfg) := by
   cases hq : cfg.state with
   | none =>
@@ -85,12 +86,12 @@ public lemma step_rightCfg (cfg : Cfg k Symbol State₁ input) :
     rfl
 
 /-- The second phase of `seq` mirrors the run of `tm₁`. -/
-public lemma runFrom_rightCfg (cfg : Cfg k Symbol State₁ input) (n : ℕ) :
+lemma runFrom_rightCfg (cfg : Cfg k Symbol State₁ input) (n : ℕ) :
     (tm₀.seq tm₁).runFrom (rightCfg cfg) n = rightCfg (tm₁.runFrom cfg n) :=
   runFrom_comm_of_step rightCfg (fun c => step_rightCfg c) cfg n
 
 /-- While `tm₀` is running, `seq` mirrors it. -/
-public lemma runFrom_leftCfg (cfg : Cfg k Symbol State₀ input) (n : ℕ)
+lemma runFrom_leftCfg (cfg : Cfg k Symbol State₀ input) (n : ℕ)
     (h : ∀ m < n, (tm₀.runFrom cfg m).state ≠ none) :
     (tm₀.seq tm₁).runFrom (leftCfg tm₁ cfg) n = leftCfg tm₁ (tm₀.runFrom cfg n) := by
   induction n with
@@ -100,21 +101,21 @@ public lemma runFrom_leftCfg (cfg : Cfg k Symbol State₀ input) (n : ℕ)
       step_leftCfg _ (h n (by omega))]
 
 @[simp]
-public lemma leftCfg_wordsCfg (q : State₀) (ws : Fin k → List Symbol) (out : List Symbol) :
+lemma leftCfg_wordsCfg (q : State₀) (ws : Fin k → List Symbol) (out : List Symbol) :
     leftCfg tm₁ (wordsCfg input (some q) ws out) =
       wordsCfg input (some (Sum.inl q : State₀ ⊕ State₁)) ws out := rfl
 
 @[simp]
-public lemma rightCfg_wordsCfg (q : Option State₁) (ws : Fin k → List Symbol) (out : List Symbol) :
+lemma rightCfg_wordsCfg (q : Option State₁) (ws : Fin k → List Symbol) (out : List Symbol) :
     rightCfg (State₀ := State₀) (wordsCfg input q ws out) =
       wordsCfg input (q.map Sum.inr) ws out := rfl
 
 @[simp]
-public lemma workTapePos_leftCfg (cfg : Cfg k Symbol State₀ input) :
+lemma workTapePos_leftCfg (cfg : Cfg k Symbol State₀ input) :
     (leftCfg tm₁ cfg).workTapePos = cfg.workTapePos := rfl
 
 @[simp]
-public lemma workTapePos_rightCfg (cfg : Cfg k Symbol State₁ input) :
+lemma workTapePos_rightCfg (cfg : Cfg k Symbol State₁ input) :
     (rightCfg (State₀ := State₀) cfg).workTapePos = cfg.workTapePos := rfl
 
 end Sequential
@@ -123,7 +124,7 @@ open Sequential in
 /-- **Sequential composition of transformations.** If the postcondition of the first
 transformation implies the precondition of the second, the composed machine performs the two
 transformations one after the other, with the time and space bounds adding. -/
-public theorem transformsTapes_seq
+theorem transformsTapes_seq
     {P₀ P₁ : (input : List Symbol) → (Fin k → List Symbol) → Prop}
     {Q₀ Q₁ : (input : List Symbol) → (Fin k → List Symbol) → (Fin k → List Symbol) → Prop}
     {t₀ s₀ t₁ s₁ : ℕ}
@@ -172,7 +173,7 @@ section RawSeq
 variable {K : ℕ} {Sym S₁ S₂ : Type*} {inp : List Sym}
 
 open Sequential in
-public lemma seq_spec {tm₁ : MultiTapeTM K Sym S₁} {tm₂ : MultiTapeTM K Sym S₂}
+lemma seq_spec {tm₁ : MultiTapeTM K Sym S₁} {tm₂ : MultiTapeTM K Sym S₂}
     {c : Cfg K Sym (S₁ ⊕ S₂) inp} {c₁ : Cfg K Sym S₁ inp} {c₂ : Cfg K Sym S₂ inp}
     {u₁ u₂ s₁' s₂' : ℕ}
     (hc : c.state = some (tm₁.seq tm₂).q₀)

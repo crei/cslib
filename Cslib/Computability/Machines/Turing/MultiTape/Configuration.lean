@@ -194,6 +194,11 @@ abbrev Cfg.Halted (cfg : Cfg k Symbol State input) : Prop := cfg.state = none
     Cfg k Symbol State input :=
   ⟨c.state, c.inputPos, c.workTapes, c.workTapePos, out⟩
 
+/-- The same configuration in a different control state, possibly of a different state type. -/
+@[simps] def Cfg.withState (cfg : Cfg k Symbol State input)
+    {State' : Type*} (q : Option State') : Cfg k Symbol State' input :=
+  ⟨q, cfg.inputPos, cfg.workTapes, cfg.workTapePos, cfg.output⟩
+
 /-- Remap the (optional) state of a configuration through `φ`, leaving the input head, the work
 tapes, the work-tape heads and the output alone. The control-flow combinators (`seq`, `branch`,
 `repeat`) embed a sub-machine's configurations into the combined machine by exactly such a state
