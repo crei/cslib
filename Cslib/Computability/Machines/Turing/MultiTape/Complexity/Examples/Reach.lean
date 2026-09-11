@@ -1,0 +1,494 @@
+/-
+Copyright (c) 2026 Christian Reitwiessner. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Christian Reitwiessner
+-/
+
+module
+
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.DepthRec
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.BoundsTactic
+
+/-!
+# Reachability by double recursion
+
+The algorithm behind Savitch's theorem, instantiated into `Bounds.depthRec`.
+
+`reach E verts k a b` asks whether there is a path from `a` to `b` of length at most `2 ^ k`, by
+guessing a midpoint and recursing twice:
+
+```
+reach E verts (k+1) a b  =  verts.any fun m => reach E verts k a m && reach E verts k m b
+```
+
+The two recursive calls run *sequentially*, so they reuse each other's work space; only the frame
+of the enclosing call stays live. That is why the space is `depth × frame` rather than
+`branching ^ depth`.
+
+## Two encoding choices, both forced
+
+* **Levels are unary** (`List Unit`). The schema has to test `k = 0` and form `k - 1`, and there
+  is no ℕ-arithmetic primitive — but `List.isEmpty` and `List.tail` are primitives. This is the
+  same device `Cnf.lean` uses for variable indices, and it is harmless: unary and binary levels
+  are polynomially related.
+* **The activation state is a `structure`** with named fields. Its `DataEncode` instance comes
+  from `DataEncode.ofInjection Activation.toProd`, so the encoding *is* the tuple's encoding.
+  `Activation.toProd` and `Activation.ofProd` are therefore no-ops on encodings and get
+  certificates from `Bounds.recode` without any new assumption. Field access is then an ordinary
+  `Bounds.fst`/`Bounds.snd` chain.
+
+The midpoint search is a plain `List V` carried inside the activation, so nothing of the size of
+the whole search space is ever materialised — this is the point of the resumable-strategy shape
+of `RecSchema`.
+-/
+
+@[expose] public section
+
+namespace Turing
+
+namespace MultiTapeTM
+
+namespace Reach
+
+open RoseTreeMachine RecSchema
+
+variable {V : Type} [DataEncode V] [DecidableEq V] [Inhabited V]
+
+/-- Recursion levels, in unary. -/
+abbrev Level := List Unit
+
+/-- A question: at what level, and between which two vertices? -/
+abbrev Question (V : Type) := Level × V × V
+
+/-- An activation. -/
+structure Activation (V : Type) where
+  /-- This activation's recursion level, in unary. -/
+  level : Level
+  /-- The source vertex. -/
+  source : V
+  /-- The target vertex. -/
+  target : V
+  /-- The midpoints still to try. -/
+  remaining : List V
+  /-- Has this activation succeeded? -/
+  finished : Bool
+  /-- The result, meaningful once finished. -/
+  result : Bool
+  /-- Are we awaiting the right half `m → target`? -/
+  awaitingRight : Bool
+
+/-- The underlying tuple. Only carries the encoding across; never appears in the algorithm. -/
+def Activation.toProd (s : Activation V) : Level × V × V × List V × Bool × Bool × Bool :=
+  (s.level, s.source, s.target, s.remaining, s.finished, s.result, s.awaitingRight)
+
+/-- The inverse, for building an activation from certified components. -/
+def Activation.ofProd (p : Level × V × V × List V × Bool × Bool × Bool) : Activation V :=
+  ⟨p.1, p.2.1, p.2.2.1, p.2.2.2.1, p.2.2.2.2.1, p.2.2.2.2.2.1, p.2.2.2.2.2.2⟩
+
+omit [DataEncode V] [DecidableEq V] [Inhabited V] in
+lemma Activation.toProd_injective : Function.Injective (Activation.toProd (V := V)) := by
+  intro x y h
+  cases x
+  cases y
+  simp only [Activation.toProd, Prod.mk.injEq] at h
+  simp_all
+
+instance : DataEncode (Activation V) :=
+  DataEncode.ofInjection Activation.toProd Activation.toProd_injective
+
+/-- An activation that is still scanning midpoints. -/
+def scanning (k : Level) (a b : V) (ms : List V) (aw : Bool) : Activation V :=
+  { level := k, source := a, target := b, remaining := ms, finished := false, result := false,
+    awaitingRight := aw }
+
+/-- An activation that has found a midpoint and succeeded. -/
+def succeeded (k : Level) (a b : V) (ms : List V) : Activation V :=
+  { level := k, source := a, target := b, remaining := ms, finished := true, result := true,
+    awaitingRight := false }
+
+/-- **The algorithm.** Is there a path from `a` to `b` of length at most `2 ^ k`? -/
+def reach (E : V → V → Bool) (verts : List V) : Level → V → V → Bool
+  | [], a, b => (a == b) || E a b
+  | _ :: ks, a, b => verts.any fun m => reach E verts ks a m && reach E verts ks m b
+
+/-- Opening an activation. A level-zero question is answered outright. -/
+def enter (E : V → V → Bool) (verts : List V) (q : Question V) : Activation V :=
+  cond q.1.isEmpty
+    { level := [], source := q.2.1, target := q.2.2, remaining := [], finished := true,
+      result := (q.2.1 == q.2.2) || E q.2.1 q.2.2, awaitingRight := false }
+    (scanning q.1 q.2.1 q.2.2 verts false)
+
+/-- An activation is finished when it has succeeded, run out of midpoints, or is at level zero. -/
+def isDone (s : Activation V) : Bool := s.finished || s.remaining.isEmpty || s.level.isEmpty
+
+/-- The result of a finished activation. -/
+def answer (s : Activation V) : Bool := s.result
+
+/-- The sub-question: the left half `source → m`, or the right half `m → target` once the left
+succeeded. -/
+def ask (s : Activation V) : Question V :=
+  (s.level.tail,
+    cond s.awaitingRight (s.remaining.head?.getD default) s.source,
+    cond s.awaitingRight s.target (s.remaining.head?.getD default))
+
+/-- Absorbing a sub-answer: a successful left half moves on to the right half, a successful right
+half finishes, and any failure moves to the next midpoint. -/
+def resume (s : Activation V) (ans : Bool) : Activation V :=
+  cond ans
+    (cond s.awaitingRight
+      { s with finished := true, result := true, awaitingRight := false }
+      { s with awaitingRight := true })
+    { s with
+      remaining := s.remaining.tail, finished := false, result := false,
+      awaitingRight := false }
+
+/-- **The schema.** The level decreases on every sub-question, which is what bounds the stack. -/
+def schema (E : V → V → Bool) (verts : List V) :
+    RecSchema (Question V) Bool (Activation V) where
+  enter := enter E verts
+  isDone := isDone
+  answer := answer
+  ask := ask
+  resume := resume
+  level s := s.level.length
+  level_ask := by
+    intro s hs
+    simp only [isDone, Bool.or_eq_false_iff] at hs
+    obtain ⟨⟨-, hremaining⟩, hlevel⟩ := hs
+    have h1 : s.level ≠ [] := by
+      intro h; rw [h] at hlevel; simp at hlevel
+    simp only [enter, ask]
+    cases hc : (s.level.tail).isEmpty with
+    | true => simpa using Nat.pos_of_ne_zero (fun h => h1 (List.eq_nil_of_length_eq_zero h))
+    | false =>
+      simp only [Bool.cond_false, scanning, List.length_tail]
+      exact Nat.sub_lt (Nat.pos_of_ne_zero fun h => h1 (List.eq_nil_of_length_eq_zero h))
+        Nat.one_pos
+  level_resume := by
+    intro s b
+    cases b <;> cases hw : s.awaitingRight <;> simp [resume, hw]
+
+/-! ## Correctness: the schema evaluates to `reach` -/
+
+omit [DataEncode V] in
+/-- Scanning the remaining midpoints at one level. The inner induction of `heval`. -/
+lemma scan (E : V → V → Bool) (verts : List V) (ks : Level) (u : Unit)
+    (ih : ∀ x y : V, EvalFrom (schema E verts) ((schema E verts).enter (ks, x, y))
+      (reach E verts ks x y)) (a b : V) (ms : List V) :
+    EvalFrom (schema E verts) (scanning (u :: ks) a b ms false)
+      (ms.any fun m => reach E verts ks a m && reach E verts ks m b) := by
+  induction ms with
+  | nil =>
+    have hd : (schema E verts).isDone (scanning (u :: ks) a b ([] : List V) false)
+        = true := by simp [schema, isDone, scanning]
+    simpa [schema, answer, scanning, succeeded] using EvalFrom.ret (S := schema E verts) hd
+  | cons m ms ih2 =>
+    have hd : (schema E verts).isDone (scanning (u :: ks) a b (m :: ms) false)
+        = false := by simp [schema, isDone, scanning]
+    have hq : (schema E verts).ask (scanning (u :: ks) a b (m :: ms) false)
+        = (ks, a, m) := by simp [schema, ask, scanning]
+    rw [List.any_cons]
+    refine EvalFrom.ask (b' := reach E verts ks a m) hd (by rw [hq]; exact ih a m) ?_
+    cases hL : reach E verts ks a m with
+    | false =>
+      have he : (schema E verts).resume (scanning (u :: ks) a b (m :: ms) false) false
+          = (scanning (u :: ks) a b ms false) := by simp [schema, resume, scanning]
+      rw [he]
+      simpa using ih2
+    | true =>
+      have he : (schema E verts).resume (scanning (u :: ks) a b (m :: ms) false) true
+          = (scanning (u :: ks) a b (m :: ms) true) := by simp [schema, resume, scanning]
+      rw [he]
+      have hd2 : (schema E verts).isDone (scanning (u :: ks) a b (m :: ms) true)
+          = false := by simp [schema, isDone, scanning]
+      have hq2 : (schema E verts).ask (scanning (u :: ks) a b (m :: ms) true)
+          = (ks, m, b) := by simp [schema, ask, scanning]
+      refine EvalFrom.ask (b' := reach E verts ks m b) hd2 (by rw [hq2]; exact ih m b) ?_
+      cases hR : reach E verts ks m b with
+      | false =>
+        have he2 : (schema E verts).resume
+            (scanning (u :: ks) a b (m :: ms) true) false
+            = (scanning (u :: ks) a b ms false) := by simp [schema, resume, scanning]
+        rw [he2]
+        simpa using ih2
+      | true =>
+        have he2 : (schema E verts).resume
+            (scanning (u :: ks) a b (m :: ms) true) true
+            = (succeeded (u :: ks) a b (m :: ms)) := by simp [schema, resume, scanning, succeeded]
+        rw [he2]
+        have hd3 : (schema E verts).isDone (succeeded (u :: ks) a b (m :: ms))
+            = true := by simp [schema, isDone, succeeded]
+        simpa [schema, answer, scanning, succeeded] using EvalFrom.ret (S := schema E verts) hd3
+
+omit [DataEncode V] in
+/-- **The schema computes `reach`.** This is `depthRec`'s `heval` obligation, and it is a plain
+induction on the level — the machine never appears. -/
+lemma heval (E : V → V → Bool) (verts : List V) (k : Level) (a b : V) :
+    Eval (schema E verts) (k, a, b) (reach E verts k a b) := by
+  induction k generalizing a b with
+  | nil =>
+    have hd : (schema E verts).isDone ((schema E verts).enter (([] : Level), a, b)) = true := by
+      simp [schema, enter, isDone, scanning]
+    change EvalFrom (schema E verts) ((schema E verts).enter (([] : Level), a, b)) _
+    simpa [schema, enter, answer, reach, scanning] using EvalFrom.ret (S := schema E verts) hd
+  | cons u ks ih =>
+    have he : (schema E verts).enter ((u :: ks : Level), a, b)
+        = (scanning (u :: ks) a b verts false) := by simp [schema, enter, scanning]
+    change EvalFrom (schema E verts) ((schema E verts).enter ((u :: ks : Level), a, b)) _
+    rw [he]
+    simpa [reach] using scan E verts ks u (fun x y => ih x y) a b verts
+
+/-! ## Certificates for the schema's fields
+
+Each field is a first-order function, which is the point of the `RecSchema` shape: they can be
+certified separately with the ordinary combinators. The structure's fields are reached through
+`Activation.toProd`, which `Bounds.recode` certifies for free. -/
+
+/-- Viewing an activation as its underlying tuple: a no-op on encodings. -/
+def toProdBounds : Bounds (Activation.toProd (V := V)) := Bounds.recode (fun _ => rfl)
+
+/-- Building an activation from its components: also a no-op on encodings. -/
+def ofProdBounds : Bounds (Activation.ofProd (V := V)) := Bounds.recode (fun _ => rfl)
+
+/-- `level` -/
+def levelBounds : Bounds (fun s : Activation V => s.level) :=
+  Bounds.comp' _ Bounds.fst toProdBounds
+
+/-- `source` -/
+def sourceBounds : Bounds (fun s : Activation V => s.source) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst Bounds.snd) toProdBounds
+
+/-- `target` -/
+def targetBounds : Bounds (fun s : Activation V => s.target) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst (Bounds.comp' _ Bounds.snd Bounds.snd)) toProdBounds
+
+/-- `remaining` -/
+def remainingBounds : Bounds (fun s : Activation V => s.remaining) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst
+    (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd Bounds.snd))) toProdBounds
+
+/-- `finished` -/
+def finishedBounds : Bounds (fun s : Activation V => s.finished) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst (Bounds.comp' _ Bounds.snd
+    (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd Bounds.snd)))) toProdBounds
+
+/-- `result` -/
+def resultBounds : Bounds (fun s : Activation V => s.result) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.fst (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd
+    (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd Bounds.snd))))) toProdBounds
+
+/-- `awaitingRight` -/
+def awaitingRightBounds : Bounds (fun s : Activation V => s.awaitingRight) :=
+  Bounds.comp' _ (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd
+    (Bounds.comp' _ Bounds.snd (Bounds.comp' _ Bounds.snd Bounds.snd))))) toProdBounds
+
+attribute [bounds] levelBounds sourceBounds targetBounds remainingBounds finishedBounds
+  resultBounds awaitingRightBounds ofProdBounds
+
+/-- Boolean disjunction, on the finite type `Bool × Bool`. -/
+def orBounds : Bounds (Function.uncurry (· || · : Bool → Bool → Bool)) := Bounds.ofFintype _
+
+attribute [bounds] orBounds
+
+/-- `answer` is a single field access. -/
+def answerBounds : Bounds (answer (V := V)) := by bounds
+
+/-- `isDone` is two `isEmpty` tests and two disjunctions. -/
+def isDoneBounds : Bounds (isDone (V := V)) :=
+  Bounds.comp' _ orBounds
+    (Bounds.pair finishedBounds
+      (Bounds.comp' _ orBounds
+        (Bounds.pair (Bounds.comp' _ Bounds.isEmpty remainingBounds)
+          (Bounds.comp' _ Bounds.isEmpty levelBounds))))
+    (by funext s; simp [isDone, Bool.or_assoc])
+
+/-- **Assembling an activation** from certificates for its seven components. `Activation.ofProd`
+is a no-op on encodings, so this costs no more than the fan-out that builds the tuple. -/
+def mkActivation {α : Type} [DataEncode α] {fLevel : α → Level} {fSource fTarget : α → V}
+    {fRemaining : α → List V} {fFinished fResult fAwait : α → Bool}
+    (hLevel : Bounds fLevel) (hSource : Bounds fSource) (hTarget : Bounds fTarget)
+    (hRemaining : Bounds fRemaining) (hFinished : Bounds fFinished) (hResult : Bounds fResult)
+    (hAwait : Bounds fAwait) :
+    Bounds (fun a => ({
+      level := fLevel a, source := fSource a, target := fTarget a,
+      remaining := fRemaining a, finished := fFinished a, result := fResult a,
+      awaitingRight := fAwait a } : Activation V)) :=
+  Bounds.comp' _ ofProdBounds
+    (Bounds.pair hLevel (Bounds.pair hSource (Bounds.pair hTarget (Bounds.pair hRemaining
+      (Bounds.pair hFinished (Bounds.pair hResult hAwait))))))
+
+/-- `ask`: drop one level, and pick the half determined by `awaitingRight`. -/
+def askBounds : Bounds (ask (V := V)) :=
+  Bounds.pair' _ (Bounds.comp' _ Bounds.tail levelBounds)
+    (Bounds.pair' _
+      (Bounds.ite awaitingRightBounds
+        (Bounds.comp' _ (Bounds.headD default) remainingBounds) sourceBounds)
+      (Bounds.ite awaitingRightBounds targetBounds
+        (Bounds.comp' _ (Bounds.headD default) remainingBounds)))
+
+/-- `resume`, as a function of the pair `(activation, sub-answer)`. -/
+def resumeBounds : Bounds (Function.uncurry (resume (V := V))) :=
+  Bounds.ite Bounds.snd
+    (Bounds.ite (Bounds.comp' _ awaitingRightBounds Bounds.fst)
+      (mkActivation (Bounds.comp' _ levelBounds Bounds.fst)
+        (Bounds.comp' _ sourceBounds Bounds.fst) (Bounds.comp' _ targetBounds Bounds.fst)
+        (Bounds.comp' _ remainingBounds Bounds.fst) (Bounds.const true) (Bounds.const true)
+        (Bounds.const false))
+      (mkActivation (Bounds.comp' _ levelBounds Bounds.fst)
+        (Bounds.comp' _ sourceBounds Bounds.fst) (Bounds.comp' _ targetBounds Bounds.fst)
+        (Bounds.comp' _ remainingBounds Bounds.fst)
+        (Bounds.comp' _ finishedBounds Bounds.fst) (Bounds.comp' _ resultBounds Bounds.fst)
+        (Bounds.const true)))
+    (mkActivation (Bounds.comp' _ levelBounds Bounds.fst)
+      (Bounds.comp' _ sourceBounds Bounds.fst) (Bounds.comp' _ targetBounds Bounds.fst)
+      (Bounds.comp' _ Bounds.tail (Bounds.comp' _ remainingBounds Bounds.fst))
+      (Bounds.const false) (Bounds.const false) (Bounds.const false))
+
+/-- The two endpoints of a question. -/
+def endpointsBounds : Bounds (fun q : Question V => (q.2.1, q.2.2)) :=
+  Bounds.pair (Bounds.comp' _ Bounds.fst Bounds.snd) (Bounds.comp' _ Bounds.snd Bounds.snd)
+
+/-- `enter`. The level-zero branch is the only place the graph is consulted, so the certificates
+for vertex equality and for the edge relation are this example's only hypotheses — they depend on
+how the graph is represented, which `reach` deliberately does not fix. -/
+def enterBounds (E : V → V → Bool) (verts : List V)
+    (hEq : Bounds (Function.uncurry (· == · : V → V → Bool)))
+    (hE : Bounds (Function.uncurry E)) :
+    Bounds (enter E verts) :=
+  (Bounds.ite (Bounds.comp' _ Bounds.isEmpty Bounds.fst)
+    (mkActivation (Bounds.const ([] : Level)) (Bounds.comp' _ Bounds.fst Bounds.snd)
+      (Bounds.comp' _ Bounds.snd Bounds.snd) (Bounds.const ([] : List V)) (Bounds.const true)
+      (Bounds.comp' _ orBounds
+        (Bounds.pair (Bounds.comp' _ hEq endpointsBounds) (Bounds.comp' _ hE endpointsBounds)))
+      (Bounds.const false))
+    (mkActivation Bounds.fst (Bounds.comp' _ Bounds.fst Bounds.snd)
+      (Bounds.comp' _ Bounds.snd Bounds.snd) (Bounds.const verts) (Bounds.const false)
+      (Bounds.const false) (Bounds.const false))).congr
+    (by funext q; simp [enter, scanning, Function.uncurry])
+
+/-! ## The resource obligations -/
+
+/-- Reachability as a function of the whole question — the shape `depthRec` certifies. -/
+def reachOf (E : V → V → Bool) (verts : List V) (q : Question V) : Bool :=
+  reach E verts q.1 q.2.1 q.2.2
+
+omit [DataEncode V] in
+/-- `heval`, packaged for `depthRec`. -/
+lemma heval' (E : V → V → Bool) (verts : List V) (q : Question V) :
+    Eval (schema E verts) q (reachOf E verts q) := heval E verts q.1 q.2.1 q.2.2
+
+/-- **`D`: the opening level is bounded by the input size.** -/
+lemma level_enter_le (E : V → V → Bool) (verts : List V) (q : Question V) :
+    (schema E verts).level ((schema E verts).enter q) ≤ (DataEncode.encode q).size := by
+  have h2 : (DataEncode.encode q).size
+      = (DataEncode.encode q.1).size + (DataEncode.encode q.2).size + 2 :=
+    DataEncode.size_pair _ _
+  simp only [schema, enter]
+  cases hc : q.1.isEmpty with
+  | true => simp
+  | false =>
+    simp only [Bool.cond_false, scanning]
+    have := DataEncode.length_le_size q.1
+    omega
+
+/-- **The frame invariant.** The level only ever shrinks, the midpoint list is always a suffix of
+`verts`, and the two endpoints are drawn from the original question or from `verts`. -/
+def FrameOK (verts : List V) (q : Question V) (s : Activation V) : Prop :=
+  s.level.length ≤ q.1.length ∧ (∃ n, s.remaining = verts.drop n) ∧
+    s.source ∈ q.2.1 :: q.2.2 :: default :: verts ∧
+    s.target ∈ q.2.1 :: q.2.2 :: default :: verts
+
+omit [DataEncode V] [DecidableEq V] in
+/-- The head of a suffix of `verts` is one of the listed vertices. -/
+lemma head_mem {verts r : List V} (h : ∃ n, r = verts.drop n) (q : Question V) :
+    r.head?.getD default ∈ q.2.1 :: q.2.2 :: default :: verts := by
+  obtain ⟨n, rfl⟩ := h
+  cases hd : (verts.drop n).head? with
+  | none => simp
+  | some v =>
+    have hv : v ∈ verts := List.mem_of_mem_drop (List.mem_of_head? hd)
+    simp [hv]
+
+omit [DataEncode V] in
+/-- Both endpoints of a sub-question stay within the allowed set. -/
+lemma ask_endpoints_mem (E : V → V → Bool) (verts : List V) (q : Question V) (s : Activation V)
+    (hs : FrameOK verts q s) :
+    ((schema E verts).ask s).2.1 ∈ q.2.1 :: q.2.2 :: default :: verts ∧
+      ((schema E verts).ask s).2.2 ∈ q.2.1 :: q.2.2 :: default :: verts := by
+  obtain ⟨-, hrem, hsrc, htgt⟩ := hs
+  have hhead := head_mem hrem q
+  simp only [schema, ask]
+  cases hw : s.awaitingRight
+  · exact ⟨by simpa using hsrc, by simpa using hhead⟩
+  · exact ⟨by simpa using hhead, by simpa using htgt⟩
+
+omit [DataEncode V] [Inhabited V] in
+/-- The level of a freshly entered activation. -/
+lemma enter_level (E : V → V → Bool) (verts : List V) (p : Question V) :
+    (enter E verts p).level = cond p.1.isEmpty [] p.1 := by
+  cases hc : p.1.isEmpty <;> simp [enter, scanning, hc]
+
+omit [DataEncode V] [Inhabited V] in
+/-- Its midpoint list. -/
+lemma enter_remaining (E : V → V → Bool) (verts : List V) (p : Question V) :
+    (enter E verts p).remaining = cond p.1.isEmpty [] verts := by
+  cases hc : p.1.isEmpty <;> simp [enter, scanning, hc]
+
+omit [DataEncode V] [Inhabited V] in
+/-- Its endpoints, which are the question's. -/
+lemma enter_endpoints (E : V → V → Bool) (verts : List V) (p : Question V) :
+    (enter E verts p).source = p.2.1 ∧ (enter E verts p).target = p.2.2 := by
+  cases hc : p.1.isEmpty <;>
+    exact ⟨by simp [enter, scanning, hc], by simp [enter, scanning, hc]⟩
+
+omit [DataEncode V] in
+/-- The invariant holds at the opening activation. -/
+lemma frameOK_enter (E : V → V → Bool) (verts : List V) (q : Question V) :
+    FrameOK verts q ((schema E verts).enter q) := by
+  obtain ⟨he1, he2⟩ := enter_endpoints E verts q
+  simp only [schema]
+  refine ⟨?_, ?_, by simp [he1], by simp [he2]⟩
+  · rw [enter_level]; cases q.1.isEmpty <;> simp
+  · rw [enter_remaining]; cases q.1.isEmpty
+    · exact ⟨0, by simp⟩
+    · exact ⟨verts.length, by simp⟩
+
+omit [DataEncode V] in
+/-- The invariant survives entering a sub-question. -/
+lemma frameOK_ask (E : V → V → Bool) (verts : List V) (q : Question V) (s : Activation V)
+    (hs : FrameOK verts q s) :
+    FrameOK verts q ((schema E verts).enter ((schema E verts).ask s)) := by
+  obtain ⟨hsrc', htgt'⟩ := ask_endpoints_mem E verts q s hs
+  obtain ⟨hlen, -, -, -⟩ := hs
+  obtain ⟨he1, he2⟩ := enter_endpoints E verts ((schema E verts).ask s)
+  simp only [schema] at hsrc' htgt' he1 he2 ⊢
+  have hlen' : (ask s).1.length ≤ q.1.length := by
+    have : (ask s).1 = s.level.tail := rfl
+    rw [this]
+    calc s.level.tail.length ≤ s.level.length := by simp
+      _ ≤ q.1.length := hlen
+  refine ⟨?_, ?_, by rw [he1]; exact hsrc', by rw [he2]; exact htgt'⟩
+  · rw [enter_level]; cases (ask s).1.isEmpty <;> simp [hlen']
+  · rw [enter_remaining]; cases (ask s).1.isEmpty
+    · exact ⟨0, by simp⟩
+    · exact ⟨verts.length, by simp⟩
+
+omit [DataEncode V] in
+/-- The invariant survives resumption. -/
+lemma frameOK_resume (E : V → V → Bool) (verts : List V) (q : Question V) (s : Activation V)
+    (ans : Bool) (hs : FrameOK verts q s) :
+    FrameOK verts q ((schema E verts).resume s ans) := by
+  obtain ⟨hlen, ⟨n, hn⟩, hsrc, htgt⟩ := hs
+  cases ans <;> cases hw : s.awaitingRight <;>
+    refine ⟨by simpa [schema, resume, hw] using hlen, ?_,
+      by simpa [schema, resume, hw] using hsrc, by simpa [schema, resume, hw] using htgt⟩
+  · exact ⟨n + 1, by simp [schema, resume, hw, hn, List.tail_drop]⟩
+  · exact ⟨n + 1, by simp [schema, resume, hw, hn, List.tail_drop]⟩
+  · exact ⟨n, by simp [schema, resume, hw, hn]⟩
+  · exact ⟨n, by simp [schema, resume, hw, hn]⟩
+
+end Reach
+
+end MultiTapeTM
+
+end Turing
