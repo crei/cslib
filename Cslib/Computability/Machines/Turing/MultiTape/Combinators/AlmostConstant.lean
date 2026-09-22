@@ -20,17 +20,17 @@ cases, it emits the corresponding output one symbol at a time.
 
 This result also holds for functions whose domain is already finite.
 
-## Main results
+## Main Results
 
-* `computableInTimeAndSpace_of_finite`: Every function on a finite type is computable in
+* `encodedComputableInTimeAndSpace_of_finite`: Every function on a finite type is computable in
     constant time and zero space, relative to any encoding.
-* `computableInTimeAndSpace_of_exists_finite_ne`: Every function that is constant except
+* `encodedComputableInTimeAndSpace_of_exists_finite_ne`: Every function that is constant except
     for a finite number of arguments is computable in constant time and zero space, relative to any
     encoding.
-* `computableInTimeAndSpace_of_const`: Every constant function is computable in constant
+* `encodedComputableInTimeAndSpace_of_const`: Every constant function is computable in constant
     time and zero space, relative to any encoding.
-* `computableInTimeAndSpace_almostConstTime` and
-    `computableInTimeAndSpace_finiteFunTime`: The same with explicit time bounds.
+* `encodedComputableInTimeAndSpace_almostConstTime` and
+    `encodedComputableInTimeAndSpace_finiteFunTime`: The same with explicit time bounds.
 
 -/
 
@@ -243,6 +243,7 @@ lemma runFrom_write_halted {input : List Bool} (pos : Fin (input.length + 2)) (o
   exact Cfg.ext_zero_tapes rfl rfl (by simp)
 
 /-- A constant time bound for the machine `almostConstTM`. -/
+@[expose]
 public def almostConstTime (encIn : α ↪ List Bool) (encOut : β ↪ List Bool) (f : α → β)
     (S : Finset α) (out : List Bool) : ℕ :=
   2 + out.length + S.sup fun a => (encIn a).length + (encOut (f a)).length
@@ -366,6 +367,7 @@ public theorem computableInTimeAndSpace_of_const {α β : Type*}
   computableInTimeAndSpace_of_exists_finite_ne ⟨b, by simp⟩
 
 /-- A constant time bound for functions on a finite type. -/
+@[expose]
 public noncomputable def finiteFunTime {α β : Type*} [Finite α] (encIn : α ↪ List Bool)
     (encOut : β ↪ List Bool) (f : α → β) : ℕ :=
   haveI := Fintype.ofFinite α
