@@ -77,8 +77,11 @@ public import Cslib.Computability.Languages.SafetyLiveness
 public import Cslib.Computability.Languages.Slice
 public import Cslib.Computability.Languages.SyntacticMonoid
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.AlmostConstant
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Append
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Comp
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.CopyWord
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Encoding
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Foldl
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Id
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Ite
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.IterateWhile
