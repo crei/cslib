@@ -32,6 +32,7 @@ second.
 * `Turing.MultiTapeTM.spaceUsed_seq_le`: the space of a sequential run splits across the two
   phases.
 * `Turing.MultiTapeTM.transformsTapes_seq`: transformations compose, bounds adding.
+* `Turing.MultiTapeTM.TransformsTapes.seq_eq`: the same for transformations given by equations.
 -/
 
 @[expose] public section
@@ -239,5 +240,17 @@ theorem transformsTapes_seq
     rw [hstart]
     exact (spaceUsed_seq_le hrun₀ rfl (congrArg Cfg.state hrun₁)).trans
       (Nat.add_le_add hspace₀ hspace₁)
+
+/-- **Sequential composition of transformations given by equations.** If the first machine leaves
+the words `ws₁` and emits `e₀`, and the second takes `ws₁` to `ws₂` emitting `e₁`, the composed
+machine leaves `ws₂` and emits `e₀ ++ e₁`. -/
+theorem TransformsTapes.seq_eq {P : (input : List Symbol) → (Fin k → List Symbol) → Prop}
+    {ws₁ ws₂ : Fin k → List Symbol} {e₀ e₁ : List Symbol} {t₀ s₀ t₁ s₁ : ℕ}
+    (h₀ : TransformsTapes tm₀ P (fun _ _ ws' e => ws' = ws₁ ∧ e = e₀) t₀ s₀)
+    (h₁ : TransformsTapes tm₁ (fun _ ws => ws = ws₁) (fun _ _ ws' e => ws' = ws₂ ∧ e = e₁) t₁ s₁) :
+    TransformsTapes (tm₀.seq tm₁) P (fun _ _ ws' e => ws' = ws₂ ∧ e = e₀ ++ e₁)
+      (t₀ + t₁) (s₀ + s₁) :=
+  (transformsTapes_seq h₀ h₁ fun _ _ _ _ _ h => h.1).imp (fun _ _ h => h)
+    (by rintro _ _ _ _ _ ⟨_, _, _, ⟨rfl, rfl⟩, ⟨rfl, rfl⟩, rfl⟩; exact ⟨rfl, rfl⟩) le_rfl le_rfl
 
 end Turing.MultiTapeTM
