@@ -99,6 +99,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Pair
 public import Cslib.Computability.Machines.Turing.MultiTape.Nondeterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Branch
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ClearWork
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Cursor
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ExtendTapes
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ForwardWork
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.InputFromTape
@@ -112,6 +113,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Sequential
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Tidy.Basic
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Tidy.Defs
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.TransformsTapes
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.WhileInput
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.WordsCfg
 public import Cslib.Computability.Machines.Turing.MultiTape.Space
 public import Cslib.Computability.Machines.Turing.MultiTape.TapeLemmas
