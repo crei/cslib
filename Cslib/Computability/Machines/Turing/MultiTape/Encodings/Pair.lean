@@ -1,0 +1,76 @@
+/-
+Copyright (c) 2026 Christian Reitwiessner. All rights reserved.
+Released under Apache 2.0 license as described in the file LICENSE.
+Authors: Christian Reitwiessner
+-/
+
+module
+
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Append
+public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Basic
+import Mathlib.Tactic.Linarith
+
+/-!
+# The framed encoding of pairs
+
+`encPair enc₁ enc₂` encodes a pair as its framed first component (`Turing.MultiTapeTM.frame`)
+followed by its second component. It has the capabilities of `Turing.MultiTapeTM.PairEncoding`.
+
+## Main definitions
+
+* `Turing.MultiTapeTM.encFramed`: an encoding with every encoded value framed.
+* `Turing.MultiTapeTM.encPair`: the framed encoding of pairs.
+-/
+
+namespace Turing.MultiTapeTM
+
+universe u
+
+variable {α β : Type u}
+
+/-- `enc` with every encoded value framed. -/
+@[expose] public def encFramed (enc : α ↪ List Bool) : α ↪ List Bool :=
+  ⟨fun a => frame (enc a), fun _ _ h => enc.injective (frame_injective h)⟩
+
+/-- Pairs encoded as the framed first component followed by the second component. -/
+@[expose] public def encPair (enc₁ : α ↪ List Bool) (enc₂ : β ↪ List Bool) :
+    α × β ↪ List Bool :=
+  ⟨fun p => frame (enc₁ p.1) ++ enc₂ p.2, fun _ _ h =>
+    Prod.ext (enc₁.injective (frame_append_inj h).1) (enc₂.injective (frame_append_inj h).2)⟩
+
+@[simp]
+public lemma encFramed_apply (enc : α ↪ List Bool) (a : α) : encFramed enc a = frame (enc a) :=
+  rfl
+
+variable {enc₁ : α ↪ List Bool} {enc₂ : β ↪ List Bool}
+
+@[simp]
+public lemma encPair_apply (p : α × β) : encPair enc₁ enc₂ p = frame (enc₁ p.1) ++ enc₂ p.2 :=
+  rfl
+
+public lemma length_encPair (p : α × β) :
+    (encPair enc₁ enc₂ p).length = 2 * (enc₁ p.1).length + 1 + (enc₂ p.2).length := by
+  simp
+
+public lemma length_le_encPair_left (enc₁ : α ↪ List Bool) (enc₂ : β ↪ List Bool) (p : α × β) :
+    (enc₁ p.1).length ≤ (encPair enc₁ enc₂ p).length := by
+  rw [length_encPair]; omega
+
+public lemma length_le_encPair_right (enc₁ : α ↪ List Bool) (enc₂ : β ↪ List Bool) (p : α × β) :
+    (enc₂ p.2).length ≤ (encPair enc₁ enc₂ p).length := by
+  rw [length_encPair]; omega
+
+public instance : PairEncoding enc₁ enc₂ (encPair enc₁ enc₂) where
+  fst := .of_unframe fun p => by simp
+  snd := .of_dropFrame fun p => by simp
+  pair := fun {_ encIn f g t s} hf hg => by
+    obtain ⟨c₀, hframe⟩ := ComputableTidilyInLinearTimeAndSpace.of_frame (f := id)
+      (encIn := enc₁) (encOut := encFramed enc₁) fun _ => rfl
+    obtain ⟨c₁, hf'⟩ := ComputableTidilyInTimeAndSpace.comp hframe hf
+    obtain ⟨k, h⟩ := hf'.append hg (encOut := encPair enc₁ enc₂) (g := fun x => (f x, g x))
+      fun _ => rfl
+    refine ⟨2 + c₀ + c₁ + k, h.mono (fun x => ?_) (fun x => ?_)⟩
+    · nlinarith [hf.length_le x]
+    · nlinarith [length_encPair (enc₁ := enc₁) (enc₂ := enc₂) (f x, g x)]
+
+end Turing.MultiTapeTM

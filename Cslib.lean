@@ -90,6 +90,10 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Transduc
 public import Cslib.Computability.Machines.Turing.MultiTape.ConfigBound
 public import Cslib.Computability.Machines.Turing.MultiTape.Configuration
 public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
+public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Basic
+public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.List
+public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Option
+public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Pair
 public import Cslib.Computability.Machines.Turing.MultiTape.Nondeterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Branch
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ClearWork
