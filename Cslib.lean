@@ -80,6 +80,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.AlmostCo
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Comp
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.CopyWord
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Id
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Ite
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.IterateWhile
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.TidyZeroSpace
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Transducer
@@ -87,6 +88,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.ConfigBound
 public import Cslib.Computability.Machines.Turing.MultiTape.Configuration
 public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.Nondeterministic
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Branch
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ClearWork
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ExtendTapes
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ForwardWork
