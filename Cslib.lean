@@ -85,6 +85,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Foldl
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Id
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Ite
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.IterateWhile
+public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.StreamFold
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.TidyZeroSpace
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Transducer
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.PolyTime
