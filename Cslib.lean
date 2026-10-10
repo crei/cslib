@@ -106,6 +106,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.InputFromTa
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.MarkWork
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.OnWords
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.OutputToTape
+public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ReadInput
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.RepeatUntilBlank
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.RewindInput
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.RewindWork
