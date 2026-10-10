@@ -95,6 +95,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Basic
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.List
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Nat
+public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.NatStream
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Option
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Pair
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.StreamFold
