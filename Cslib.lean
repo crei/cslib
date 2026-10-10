@@ -88,7 +88,11 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.IterateW
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.StreamFold
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.TidyZeroSpace
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Transducer
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Degree
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Fold
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Lists
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.PolyTime
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Primitives
 public import Cslib.Computability.Machines.Turing.MultiTape.ConfigBound
 public import Cslib.Computability.Machines.Turing.MultiTape.Configuration
 public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
