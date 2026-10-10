@@ -134,11 +134,8 @@ public theorem transformsTapes_frozenRound (hVN : V ≠ N) (hVF : V ≠ F) (hNF 
   set W₃ := Function.update W₂ V next
   have hW₄ : Function.update W₃ N [] = Function.update (fun _ => []) V next := by
     funext l
-    by_cases hlV : l = V
-    · subst hlV; simp [W₃, hVN]
-    · by_cases hlN : l = N
-      · subst hlN; simp [hlV]
-      · simp [W₃, W₂, W₁, W₀, hlV, hlN]
+    simp only [W₃, W₂, W₁, W₀, Function.update_apply]
+    split_ifs <;> simp_all
   have h₀ : TransformsTapes E (fun _ ws => ws = W₀) (fun _ _ ws' em => ws' = W₀ ∧ em = emit)
       tE sE := hE.imp (fun _ _ h => h) (fun _ _ _ _ hws ⟨h, he⟩ => ⟨h.trans hws, he⟩) le_rfl le_rfl
   have h₁ : TransformsTapes Nm (fun _ ws => ws = W₀) (fun _ _ ws' em => ws' = W₁ ∧ em = [])
@@ -152,13 +149,8 @@ public theorem transformsTapes_frozenRound (hVN : V ≠ N) (hVF : V ≠ F) (hNF 
     (P' := fun _ ws => ws = W₂) (Q' := fun _ _ ws' em => ws' = W₃ ∧ em = [])
     (fun _ _ h => by
       subst h
-      refine ⟨?_, ?_, ?_⟩
-      · change W₂ N = next
-        simp [W₂, W₁, hVN.symm]
-      · change W₂ V = []
-        simp [W₂]
-      · change W₂ F = []
-        simp [W₂, W₁, W₀, hVF.symm, hNF.symm])
+      change W₂ N = next ∧ W₂ V = [] ∧ W₂ F = []
+      simp [W₂, W₁, W₀, hVN.symm, hVF.symm, hNF.symm])
     (fun _ _ _ _ hws ⟨h, he⟩ => ⟨by rw [h, hws]; rfl, he⟩) le_rfl le_rfl
   have h₄ : TransformsTapes ((clearWork Bool).extendTapes (tapeEmb N)) (fun _ ws => ws = W₃)
       (fun _ _ ws' em => ws' = Function.update (fun _ => []) V next ∧ em = [])
@@ -231,14 +223,12 @@ public theorem transformsTapesAt_streamRound (hVN : V ≠ N) (hVF : V ≠ F) (hN
     exact ⟨hp, hws, rfl⟩
 
 /-- The input position after the first `j` tokens. -/
-lemma streamPos_lt (toks : List (List Bool)) (j : ℕ) :
+public lemma streamPos_lt (toks : List (List Bool)) (j : ℕ) :
     1 + ((toks.take j).flatten).length < toks.flatten.length + 2 := by
-  have : ((toks.take j).flatten).length ≤ toks.flatten.length := by
-    conv_rhs => rw [← List.take_append_drop j toks, List.flatten_append, List.length_append]
-    omega
+  have := (List.take_sublist j toks).flatten.length_le
   omega
 
-lemma drop_flatten_take (toks : List (List Bool)) {j : ℕ} (hj : j < toks.length) :
+public lemma drop_flatten_take (toks : List (List Bool)) {j : ℕ} (hj : j < toks.length) :
     toks.flatten.drop ((toks.take j).flatten).length =
       toks[j] ++ (toks.drop (j + 1)).flatten := by
   calc toks.flatten.drop ((toks.take j).flatten).length
@@ -248,7 +238,7 @@ lemma drop_flatten_take (toks : List (List Bool)) {j : ℕ} (hj : j < toks.lengt
     _ = toks[j] ++ (toks.drop (j + 1)).flatten := by
         rw [List.drop_eq_getElem_cons hj, List.flatten_cons]
 
-lemma length_flatten_take_succ (toks : List (List Bool)) {j : ℕ} (hj : j < toks.length) :
+public lemma length_flatten_take_succ (toks : List (List Bool)) {j : ℕ} (hj : j < toks.length) :
     ((toks.take (j + 1)).flatten).length = ((toks.take j).flatten).length + toks[j].length := by
   rw [List.take_succ_eq_append_getElem hj, List.flatten_append, List.length_append]
   simp
