@@ -22,6 +22,9 @@ influence the cells that are modified on a tape.
 attains its per-tape space usage at a single step, which makes a bound that holds at every point
 in time usable as a bound for the whole run.
 
+`MultiTapeTM.runsInSpace_of_halted` turns a space bound on a halted run into a bound on every
+computation path.
+
 -/
 
 @[expose] public section
@@ -301,5 +304,26 @@ lemma spaceUsed_prependOutput (cfg : Cfg k Symbol State input) (pre : List Symbo
   spaceUsed_eq_of_workTapePos _ _ n fun m _ => by rw [runFrom_prependOutput]; rfl
 
 end PrependOutput
+
+/-! ### Space of computation paths -/
+
+/-- The space of a computation path is the space of the run of the same length. -/
+lemma computationPath_space_eq_spaceUsed (p : tm.ComputationPath input) :
+    p.space = tm.spaceUsed (tm.initCfg input) p.time := by
+  have hp (n : Fin (p.length + 1)) : p.toRunPath n = tm.runFrom (tm.initCfg input) n := by
+    rw [runPath_apply_eq_runFrom, p.head_eq]
+  simp only [MultiTapeNTM.ComputationPath.space, MultiTapeNTM.RunPath.space,
+    MultiTapeNTM.RunPath.spaceUsedByTape, MultiTapeNTM.RunPath.visitedByTapeHead, hp]
+  rfl
+
+/-- A machine that has halted by step `t`, using at most `s` cells, uses at most `s` cells on every
+computation path. -/
+lemma runsInSpace_of_halted {t s : ℕ} (hhalt : (tm.runFrom (tm.initCfg input) t).Halted)
+    (hs : tm.spaceUsed (tm.initCfg input) t ≤ s) : tm.RunsInSpace input s := by
+  intro p
+  rw [computationPath_space_eq_spaceUsed]
+  rcases le_total p.time t with h | h
+  · exact (spaceUsed_mono tm _ h).trans hs
+  · rwa [spaceUsed_eq_of_halt _ h hhalt]
 
 end Turing.MultiTapeTM
