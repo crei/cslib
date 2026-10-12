@@ -136,6 +136,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Universal.Basic
 public import Cslib.Computability.Machines.Turing.MultiTape.Universal.Bound
 public import Cslib.Computability.Machines.Turing.MultiTape.Universal.Complexity
 public import Cslib.Computability.Machines.Turing.MultiTape.Universal.Correct
+public import Cslib.Computability.Machines.Turing.MultiTape.Universal.InPlace
 public import Cslib.Computability.Machines.Turing.MultiTape.Universal.Machine
 public import Cslib.Computability.Machines.Turing.MultiTape.Universal.Space
 public import Cslib.Computability.Machines.Turing.SingleTape.Defs
