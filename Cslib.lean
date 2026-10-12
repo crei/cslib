@@ -90,6 +90,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.TidyZero
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Transducer
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Arith
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.BigO
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Binary
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Degree
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Fold
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Lists
