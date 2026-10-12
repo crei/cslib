@@ -106,6 +106,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.NatStream
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Option
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Pair
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.StreamFold
+public import Cslib.Computability.Machines.Turing.MultiTape.Map
 public import Cslib.Computability.Machines.Turing.MultiTape.Nondeterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.Branch
 public import Cslib.Computability.Machines.Turing.MultiTape.Plumbing.ClearWork
