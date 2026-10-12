@@ -102,6 +102,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Configuration
 public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Basic
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.List
+public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.MultiPass
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Nat
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.NatStream
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Option
