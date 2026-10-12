@@ -6,6 +6,7 @@ Authors: Christian Reitwiessner
 
 module
 
+public import Mathlib.Tactic.FunProp
 public import Cslib.Computability.Machines.Turing.MultiTape.Combinators.Foldl
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Basic
 public import Cslib.Computability.Machines.Turing.MultiTape.Encodings.Nat
@@ -34,6 +35,9 @@ and does not depend on the encodings up to polynomial-time conversions
 * `Turing.MultiTapeTM.EncodingEquiv.computableTidilyInPolyTime_iff`: polynomial-time computability
   transfers along equivalent encodings.
 * `Turing.MultiTapeTM.computableTidilyInPolyTime_succ`: the successor in binary.
+
+The closure properties are registered with `fun_prop`, so polynomial-time computability of a
+composite function follows from that of its parts.
 -/
 
 namespace Turing.MultiTapeTM
@@ -196,6 +200,47 @@ public theorem pair {α β₁ β₂ : Type u} {encIn : α ↪ List Bool} {enc₁
   have := h.length_le x
   omega
 
+/-! ### Automation -/
+
+attribute [fun_prop] ComputableTidilyInPolyTime
+
+attribute [fun_prop] const
+
+@[fun_prop]
+public theorem id' : ComputableTidilyInPolyTime (fun a : α => a) encIn encIn :=
+  of_eq fun _ => rfl
+
+@[fun_prop]
+public theorem comp' {f : β → γ} {g : α → β} (hf : ComputableTidilyInPolyTime f encMid encOut)
+    (hg : ComputableTidilyInPolyTime g encIn encMid) :
+    ComputableTidilyInPolyTime (fun a => f (g a)) encIn encOut :=
+  hf.comp hg
+
+@[fun_prop]
+public theorem prod {α β₁ β₂ : Type u} {encIn : α ↪ List Bool} {enc₁ : β₁ ↪ List Bool}
+    {enc₂ : β₂ ↪ List Bool} {f : α → β₁} {g : α → β₂}
+    (hf : ComputableTidilyInPolyTime f encIn enc₁) (hg : ComputableTidilyInPolyTime g encIn enc₂) :
+    ComputableTidilyInPolyTime (fun x => (f x, g x)) encIn (encPair enc₁ enc₂) :=
+  hf.pair hg
+
+@[fun_prop]
+public theorem fst {β₁ β₂ : Type u} (enc₁ : β₁ ↪ List Bool) (enc₂ : β₂ ↪ List Bool) :
+    ComputableTidilyInPolyTime (fun p : β₁ × β₂ => p.1) (encPair enc₁ enc₂) enc₁ :=
+  of_linear (.of_unframe fun p => by simp)
+
+@[fun_prop]
+public theorem snd {β₁ β₂ : Type u} (enc₁ : β₁ ↪ List Bool) (enc₂ : β₂ ↪ List Bool) :
+    ComputableTidilyInPolyTime (fun p : β₁ × β₂ => p.2) (encPair enc₁ enc₂) enc₂ :=
+  of_linear (.of_dropFrame fun p => by simp)
+
+/-- A case distinction between functions computable in polynomial time on all inputs. -/
+@[fun_prop]
+public theorem ite' {encC : Bool ↪ List Bool} {c : α → Bool} {f g : α → β}
+    (hc : ComputableTidilyInPolyTime c encIn encC) (hf : ComputableTidilyInPolyTime f encIn encMid)
+    (hg : ComputableTidilyInPolyTime g encIn encMid) :
+    ComputableTidilyInPolyTime (fun x => if c x then f x else g x) encIn encMid :=
+  hc.ite (hf.restrict _) (hg.restrict _)
+
 end ComputableTidilyInPolyTime
 
 /-! ### Equivalent encodings -/
@@ -272,6 +317,7 @@ public theorem ComputableTidilyInPolyTime.foldl {γ α β : Type u} {encIn : γ 
     (PolyBounded.const c).mul ((((hs₁.add hs₂).add hmax).add hlMax').add (.const 1)), h⟩
 
 /-- The successor is tidily computable in polynomial time, in the binary encoding `encNat`. -/
+@[fun_prop]
 public theorem computableTidilyInPolyTime_succ : ComputableTidilyInPolyTime (· + 1) encNat encNat :=
   let ⟨c, h⟩ := computableTidilyInTimeAndSpace_succ
   ⟨_, _, ⟨c, 2, fun _ => le_rfl⟩, ⟨c, 1, fun _ => by simp⟩, h⟩
