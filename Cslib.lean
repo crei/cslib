@@ -97,6 +97,7 @@ public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Fold
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Lists
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.PolyTime
 public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Primitives
+public import Cslib.Computability.Machines.Turing.MultiTape.Complexity.Translate
 public import Cslib.Computability.Machines.Turing.MultiTape.ConfigBound
 public import Cslib.Computability.Machines.Turing.MultiTape.Configuration
 public import Cslib.Computability.Machines.Turing.MultiTape.Deterministic
