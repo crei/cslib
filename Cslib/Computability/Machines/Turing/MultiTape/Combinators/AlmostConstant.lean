@@ -184,7 +184,7 @@ lemma runFrom_read (a : α) {j : ℕ} (hj : j ≤ (encIn a).length)
   induction j with
   | zero =>
     simp only [Function.iterate_zero_apply, MultiTapeNTM.initCfg, List.take_zero]
-    ext <;> simp [almostConstTM, ofTr]
+    ext <;> simp [almostConstTM]
   | succ j ih =>
     have hprefix : (encIn a).take j <+: (encIn a).take (j + 1) := by
       simp
@@ -334,7 +334,7 @@ lemma computesFunInTimeAndSpace_almostConstTM (h : ∀ a ∉ S, encOut (f a) = o
   rw [runFrom_write_halted, runFrom, runFrom, ← Function.iterate_add_apply] at hfinal
   have hhalt := congrArg Cfg.state hfinal
   exact ⟨⟨_, hhalt, congrArg Cfg.output hfinal⟩,
-    (runsInTime_of_halted hhalt).mono (by dsimp [almostConstTime]; omega), by simp⟩
+    (runsInTime_iff_halted.mpr hhalt).mono (by dsimp [almostConstTime]; omega), by simp⟩
 
 end AlmostConstFun
 
